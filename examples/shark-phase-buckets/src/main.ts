@@ -30,7 +30,7 @@ interface SharkMeta {
   scale: number;
 }
 
-const ctx = await createExample("Shark School");
+const ctx = await createExample("Shark Phase Buckets");
 ctx.panel.set("asset", "loading");
 const vatEnabled = new URLSearchParams(window.location.search).get("vat") !== "0";
 
@@ -80,6 +80,7 @@ if (vatInstanceMesh) {
 const ids: InstanceId[] = [];
 const sharkCount = 28;
 const modelScale = 0.9;
+let phaseSeed = 0;
 
 for (let index = 0; index < sharkCount; index++) {
   const columns = 7;
@@ -102,13 +103,13 @@ for (let index = 0; index < sharkCount; index++) {
   const id = vatSet
     ? vatSet.create({
         transform,
-        metadata: meta,
-        offset: 0
+        metadata: meta
       })
     : sharks.create(transform, meta);
   ids.push(id);
 }
 
+applyVatPhaseBuckets();
 playVatAnimation();
 
 let selected: InstanceId | undefined;
@@ -127,6 +128,12 @@ ctx.panel.button("next animation", () => {
   activeAnimationIndex = (activeAnimationIndex + 1) % animationGroups.length;
   applyAnimationGroup(activeAnimationIndex);
   playVatAnimation();
+  applyVatPhaseBuckets();
+});
+
+ctx.panel.button("shuffle phases", () => {
+  phaseSeed++;
+  applyVatPhaseBuckets();
 });
 
 ctx.panel.button("scatter", () => {
@@ -191,7 +198,7 @@ onBeforeRender(ctx.scene, (deltaMs) => {
   ctx.panel.set("vat meshes", vatSet ? 1 : 0);
   ctx.panel.set("animations", getAnimationStatus());
   ctx.panel.set("active animation", getActiveAnimationName());
-  ctx.panel.set("phase mode", vatSet ? "shared offset" : "source animation");
+  ctx.panel.set("phase mode", vatSet ? "bucketed offsets" : "source animation");
   ctx.panel.set("vat mode", vatInstanceMesh ? "single skinned mesh" : vatEnabled ? "unavailable" : "off (?vat=0)");
   ctx.panel.set("mode", paused ? "paused" : scattered ? "scatter" : "school");
   ctx.panel.set("selected", selected && sharks.has(selected) ? Number(selected) : "-");
@@ -226,6 +233,28 @@ function playVatAnimation(): void {
     return;
   }
   vatSet.play(group.name);
+}
+
+function applyVatPhaseBuckets(): void {
+  if (!vatSet) {
+    return;
+  }
+  const clip = vatSet.getActiveClip();
+  if (!clip) {
+    return;
+  }
+  const durationSeconds = clip.frameCount / clip.fps;
+  for (let index = 0; index < ids.length; index++) {
+    const id = ids[index];
+    if (id === undefined || !sharks.has(id)) {
+      continue;
+    }
+    const meta = sharks.getMetadata(id);
+    const lane = meta?.lane ?? 0;
+    const phase = fractional(index * 0.61803398875 + lane * 0.19 + phaseSeed * 0.31);
+    vatSet.setPhaseOffset(id, phase * durationSeconds);
+    vatSet.setFps(id, clip.fps * (0.86 + fractional(index * 0.37 + phaseSeed * 0.11) * 0.28));
+  }
 }
 
 function applyAnimationGroup(index: number): void {
@@ -315,4 +344,8 @@ function multiplyMat4(a: Mat4, b: Mat4): Mat4 {
 
 function mat4At(matrix: Mat4, index: number): number {
   return matrix[index] ?? 0;
+}
+
+function fractional(value: number): number {
+  return value - Math.floor(value);
 }

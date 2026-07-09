@@ -603,16 +603,16 @@ Purpose:
 
 V1 animation decision:
 
-- Animated GLB instances use shared animation per pool.
+- Animated GLB instances can use a VAT-backed instance set for the practical single-skinned-mesh case.
 - Every shark instance has its own world transform, path, speed, scale, visibility, metadata, and pick identity.
-- The underlying shark animation timeline is shared by the prototype/pool.
-- This is the default behavior because Lite hierarchy instances are transform instances; independent skeletal timelines per thin instance require a dedicated animation-texture or shader path.
+- The underlying shark animation clip is shared, and all sharks use the same phase in this example.
+- This is the baseline behavior before adding per-instance VAT phase offsets.
 
 Behavior:
 
 - Load `shark.glb`.
-- Start its swim animation on the source/prototype.
-- Create a school of shark instances using `createHierarchyInstanceSet`.
+- Start its swim animation on the source/prototype or VAT mesh.
+- Create a school of shark instances using `createVatInstanceSet` when VAT is available, with `createHierarchyInstanceSet` as a fallback.
 - Move each shark on its own path while all sharks share the same swim cycle.
 - Click a shark to select it and display its stable ID and app metadata.
 
@@ -620,7 +620,7 @@ Expected user-visible proof:
 
 - The sharks move independently through the scene.
 - The swim motion is synchronized within the pool.
-- Picking resolves from a clicked shark mesh to the logical shark ID.
+- Picking uses logical screen-space selection so VAT/rest-pose picker mismatch does not choose the wrong shark.
 
 ### 11. Shark Phase Buckets
 
@@ -637,27 +637,37 @@ Purpose:
 
 Behavior:
 
-- Create several shark pools from the same loaded asset or cloned prototype hierarchy.
-- Offset the animation clock per pool, for example 0%, 25%, 50%, and 75% through the swim cycle.
-- Assign each shark instance to a phase bucket.
-- Move every shark independently while each bucket has a different shared swim phase.
+- Create one VAT-backed shark instance set.
+- Assign each shark a deterministic per-instance animation phase offset across the active clip.
+- Add small per-instance fps variation to avoid a locked-step school.
+- Reapply phase buckets when switching animation groups.
+- Move every shark independently while the VAT playback parameters provide animation variation.
 
 Expected user-visible proof:
 
 - The school no longer looks perfectly synchronized.
-- The package still maintains stable IDs across all buckets.
-- Picking returns the logical shark instance regardless of which phase bucket owns it.
+- The package still maintains stable IDs for every shark.
+- Picking returns the logical shark instance even though VAT/rest-pose picking may not match the visible animated surface.
 
-### Future Animated GLB Direction
+### Animated GLB / VAT Direction
 
-True per-instance animation should be treated as a separate advanced feature:
+The package should include a V1 VAT helper for the practical single-skinned-mesh case:
 
-- Bake skeletal animation to VAT or another animation texture format.
-- Store per-instance animation time, clip index, speed, and phase in per-instance attributes or storage buffers.
-- Drive animation in the material/shader path so each thin instance can sample a different frame.
-- Expose an API such as `setAnimation(id, { clip, time, speed, phase })`.
+- `createVatInstanceSet(engine, skinnedMesh, animationGroups, options)`.
+- Bake and attach Babylon Lite VAT.
+- Create an underlying `InstanceSet`.
+- Default to `gpuCulling: false` because VAT can move vertices outside rest bounds.
+- Default to `visibleStrategy: "scale-zero"` because VAT per-instance playback parameters are slot-based.
+- Support shared active clip switching with `play(clip)`.
+- Support per-instance phase offsets and fps override.
+- Expose the underlying set for transforms, metadata, visibility, and colors.
 
-This should not be required for the first useful version of `@litools/instancer`.
+Future advanced work:
+
+- Per-instance clip assignment with automatic slot-resync after remove/visibility strategies that swap slots.
+- Dual-clip blending helpers.
+- Socket/bone-origin helpers for attaching props or effects.
+- More robust multi-mesh animated GLB strategy when assets contain skinned and non-skinned child meshes.
 
 ## Milestones
 

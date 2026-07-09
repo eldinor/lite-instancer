@@ -54,3 +54,25 @@ if (picked) {
   select(picked.id);
 }
 ```
+
+For one skinned mesh with Babylon Lite VAT, use `createVatInstanceSet`:
+
+```ts
+import { createVatInstanceSet } from "@litools/instancer";
+
+const swimmers = createVatInstanceSet(engine, skinnedMesh, animationGroups, {
+  capacity: 64
+});
+
+const id = swimmers.create({
+  transform: { position: [0, 0, 0], scale: 1 },
+  metadata: { label: "shark-0" }
+});
+
+swimmers.play("Swim");
+swimmers.update(deltaSeconds);
+swimmers.set.setVisible(id, false);
+```
+
+VAT helpers default to `gpuCulling: false` and `visibleStrategy: "scale-zero"` because animated
+vertices can move outside rest bounds and because VAT per-instance playback data is slot-based.
