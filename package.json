@@ -1,0 +1,46 @@
+{
+  "name": "@litools/instancer",
+  "version": "0.1.0",
+  "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "PLAN.md"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "dev": "vite --host 0.0.0.0",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@babylonjs/lite": "^1.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@babylonjs/lite": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@babylonjs/lite": "^1.8.0",
+    "@preact/signals": "^2.9.3",
+    "@webgpu/types": "^0.1.71",
+    "babylon-lite-explorer": "^0.3.1",
+    "preact": "^10.29.7",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}
