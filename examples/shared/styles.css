@@ -42,6 +42,18 @@ canvas {
   letter-spacing: 0;
 }
 
+.panel-home {
+  display: inline-block;
+  margin: 0 0 8px;
+  color: #8bd3ff;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.panel-home:hover {
+  text-decoration: underline;
+}
+
 .panel dl {
   display: grid;
   grid-template-columns: max-content 1fr;

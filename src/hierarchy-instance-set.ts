@@ -13,46 +13,34 @@ import {
 import { assertKnownId, assertValidCapacity, InstancerError } from "./errors.js";
 import { composeMat4, copyMat4, writeZeroScale } from "./transforms.js";
 import {
+  type BaseInstanceSet,
+  type InstanceCreateInput,
+  type InstanceEntry,
   type HierarchyInstanceSetOptions,
   type InstanceBatchWriter,
   type InstanceId,
+  type InstanceMatrixUpdate,
+  type InstanceSlotEntry,
   type InstanceTransformInput,
+  type InstanceTransformUpdate,
   type RawInstanceWriter,
   toInstanceId
 } from "./types.js";
 
-export interface HierarchyInstanceSet<TMetadata = unknown> {
+/**
+ * Stable-ID manager for a Babylon Lite hierarchy instance pool.
+ *
+ * Use this for GLB roots or any scene-node tree that should be repeated as one logical object.
+ * Slot order can change for removal and active-count visibility, but IDs remain stable.
+ */
+export interface HierarchyInstanceSet<TMetadata = unknown> extends BaseInstanceSet<TMetadata> {
+  /** Source root used to create the hierarchy pool. */
   readonly root: SceneNode;
-  readonly count: number;
-  readonly capacity: number;
-  readonly visibleCount: number;
+  /** Current Babylon Lite hierarchy pool. May be replaced when `grow: "rebuild"` is used. */
   readonly pool: HierarchyInstancePool;
-
-  create(transform?: InstanceTransformInput, metadata?: TMetadata): InstanceId;
-  remove(id: InstanceId): boolean;
-  clear(): void;
-
-  has(id: InstanceId): boolean;
-  getSlot(id: InstanceId): number | undefined;
-  getIdForSlot(slot: number): InstanceId | undefined;
-
-  setMatrix(id: InstanceId, matrix: Mat4): void;
-  getMatrix(id: InstanceId, out?: Mat4): Mat4;
-  setTransform(id: InstanceId, transform: InstanceTransformInput): void;
-  getVisible(id: InstanceId): boolean;
-  setVisible(id: InstanceId, visible: boolean): void;
-
-  getMetadata(id: InstanceId): TMetadata | undefined;
-  setMetadata(id: InstanceId, metadata: TMetadata): void;
-  deleteMetadata(id: InstanceId): boolean;
-
-  batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void;
-  editRaw(callback: (raw: RawInstanceWriter) => void): void;
-
-  reserve(capacity: number): void;
-  dispose(): void;
 }
 
+/** Create a stable-ID manager for instances of a full scene-node hierarchy. */
 export function createHierarchyInstanceSet<TMetadata = unknown>(
   root: SceneNode,
   options: HierarchyInstanceSetOptions = {}
@@ -130,6 +118,12 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return id;
   }
 
+  createMany(items: Iterable<InstanceCreateInput<TMetadata>>): InstanceId[] {
+    const inputs = Array.from(items);
+    this.reserve(this.#count + inputs.length);
+    return inputs.map((item) => this.create(item.transform, item.metadata));
+  }
+
   remove(id: InstanceId): boolean {
     const slot = this.#idToSlot.get(id);
     if (slot === undefined) {
@@ -157,6 +151,16 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return true;
   }
 
+  removeMany(ids: Iterable<InstanceId>): number {
+    let removed = 0;
+    for (const id of ids) {
+      if (this.remove(id)) {
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   clear(): void {
     this.#count = 0;
     this.#visibleCount = 0;
@@ -179,6 +183,50 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return this.#slotToId[slot];
   }
 
+  *ids(): IterableIterator<InstanceId> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined) {
+        yield id;
+      }
+    }
+  }
+
+  *visibleIds(): IterableIterator<InstanceId> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined && this.getVisible(id)) {
+        yield id;
+      }
+    }
+  }
+
+  *slots(): IterableIterator<InstanceSlotEntry> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined) {
+        yield { id, slot };
+      }
+    }
+  }
+
+  *entries(): IterableIterator<InstanceEntry<TMetadata>> {
+    for (const { id, slot } of this.slots()) {
+      const metadata = this.#metadata.get(id);
+      if (metadata === undefined) {
+        yield { id, slot };
+      } else {
+        yield { id, slot, metadata };
+      }
+    }
+  }
+
+  forEach(callback: (id: InstanceId, slot: number) => void): void {
+    for (const { id, slot } of this.slots()) {
+      callback(id, slot);
+    }
+  }
+
   setMatrix(id: InstanceId, matrix: Mat4): void {
     const slot = assertKnownId(id, this.#idToSlot.get(id));
     if (this.#visibleStrategy === "scale-zero" && !this.getVisible(id)) {
@@ -187,6 +235,14 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     }
     this.#writeMatrixAt(slot, matrix);
     this.#syncSlotIfVisible(slot);
+  }
+
+  trySetMatrix(id: InstanceId, matrix: Mat4): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setMatrix(id, matrix);
+    return true;
   }
 
   getMatrix(id: InstanceId, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
@@ -200,8 +256,39 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return out;
   }
 
+  getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined {
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.getMatrix(id, out);
+  }
+
   setTransform(id: InstanceId, transform: InstanceTransformInput): void {
     this.setMatrix(id, composeMat4(transform));
+  }
+
+  trySetTransform(id: InstanceId, transform: InstanceTransformInput): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setTransform(id, transform);
+    return true;
+  }
+
+  setMatrices(items: Iterable<InstanceMatrixUpdate>): void {
+    this.batch((writer) => {
+      for (const item of items) {
+        writer.setMatrix(item.id, item.matrix);
+      }
+    });
+  }
+
+  setTransforms(items: Iterable<InstanceTransformUpdate>): void {
+    this.batch((writer) => {
+      for (const item of items) {
+        writer.setTransform(item.id, item.transform);
+      }
+    });
   }
 
   getVisible(id: InstanceId): boolean {
@@ -210,6 +297,13 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
       return slot < this.#visibleCount;
     }
     return !this.#hiddenMatrices.has(id);
+  }
+
+  getVisibleOrUndefined(id: InstanceId): boolean | undefined {
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.getVisible(id);
   }
 
   setVisible(id: InstanceId, visible: boolean): void {
@@ -250,6 +344,22 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     }
   }
 
+  trySetVisible(id: InstanceId, visible: boolean): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setVisible(id, visible);
+    return true;
+  }
+
+  setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void {
+    this.batch((writer) => {
+      for (const id of ids) {
+        writer.setVisible(id, visible);
+      }
+    });
+  }
+
   getMetadata(id: InstanceId): TMetadata | undefined {
     return this.#metadata.get(id);
   }
@@ -257,6 +367,14 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   setMetadata(id: InstanceId, metadata: TMetadata): void {
     assertKnownId(id, this.#idToSlot.get(id));
     this.#metadata.set(id, metadata);
+  }
+
+  trySetMetadata(id: InstanceId, metadata: TMetadata): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setMetadata(id, metadata);
+    return true;
   }
 
   deleteMetadata(id: InstanceId): boolean {

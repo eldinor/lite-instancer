@@ -356,6 +356,7 @@ examples/
   boombox-rebuild-growth/
   shark-school-shared-animation/
   shark-phase-buckets/
+  shark-clip-mixer/
 ```
 
 ## Example Apps
@@ -390,6 +391,7 @@ Example coverage checklist:
 | Hierarchy pool rebuild growth | BoomBox Rebuild Growth |
 | Animated GLB V1 behavior | Shark School With Shared Animation |
 | Animation phase variation | Shark Phase Buckets |
+| Per-instance VAT clip assignment | Shark Clip Mixer |
 
 ### 1. Basic Thin Instances
 
@@ -649,6 +651,32 @@ Expected user-visible proof:
 - The package still maintains stable IDs for every shark.
 - Picking returns the logical shark instance even though VAT/rest-pose picking may not match the visible animated surface.
 
+### 12. Shark Clip Mixer
+
+Asset:
+
+```txt
+https://assets.babylonjs.com/meshes/shark.glb
+```
+
+Purpose:
+
+- Demonstrate per-instance VAT clip assignment.
+- Show that `play(clip)` can remain the shared default while selected instances override the active clip.
+
+Behavior:
+
+- Create one VAT-backed shark instance set.
+- Assign clips by lane when the asset exposes multiple animation groups.
+- Let the user cycle the selected shark's clip.
+- Let the user cycle the selected lane's clip.
+- Keep per-instance phase/fps offsets so clip assignment and phase variation work together.
+
+Expected user-visible proof:
+
+- Selected sharks or lanes can move to another VAT clip without rebuilding the pool.
+- Stable IDs, metadata, picking, visibility, and phase offsets continue to work after clip changes.
+
 ### Animated GLB / VAT Direction
 
 The package should include a V1 VAT helper for the practical single-skinned-mesh case:
@@ -659,12 +687,11 @@ The package should include a V1 VAT helper for the practical single-skinned-mesh
 - Default to `gpuCulling: false` because VAT can move vertices outside rest bounds.
 - Default to `visibleStrategy: "scale-zero"` because VAT per-instance playback parameters are slot-based.
 - Support shared active clip switching with `play(clip)`.
-- Support per-instance phase offsets and fps override.
+- Support per-instance phase offsets, fps override, and clip assignment.
 - Expose the underlying set for transforms, metadata, visibility, and colors.
 
 Future advanced work:
 
-- Per-instance clip assignment with automatic slot-resync after remove/visibility strategies that swap slots.
 - Dual-clip blending helpers.
 - Socket/bone-origin helpers for attaching props or effects.
 - More robust multi-mesh animated GLB strategy when assets contain skinned and non-skinned child meshes.
@@ -745,6 +772,7 @@ Future advanced work:
 - BoomBox rebuild growth example showing `grow: "rebuild"` for hierarchy pools.
 - Shark school example using `https://assets.babylonjs.com/meshes/shark.glb` with shared animation per pool.
 - Shark phase bucket example that shows practical animation variation without per-instance skeleton timelines.
+- Shark clip mixer example that shows per-instance VAT clip assignment.
 - Each example should expose the relevant state in a small external debug panel: count, visible count, capacity, selected ID, selected metadata, and update mode where useful.
 
 ### 10. Documentation
@@ -753,7 +781,7 @@ Future advanced work:
 - API reference.
 - Performance notes.
 - Babylon Lite compatibility notes.
-- Animated GLB behavior notes: shared animation per pool in V1, phase buckets for variation, true per-instance animation as a future VAT/shader feature.
+- Animated GLB behavior notes: shared animation per pool in V1, phase buckets and per-instance clip assignment for VAT variation, true blended skeletal timelines as a future shader feature.
 
 ## First Implementation Target
 

@@ -1,5 +1,6 @@
 import type { InstanceId } from "./types.js";
 
+/** Error thrown by `@litools/instancer` when an ID, capacity, or operation is invalid. */
 export class InstancerError extends Error {
   constructor(message: string) {
     super(message);

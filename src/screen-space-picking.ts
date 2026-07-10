@@ -6,32 +6,42 @@ export interface ScreenPointLike {
   readonly y: number;
 }
 
+/** Width and height of the canvas or viewport used for projection. */
 export interface ScreenViewportLike {
   readonly width: number;
   readonly height: number;
 }
 
+/** Canvas-like object accepted by pointer-based screen-space picking. */
 export interface PointerViewportLike extends ScreenViewportLike {
   getBoundingClientRect(): DOMRect;
 }
 
+/** Options for logical screen-space picking by projected instance centers. */
 export interface ScreenSpaceInstancePickOptions {
+  /** Candidate stable IDs to test. */
   ids: Iterable<InstanceId>;
   camera: Camera;
   viewport: ScreenViewportLike;
   point: ScreenPointLike;
+  /** Return the current world-space logical center for an ID. */
   getWorldPosition(id: InstanceId): Vec3Like | undefined;
+  /** Return the pick radius in CSS pixels for an ID. Defaults to 24. */
   getScreenRadius?(id: InstanceId): number;
+  /** Optional visibility predicate. */
   isVisible?(id: InstanceId): boolean;
+  /** Optional existence predicate, useful when keeping an external ID array. */
   has?(id: InstanceId): boolean;
 }
 
+/** Pointer-event convenience options for screen-space picking. */
 export interface PointerScreenSpaceInstancePickOptions
   extends Omit<ScreenSpaceInstancePickOptions, "point" | "viewport"> {
   event: Pick<PointerEvent, "clientX" | "clientY">;
   canvas: PointerViewportLike;
 }
 
+/** Logical screen-space pick result. */
 export interface ScreenSpaceInstancePick {
   id: InstanceId;
   distanceSquared: number;
@@ -39,6 +49,12 @@ export interface ScreenSpaceInstancePick {
   radius: number;
 }
 
+/**
+ * Pick the nearest candidate ID whose projected logical center is inside its screen radius.
+ *
+ * This is intended for animated/VAT/deformed instances where GPU picking may use rest geometry or a
+ * mismatched proxy. It trades geometric exactness for stable app-level selection.
+ */
 export function pickScreenSpaceInstance(options: ScreenSpaceInstancePickOptions): ScreenSpaceInstancePick | undefined {
   const matrix = getViewProjectionMatrix(options.camera, options.viewport.width / options.viewport.height);
   let nearest: ScreenSpaceInstancePick | undefined;
@@ -76,6 +92,7 @@ export function pickScreenSpaceInstance(options: ScreenSpaceInstancePickOptions)
   return nearest;
 }
 
+/** Convert a pointer event into canvas-local coordinates and run `pickScreenSpaceInstance`. */
 export function pickScreenSpaceInstanceFromPointer(
   options: PointerScreenSpaceInstancePickOptions
 ): ScreenSpaceInstancePick | undefined {
@@ -93,6 +110,7 @@ export function pickScreenSpaceInstanceFromPointer(
   });
 }
 
+/** Project a world-space position to viewport pixel coordinates. */
 export function projectWorldToScreen(
   position: Vec3Like,
   matrix: Mat4,

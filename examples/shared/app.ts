@@ -104,6 +104,10 @@ function attachExplorerButton(panel: DebugPanel, explorer: LiteExplorerHandle): 
 export function createPanel(title: string): DebugPanel {
   const root = document.createElement("section");
   root.className = "panel";
+  const homeLink = document.createElement("a");
+  homeLink.className = "panel-home";
+  homeLink.href = "/";
+  homeLink.textContent = "Examples";
   const heading = document.createElement("h1");
   heading.textContent = title;
   const list = document.createElement("dl");
@@ -111,7 +115,7 @@ export function createPanel(title: string): DebugPanel {
   controls.className = "controls";
   const values = new Map<string, HTMLElement>();
 
-  root.append(heading, list, controls);
+  root.append(homeLink, heading, list, controls);
   root.addEventListener("pointerdown", (event) => event.stopPropagation());
   root.addEventListener("pointerup", (event) => event.stopPropagation());
   root.addEventListener("click", (event) => event.stopPropagation());

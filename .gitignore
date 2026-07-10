@@ -1,7 +1,12 @@
 node_modules/
 dist/
+docs/api/
 test-results/
 coverage/
+playwright-report/
+.vite/
+*.tsbuildinfo
+PLAN.md
 
 .env
 .env.*

@@ -1,6 +1,7 @@
 import type { Mat4 } from "@babylonjs/lite";
 import type { InstanceTransformInput, QuatLike, Vec3Like } from "./types.js";
 
+/** Create a column-major identity matrix compatible with Babylon Lite `Mat4`. */
 export function createIdentityMat4(): Mat4 {
   const out = new Float32Array(16);
   out[0] = 1;
@@ -10,15 +11,18 @@ export function createIdentityMat4(): Mat4 {
   return out as Mat4;
 }
 
+/** Copy a matrix into `out`, or into a new `Float32Array(16)` when omitted. */
 export function copyMat4(matrix: Mat4, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
   (out as Float32Array).set(matrix);
   return out;
 }
 
+/** Return true when a transform input is already a 4x4 matrix. */
 export function isMat4Input(value: InstanceTransformInput): value is Mat4 {
   return ArrayBuffer.isView(value) && (value as ArrayBufferView & { length?: number }).length === 16;
 }
 
+/** Compose a matrix from a matrix input or `{ position, rotationQuaternion, rotationEuler, scale }`. */
 export function composeMat4(input?: InstanceTransformInput): Mat4 {
   if (input === undefined) {
     return createIdentityMat4();
@@ -33,6 +37,7 @@ export function composeMat4(input?: InstanceTransformInput): Mat4 {
   return fromRotationTranslationScale(q, position, scale);
 }
 
+/** Write a zero-scale matrix that preserves translation. Used by `"scale-zero"` visibility. */
 export function writeZeroScale(matrix: Mat4, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
   const writable = out as Float32Array;
   writable.fill(0);

@@ -14,51 +14,42 @@ import {
 import { assertKnownId, assertValidCapacity, InstancerError } from "./errors.js";
 import { composeMat4, copyMat4, writeZeroScale } from "./transforms.js";
 import {
+  type BaseInstanceSet,
+  type InstanceCreateInput,
+  type InstanceEntry,
   type InstanceBatchWriter,
   type InstanceColorInput,
   type InstanceId,
+  type InstanceMatrixUpdate,
   type InstanceSetOptions,
+  type InstanceSlotEntry,
   type InstanceTransformInput,
+  type InstanceTransformUpdate,
   type RawInstanceWriter,
   toInstanceId
 } from "./types.js";
 
-export interface InstanceSet<TMetadata = unknown> {
-  readonly count: number;
-  readonly capacity: number;
-  readonly visibleCount: number;
+/**
+ * Stable-ID manager for thin instances of one Babylon Lite mesh.
+ *
+ * `InstanceSet` owns the thin instance matrix buffer and optional color buffer. It keeps a stable
+ * `InstanceId` for each app object while allowing the underlying slot order to change for removal,
+ * visibility packing, or growth.
+ */
+export interface InstanceSet<TMetadata = unknown> extends BaseInstanceSet<TMetadata> {
+  /** Backing Babylon Lite mesh. */
   readonly mesh: Mesh;
-
-  create(transform?: InstanceTransformInput, metadata?: TMetadata): InstanceId;
-  remove(id: InstanceId): boolean;
-  clear(): void;
-
-  has(id: InstanceId): boolean;
-  getSlot(id: InstanceId): number | undefined;
-  getIdForSlot(slot: number): InstanceId | undefined;
-
-  setMatrix(id: InstanceId, matrix: Mat4): void;
-  getMatrix(id: InstanceId, out?: Mat4): Mat4;
-  setTransform(id: InstanceId, transform: InstanceTransformInput): void;
-  getVisible(id: InstanceId): boolean;
-  setVisible(id: InstanceId, visible: boolean): void;
-
-  getMetadata(id: InstanceId): TMetadata | undefined;
-  setMetadata(id: InstanceId, metadata: TMetadata): void;
-  deleteMetadata(id: InstanceId): boolean;
-
-  batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void;
-  editRaw(callback: (raw: RawInstanceWriter) => void): void;
-
-  reserve(capacity: number): void;
-  dispose(): void;
 }
 
+/** `InstanceSet` with per-instance color support. */
 export interface ColoredInstanceSet<TMetadata = unknown> extends InstanceSet<TMetadata> {
+  /** Set RGBA color for an ID. Allocates a color buffer lazily if needed. */
   setColor(id: InstanceId, color: InstanceColorInput): void;
+  /** Read RGBA color for an ID. Returns white when no color buffer exists. */
   getColor(id: InstanceId, out?: Float32Array): Float32Array;
 }
 
+/** Create a stable-ID thin instance manager for one mesh. */
 export function createInstanceSet<TMetadata = unknown>(
   mesh: Mesh,
   options: InstanceSetOptions = {}
@@ -139,6 +130,12 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     return id;
   }
 
+  createMany(items: Iterable<InstanceCreateInput<TMetadata>>): InstanceId[] {
+    const inputs = Array.from(items);
+    this.reserve(this.#count + inputs.length);
+    return inputs.map((item) => this.create(item.transform, item.metadata));
+  }
+
   remove(id: InstanceId): boolean {
     const slot = this.#idToSlot.get(id);
     if (slot === undefined) {
@@ -166,6 +163,16 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     return true;
   }
 
+  removeMany(ids: Iterable<InstanceId>): number {
+    let removed = 0;
+    for (const id of ids) {
+      if (this.remove(id)) {
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   clear(): void {
     this.#count = 0;
     this.#visibleCount = 0;
@@ -188,6 +195,50 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     return this.#slotToId[slot];
   }
 
+  *ids(): IterableIterator<InstanceId> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined) {
+        yield id;
+      }
+    }
+  }
+
+  *visibleIds(): IterableIterator<InstanceId> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined && this.getVisible(id)) {
+        yield id;
+      }
+    }
+  }
+
+  *slots(): IterableIterator<InstanceSlotEntry> {
+    for (let slot = 0; slot < this.#count; slot++) {
+      const id = this.#slotToId[slot];
+      if (id !== undefined) {
+        yield { id, slot };
+      }
+    }
+  }
+
+  *entries(): IterableIterator<InstanceEntry<TMetadata>> {
+    for (const { id, slot } of this.slots()) {
+      const metadata = this.#metadata.get(id);
+      if (metadata === undefined) {
+        yield { id, slot };
+      } else {
+        yield { id, slot, metadata };
+      }
+    }
+  }
+
+  forEach(callback: (id: InstanceId, slot: number) => void): void {
+    for (const { id, slot } of this.slots()) {
+      callback(id, slot);
+    }
+  }
+
   setMatrix(id: InstanceId, matrix: Mat4): void {
     const slot = assertKnownId(id, this.#idToSlot.get(id));
     if (this.#visibleStrategy === "scale-zero" && !this.getVisible(id)) {
@@ -196,6 +247,14 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     }
     this.#writeMatrixAt(slot, matrix);
     this.#markMatrixDirty(slot);
+  }
+
+  trySetMatrix(id: InstanceId, matrix: Mat4): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setMatrix(id, matrix);
+    return true;
   }
 
   getMatrix(id: InstanceId, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
@@ -209,8 +268,39 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     return out;
   }
 
+  getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined {
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.getMatrix(id, out);
+  }
+
   setTransform(id: InstanceId, transform: InstanceTransformInput): void {
     this.setMatrix(id, composeMat4(transform));
+  }
+
+  trySetTransform(id: InstanceId, transform: InstanceTransformInput): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setTransform(id, transform);
+    return true;
+  }
+
+  setMatrices(items: Iterable<InstanceMatrixUpdate>): void {
+    this.batch((writer) => {
+      for (const item of items) {
+        writer.setMatrix(item.id, item.matrix);
+      }
+    });
+  }
+
+  setTransforms(items: Iterable<InstanceTransformUpdate>): void {
+    this.batch((writer) => {
+      for (const item of items) {
+        writer.setTransform(item.id, item.transform);
+      }
+    });
   }
 
   getVisible(id: InstanceId): boolean {
@@ -219,6 +309,13 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       return slot < this.#visibleCount;
     }
     return !this.#hiddenMatrices.has(id);
+  }
+
+  getVisibleOrUndefined(id: InstanceId): boolean | undefined {
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.getVisible(id);
   }
 
   setVisible(id: InstanceId, visible: boolean): void {
@@ -259,6 +356,22 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     }
   }
 
+  trySetVisible(id: InstanceId, visible: boolean): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setVisible(id, visible);
+    return true;
+  }
+
+  setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void {
+    this.batch((writer) => {
+      for (const id of ids) {
+        writer.setVisible(id, visible);
+      }
+    });
+  }
+
   getMetadata(id: InstanceId): TMetadata | undefined {
     return this.#metadata.get(id);
   }
@@ -266,6 +379,14 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   setMetadata(id: InstanceId, metadata: TMetadata): void {
     assertKnownId(id, this.#idToSlot.get(id));
     this.#metadata.set(id, metadata);
+  }
+
+  trySetMetadata(id: InstanceId, metadata: TMetadata): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setMetadata(id, metadata);
+    return true;
   }
 
   deleteMetadata(id: InstanceId): boolean {

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/api",
+  "readme": "docs/README.md",
+  "name": "@litools/instancer",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "categorizeByGroup": true,
+  "navigationLinks": {
+    "Examples": "../../index.html",
+    "Plan": "../../PLAN.md"
+  }
+}

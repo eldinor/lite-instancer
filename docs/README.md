@@ -1,22 +1,14 @@
-# @litools/instancer
+# @litools/instancer Documentation
 
-Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.
+`@litools/instancer` helps Babylon Lite apps treat thin instances and hierarchy instances as app-level objects with stable numeric IDs.
 
-`@litools/instancer` helps Babylon Lite apps treat thin instances and hierarchy instances as app-level objects with stable numeric IDs. Use it when you need many repeated meshes, picking, hide/show, metadata, or fast transform updates without manually tracking thin instance slots.
-
-## Install
-
-```sh
-npm install @litools/instancer @babylonjs/lite
-```
+Use it when you need to create many repeated meshes, pick them, hide/show them, attach metadata, or update transforms in batches without manually tracking thin instance slots.
 
 ## Which API Should I Use?
 
 Use `createInstanceSet` for one mesh:
 
 ```ts
-import { createInstanceSet } from "@litools/instancer";
-
 const boxes = createInstanceSet(boxMesh, {
   capacity: 500,
   colors: true,
@@ -24,11 +16,9 @@ const boxes = createInstanceSet(boxMesh, {
 });
 ```
 
-Use `createHierarchyInstanceSet` for a loaded GLB or scene-node hierarchy:
+Use `createHierarchyInstanceSet` for a loaded GLB hierarchy:
 
 ```ts
-import { createHierarchyInstanceSet } from "@litools/instancer";
-
 const boomboxes = createHierarchyInstanceSet(rootNode, {
   capacity: 100,
   grow: "rebuild"
@@ -38,24 +28,21 @@ const boomboxes = createHierarchyInstanceSet(rootNode, {
 Use `createVatInstanceSet` for a single skinned mesh with Babylon Lite VAT animation:
 
 ```ts
-import { createVatInstanceSet } from "@litools/instancer";
-
 const sharks = createVatInstanceSet(engine, skinnedMesh, animationGroups, {
   capacity: 48
 });
 ```
 
-Use `PickingRegistry` for normal thin-instance picking. Use `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
+Use `PickingRegistry` for normal thin-instance picking, and `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
+
+For a practical walkthrough of the main functions and helpers, see `../User_Guide.md`.
 
 ## Stable IDs
 
 The package returns numeric `InstanceId` values. Slots may change after remove, hide/show, growth, or rebuild operations. Keep IDs in your app state, and ask the set for the current slot only when you need to talk to lower-level Babylon Lite APIs.
 
 ```ts
-const id = boxes.create(
-  { position: [0, 0, 0], scale: 1 },
-  { team: "blue" }
-);
+const id = boxes.create({ position: [0, 0, 0] }, { team: "blue" });
 
 boxes.setVisible(id, false);
 boxes.setMetadata(id, { team: "red" });
@@ -63,39 +50,30 @@ boxes.setMetadata(id, { team: "red" });
 
 ## Iteration and Bulk Helpers
 
-Use `ids`, `visibleIds`, `slots`, and `entries` when you want the set to be the source of truth for live IDs:
+Use `ids`, `visibleIds`, `slots`, and `entries` to inspect live IDs in current slot order without keeping a duplicate ID array.
 
 ```ts
 for (const id of boxes.visibleIds()) {
-  updateLabel(id, boxes.getMetadata(id));
-}
-
-for (const { id, slot } of boxes.slots()) {
-  syncExternalSlotData(id, slot);
+  updateOverlay(id, boxes.getMetadata(id));
 }
 ```
 
-Use `createMany`, `setTransforms`, `setMatrices`, `setVisibleMany`, and `removeMany` for common multi-instance operations:
+Use `createMany`, `setTransforms`, `setMatrices`, `setVisibleMany`, and `removeMany` for common multi-instance work.
 
 ```ts
-const ids = boxes.createMany(points.map((position) => ({
-  transform: { position, scale: 1 },
-  metadata: { selected: false }
-})));
-
-boxes.setTransforms(ids.map((id, index) => ({
-  id,
-  transform: { position: nextPositions[index] }
+const ids = boxes.createMany(spawns.map((spawn) => ({
+  transform: spawn.transform,
+  metadata: spawn.data
 })));
 
 boxes.setVisibleMany(ids, false);
 ```
 
-For stale IDs from UI or network state, use non-throwing helpers such as `trySetTransform`, `trySetVisible`, `trySetMetadata`, `getMatrixOrUndefined`, and `getVisibleOrUndefined`.
+When an ID may be stale, use `trySetTransform`, `trySetVisible`, `trySetMetadata`, `getMatrixOrUndefined`, or `getVisibleOrUndefined`.
 
-## Visibility
+## Visibility Strategies
 
-`"active-count"` keeps visible instances packed at the front of the buffer. It is fast for rendering, but hiding/showing/removing instances can swap slots.
+`"active-count"` keeps visible instances packed at the front of the buffer. It is fast for rendering, but hiding/showing instances can swap slots.
 
 `"scale-zero"` keeps slots more stable by writing a zero-scale matrix for hidden instances. It is useful when another slot-indexed system must stay aligned, such as VAT playback parameters.
 
@@ -118,15 +96,13 @@ Use `editRaw` only when you need direct access to the matrix/color arrays. When 
 For rigid meshes, register the mesh and map Babylon Lite picks back to stable IDs:
 
 ```ts
-import { belongsToHierarchyRoot, createPickingRegistry } from "@litools/instancer";
-
 const registry = createPickingRegistry();
 registry.register(boxMesh, boxes);
 
 const picked = registry.fromPick(scenePick);
 ```
 
-For GLB hierarchies, first check that the picked child mesh belongs to the loaded root, then resolve the final app-level ID:
+For GLB hierarchies, use `belongsToHierarchyRoot(pickedMesh, root)` as a first filter. It confirms the picked child mesh belongs to the loaded asset before you resolve the final logical `InstanceId`.
 
 ```ts
 if (belongsToHierarchyRoot(scenePick.pickedMesh, glbRoot)) {
@@ -139,8 +115,6 @@ Hierarchy picking often needs this two-step approach. A loaded GLB has a source/
 For VAT, skinned, or otherwise deformed visuals, pick by projected logical centers:
 
 ```ts
-import { pickScreenSpaceInstanceFromPointer } from "@litools/instancer";
-
 const picked = pickScreenSpaceInstanceFromPointer({
   event,
   canvas,
@@ -180,33 +154,21 @@ Run one dev server:
 npm run dev
 ```
 
-Then open the root examples page. Useful demos:
+Then open the root examples page. The most useful demos are:
 
-- Basic Thin Instances: stable IDs, transforms, colors, removal, and adding new instances.
-- Primitive Box Field: many boxes, colors, batch transforms, and selection.
+- Primitive Box Field: basic IDs, colors, transforms, and selection.
 - Primitive Mixed Playground: boxes, spheres, and cylinders managed by separate sets with shared picking.
-- BoomBox Picker: GLB hierarchy picking and stable ID deletion after slot swaps.
-- BoomBox Grid: GLB hierarchy instance grid with picking and removal.
+- BoomBox Grid: GLB hierarchy instancing with picking and removal.
 - Shark School Shared Animation: synchronized VAT animation.
 - Shark Phase Buckets: per-instance VAT phase/fps variation.
 - Shark Clip Mixer: per-instance VAT clip assignment.
 
-See `About_Examples.md` for a fuller explanation of every runnable example, and `About_Examples_Extended.md` for important code snippets from each one.
+## API Reference
 
-## Docs
-
-The longer guide lives in `docs/README.md`.
-
-For a practical usage walkthrough, see `User_Guide.md`.
-
-For release notes, see `CHANGELOG.md`.
-
-For architecture and internal concepts, see `How_It_Works.md`.
-
-Generate TypeDoc API reference:
+Run:
 
 ```sh
 npm run docs
 ```
 
-TypeDoc writes generated HTML to `docs/api`.
+TypeDoc writes the generated reference to `docs/api`.
