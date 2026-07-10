@@ -71,6 +71,16 @@ boxes.setVisibleMany(ids, false);
 
 When an ID may be stale, use `trySetTransform`, `trySetVisible`, `trySetMetadata`, `getMatrixOrUndefined`, or `getVisibleOrUndefined`.
 
+## Transform Helpers
+
+Use `getPosition`, `setPosition`, `translate`, and `setScale` for common transform edits that do not need a full matrix.
+
+```ts
+boxes.setPosition(id, [2, 0, 1]);
+boxes.translate(id, [0, 1, 0]);
+boxes.setScale(id, [1, 2, 1]);
+```
+
 ## Visibility Strategies
 
 `"active-count"` keeps visible instances packed at the front of the buffer. It is fast for rendering, but hiding/showing instances can swap slots.

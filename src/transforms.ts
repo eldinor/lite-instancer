@@ -48,6 +48,52 @@ export function writeZeroScale(matrix: Mat4, out: Mat4 = new Float32Array(16) as
   return out;
 }
 
+/** Read matrix translation into `out`, or into a new `Float32Array(3)` when omitted. */
+export function getMat4Position(matrix: Mat4, out?: Float32Array): Float32Array {
+  const target = out ?? new Float32Array(3);
+  target[0] = matrix[12] ?? 0;
+  target[1] = matrix[13] ?? 0;
+  target[2] = matrix[14] ?? 0;
+  return target;
+}
+
+/** Return a copy of `matrix` with its translation replaced. */
+export function withMat4Position(matrix: Mat4, position: Vec3Like, out: Mat4 = copyMat4(matrix)): Mat4 {
+  const writable = out as Float32Array;
+  if (out !== matrix) {
+    writable.set(matrix);
+  }
+  writable[12] = position[0];
+  writable[13] = position[1];
+  writable[14] = position[2];
+  return out;
+}
+
+/** Return a copy of `matrix` translated by `delta`. */
+export function translateMat4(matrix: Mat4, delta: Vec3Like, out: Mat4 = copyMat4(matrix)): Mat4 {
+  const writable = out as Float32Array;
+  if (out !== matrix) {
+    writable.set(matrix);
+  }
+  writable[12] = (matrix[12] ?? 0) + delta[0];
+  writable[13] = (matrix[13] ?? 0) + delta[1];
+  writable[14] = (matrix[14] ?? 0) + delta[2];
+  return out;
+}
+
+/** Return a copy of `matrix` with its basis columns rescaled while preserving translation. */
+export function withMat4Scale(matrix: Mat4, scale: Vec3Like | number, out: Mat4 = copyMat4(matrix)): Mat4 {
+  const writable = out as Float32Array;
+  if (out !== matrix) {
+    writable.set(matrix);
+  }
+  const nextScale = normalizeScale(scale);
+  rescaleColumn(writable, 0, nextScale[0]);
+  rescaleColumn(writable, 4, nextScale[1]);
+  rescaleColumn(writable, 8, nextScale[2]);
+  return out;
+}
+
 function normalizeScale(scale: Vec3Like | number | undefined): Vec3Like {
   if (scale === undefined) {
     return [1, 1, 1];
@@ -56,6 +102,23 @@ function normalizeScale(scale: Vec3Like | number | undefined): Vec3Like {
     return [scale, scale, scale];
   }
   return scale;
+}
+
+function rescaleColumn(matrix: Float32Array, offset: number, scale: number): void {
+  const x = matrix[offset] ?? 0;
+  const y = matrix[offset + 1] ?? 0;
+  const z = matrix[offset + 2] ?? 0;
+  const length = Math.hypot(x, y, z);
+  if (length < 1e-8) {
+    matrix[offset] = offset === 0 ? scale : 0;
+    matrix[offset + 1] = offset === 4 ? scale : 0;
+    matrix[offset + 2] = offset === 8 ? scale : 0;
+    return;
+  }
+  const factor = scale / length;
+  matrix[offset] = x * factor;
+  matrix[offset + 1] = y * factor;
+  matrix[offset + 2] = z * factor;
 }
 
 function eulerToQuat(euler: Vec3Like): QuatLike {

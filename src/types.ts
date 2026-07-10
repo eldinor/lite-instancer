@@ -97,6 +97,9 @@ export interface HierarchyInstanceSetOptions {
 export interface InstanceBatchWriter<TMetadata = unknown> {
   setMatrix(id: InstanceId, matrix: Mat4): void;
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
+  setPosition(id: InstanceId, position: Vec3Like): void;
+  translate(id: InstanceId, delta: Vec3Like): void;
+  setScale(id: InstanceId, scale: Vec3Like | number): void;
   setVisible(id: InstanceId, visible: boolean): void;
   setMetadata(id: InstanceId, metadata: TMetadata): void;
   setColor?(id: InstanceId, color: InstanceColorInput): void;
@@ -166,6 +169,22 @@ export interface BaseInstanceSet<TMetadata = unknown> {
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
   /** Compose and write a transform object or matrix. Returns false when the ID is unknown. */
   trySetTransform(id: InstanceId, transform: InstanceTransformInput): boolean;
+  /** Read the translation component of the current matrix. Throws when the ID is unknown. */
+  getPosition(id: InstanceId, out?: Float32Array): Float32Array;
+  /** Read the translation component of the current matrix. Returns undefined when the ID is unknown. */
+  getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined;
+  /** Replace only the translation component of the current matrix. Throws when the ID is unknown. */
+  setPosition(id: InstanceId, position: Vec3Like): void;
+  /** Replace only the translation component of the current matrix. Returns false when the ID is unknown. */
+  trySetPosition(id: InstanceId, position: Vec3Like): boolean;
+  /** Add a delta to the translation component of the current matrix. Throws when the ID is unknown. */
+  translate(id: InstanceId, delta: Vec3Like): void;
+  /** Add a delta to the translation component of the current matrix. Returns false when the ID is unknown. */
+  tryTranslate(id: InstanceId, delta: Vec3Like): boolean;
+  /** Replace matrix scale while preserving current translation and basis orientation. Throws when the ID is unknown. */
+  setScale(id: InstanceId, scale: Vec3Like | number): void;
+  /** Replace matrix scale while preserving current translation and basis orientation. Returns false when the ID is unknown. */
+  trySetScale(id: InstanceId, scale: Vec3Like | number): boolean;
   /** Set many matrices in one batch. */
   setMatrices(items: Iterable<InstanceMatrixUpdate>): void;
   /** Set many transforms in one batch. */

@@ -76,6 +76,51 @@ Use `setMatrix` when you already have a Babylon Lite `Mat4`:
 boxes.setMatrix(id, matrix);
 ```
 
+## Transform Convenience Helpers
+
+Use position and scale helpers for common object-level edits.
+
+Read an instance position:
+
+```ts
+const position = boxes.getPosition(id);
+```
+
+Write only the translation component:
+
+```ts
+boxes.setPosition(id, [2, 0, 1]);
+```
+
+Move relative to the current position:
+
+```ts
+boxes.translate(id, [0, 1, 0]);
+```
+
+Replace the matrix scale while keeping the current translation and basis orientation:
+
+```ts
+boxes.setScale(id, 1.5);
+boxes.setScale(id, [1, 2, 1]);
+```
+
+When an ID may be stale, use the non-throwing variants:
+
+```ts
+boxes.trySetPosition(idFromUi, [0, 0, 0]);
+boxes.tryTranslate(idFromUi, [0, 0.2, 0]);
+boxes.trySetScale(idFromUi, 1);
+
+const position = boxes.getPositionOrUndefined(idFromUi);
+```
+
+These helpers are available on both single-mesh sets and hierarchy sets. For VAT sets, use the underlying `set`:
+
+```ts
+sharks.set.translate(id, [0, 0, 1]);
+```
+
 ## Creating Hierarchy Instances
 
 Use `createHierarchyInstanceSet` when a whole scene-node tree should behave as one logical object. This is usually the right choice for loaded GLB assets.
@@ -278,9 +323,13 @@ Available helpers:
 
 - `trySetMatrix`
 - `trySetTransform`
+- `trySetPosition`
+- `tryTranslate`
+- `trySetScale`
 - `trySetVisible`
 - `trySetMetadata`
 - `getMatrixOrUndefined`
+- `getPositionOrUndefined`
 - `getVisibleOrUndefined`
 
 ## Raw Editing
@@ -467,4 +516,3 @@ Prefer `ids`, `visibleIds`, `slots`, and `entries` over maintaining duplicate ar
 Use direct setters when stale IDs are programmer errors. Use `try*` helpers when stale IDs are normal, such as UI selections, delayed network messages, or undo stacks.
 
 Use `batch` or bulk helpers for multi-instance updates. Use `editRaw` only for hot paths where direct buffer access is worth the extra responsibility.
-

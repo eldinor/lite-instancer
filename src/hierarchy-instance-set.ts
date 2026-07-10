@@ -11,7 +11,15 @@ import {
   type SceneNode
 } from "@babylonjs/lite";
 import { assertKnownId, assertValidCapacity, InstancerError } from "./errors.js";
-import { composeMat4, copyMat4, writeZeroScale } from "./transforms.js";
+import {
+  composeMat4,
+  copyMat4,
+  getMat4Position,
+  translateMat4,
+  withMat4Position,
+  withMat4Scale,
+  writeZeroScale
+} from "./transforms.js";
 import {
   type BaseInstanceSet,
   type InstanceCreateInput,
@@ -24,6 +32,7 @@ import {
   type InstanceTransformInput,
   type InstanceTransformUpdate,
   type RawInstanceWriter,
+  type Vec3Like,
   toInstanceId
 } from "./types.js";
 
@@ -275,6 +284,51 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return true;
   }
 
+  getPosition(id: InstanceId, out?: Float32Array): Float32Array {
+    return getMat4Position(this.getMatrix(id), out);
+  }
+
+  getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined {
+    const matrix = this.getMatrixOrUndefined(id);
+    return matrix ? getMat4Position(matrix, out) : undefined;
+  }
+
+  setPosition(id: InstanceId, position: Vec3Like): void {
+    this.setMatrix(id, withMat4Position(this.getMatrix(id), position));
+  }
+
+  trySetPosition(id: InstanceId, position: Vec3Like): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setPosition(id, position);
+    return true;
+  }
+
+  translate(id: InstanceId, delta: Vec3Like): void {
+    this.setMatrix(id, translateMat4(this.getMatrix(id), delta));
+  }
+
+  tryTranslate(id: InstanceId, delta: Vec3Like): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.translate(id, delta);
+    return true;
+  }
+
+  setScale(id: InstanceId, scale: Vec3Like | number): void {
+    this.setMatrix(id, withMat4Scale(this.getMatrix(id), scale));
+  }
+
+  trySetScale(id: InstanceId, scale: Vec3Like | number): boolean {
+    if (!this.has(id)) {
+      return false;
+    }
+    this.setScale(id, scale);
+    return true;
+  }
+
   setMatrices(items: Iterable<InstanceMatrixUpdate>): void {
     this.batch((writer) => {
       for (const item of items) {
@@ -387,6 +441,9 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
       callback({
         setMatrix: (id, matrix) => this.setMatrix(id, matrix),
         setTransform: (id, transform) => this.setTransform(id, transform),
+        setPosition: (id, position) => this.setPosition(id, position),
+        translate: (id, delta) => this.translate(id, delta),
+        setScale: (id, scale) => this.setScale(id, scale),
         setVisible: (id, visible) => this.setVisible(id, visible),
         setMetadata: (id, metadata) => this.setMetadata(id, metadata)
       });

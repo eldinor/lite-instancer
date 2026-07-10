@@ -131,6 +131,8 @@ The important part is helping users predict where methods live.
 
 ### Transform Convenience
 
+Status: implemented for position reads/writes, translation, and scale updates.
+
 The transform utilities are already useful, but users will likely want object-level helpers that avoid manual matrix composition.
 
 Possible additions:
@@ -243,4 +245,3 @@ Add examples for:
 4. Non-throwing `try*` methods.
 5. VAT API consistency pass.
 6. Dirty-slot tracking for hierarchy sync.
-

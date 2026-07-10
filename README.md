@@ -93,6 +93,18 @@ boxes.setVisibleMany(ids, false);
 
 For stale IDs from UI or network state, use non-throwing helpers such as `trySetTransform`, `trySetVisible`, `trySetMetadata`, `getMatrixOrUndefined`, and `getVisibleOrUndefined`.
 
+## Transform Helpers
+
+Use position and scale helpers when you do not need to build a full matrix yourself:
+
+```ts
+boxes.setPosition(id, [2, 0, 1]);
+boxes.translate(id, [0, 1, 0]);
+boxes.setScale(id, 1.5);
+
+const position = boxes.getPosition(id);
+```
+
 ## Visibility
 
 `"active-count"` keeps visible instances packed at the front of the buffer. It is fast for rendering, but hiding/showing/removing instances can swap slots.

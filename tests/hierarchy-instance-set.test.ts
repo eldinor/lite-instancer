@@ -76,4 +76,30 @@ describe("HierarchyInstanceSet", () => {
     expect(set.removeMany([b!, missing])).toBe(1);
     expect(set.has(b!)).toBe(false);
   });
+
+  it("supports transform convenience helpers for hierarchy instances", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const root = { children: [], worldMatrix: new Float32Array(16), worldMatrixVersion: 0 } as never;
+    const set = createHierarchyInstanceSet(root, { capacity: 2, visibleStrategy: "scale-zero" });
+    const id = set.create({ position: [1, 2, 3], scale: 2 });
+    const missing = toInstanceId(999);
+
+    expect(Array.from(set.getPosition(id))).toEqual([1, 2, 3]);
+    expect(set.getPositionOrUndefined(missing)).toBeUndefined();
+
+    set.setPosition(id, [4, 5, 6]);
+    set.translate(id, [1, -2, 3]);
+    set.setScale(id, [3, 4, 5]);
+
+    const matrix = set.getMatrix(id);
+    expect(Array.from(set.getPosition(id))).toEqual([5, 3, 9]);
+    expect(matrix[0]).toBe(3);
+    expect(matrix[5]).toBe(4);
+    expect(matrix[10]).toBe(5);
+
+    expect(set.trySetPosition(missing, [0, 0, 0])).toBe(false);
+    expect(set.tryTranslate(missing, [1, 1, 1])).toBe(false);
+    expect(set.trySetScale(missing, 1)).toBe(false);
+  });
 });

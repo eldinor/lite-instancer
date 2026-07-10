@@ -159,4 +159,33 @@ describe("InstanceSet", () => {
     expect(instances.removeMany([a!, missing])).toBe(1);
     expect(instances.has(a!)).toBe(false);
   });
+
+  it("supports transform convenience helpers", async () => {
+    const { createInstanceSet } = await import("../src/instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const mesh = {} as never;
+    const instances = createInstanceSet(mesh, { capacity: 2, visibleStrategy: "scale-zero" });
+    const id = instances.create({ position: [1, 2, 3], scale: 2 });
+    const missing = toInstanceId(999);
+
+    expect(Array.from(instances.getPosition(id))).toEqual([1, 2, 3]);
+    expect(instances.getPositionOrUndefined(missing)).toBeUndefined();
+
+    instances.setPosition(id, [4, 5, 6]);
+    expect(Array.from(instances.getPosition(id))).toEqual([4, 5, 6]);
+
+    instances.translate(id, [1, -2, 3]);
+    expect(Array.from(instances.getPosition(id))).toEqual([5, 3, 9]);
+
+    instances.setScale(id, [3, 4, 5]);
+    const matrix = instances.getMatrix(id);
+    expect(matrix[0]).toBe(3);
+    expect(matrix[5]).toBe(4);
+    expect(matrix[10]).toBe(5);
+    expect(Array.from(instances.getPosition(id))).toEqual([5, 3, 9]);
+
+    expect(instances.trySetPosition(missing, [0, 0, 0])).toBe(false);
+    expect(instances.tryTranslate(missing, [1, 1, 1])).toBe(false);
+    expect(instances.trySetScale(missing, 1)).toBe(false);
+  });
 });
