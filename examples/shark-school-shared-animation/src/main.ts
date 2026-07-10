@@ -61,20 +61,18 @@ const vatSet = vatEnabled && skinnedMeshes[0]
     })
   : undefined;
 const vatInstanceMesh = vatSet?.mesh;
-
-const sharks = vatInstanceMesh
-  ? vatSet.set
-  : createHierarchyInstanceSet<SharkMeta>(root, {
+const hierarchySet = vatSet ? undefined : createHierarchyInstanceSet<SharkMeta>(root, {
       capacity: 48,
       engine: ctx.engine,
       gpuCulling: true,
       visibleStrategy: "scale-zero"
     });
+const sharks = vatSet ? vatSet.set : hierarchySet!;
 
 if (vatInstanceMesh) {
   ctx.registry.register(vatInstanceMesh, sharks);
-} else if ("pool" in sharks) {
-  ctx.registry.registerMany(sharks.pool.meshes, sharks);
+} else if (hierarchySet) {
+  ctx.registry.registerMany(hierarchySet.pool.meshes, hierarchySet);
 }
 
 const ids: InstanceId[] = [];
@@ -99,13 +97,7 @@ for (let index = 0; index < sharkCount; index++) {
   };
   const movement = getSharkMovement(meta, false);
   const transform = makeSharkMatrix(movement.x, movement.y, movement.z, modelScale);
-  const id = vatSet
-    ? vatSet.create({
-        transform,
-        metadata: meta,
-        offset: 0
-      })
-    : sharks.create(transform, meta);
+  const id = createShark(transform, meta, { offset: 0 });
   ids.push(id);
 }
 
@@ -218,6 +210,17 @@ function makeMaterialsDoubleSided(meshes: ReturnType<typeof collectMeshes>): voi
 
 function hasSkeleton(mesh: Mesh): boolean {
   return !!mesh.skeleton;
+}
+
+function createShark(transform: Mat4, metadata: SharkMeta, options: { offset?: number } = {}): InstanceId {
+  if (vatSet) {
+    return vatSet.create({
+      transform,
+      metadata,
+      ...options
+    });
+  }
+  return hierarchySet!.create(transform, metadata);
 }
 
 function playVatAnimation(): void {

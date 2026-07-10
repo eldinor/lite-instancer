@@ -17,7 +17,9 @@
 
 - Updated README and docs to mention iteration, bulk operations, non-throwing helpers, the user guide, and the changelog.
 - Included `CHANGELOG.md` and `User_Guide.md` in the package file list.
+- Narrowed `PickingRegistry`'s accepted set contract to the slot lookup it actually uses, which keeps picking registration compatible with set-like wrappers.
+- VAT `batch` now avoids rebuilding per-slot playback parameters for matrix-only batches. It still resyncs playback when batched visibility changes can move slots.
 
 ### Fixed
 
-- Hardened GLB examples so they choose the loaded scene node that actually contains meshes instead of assuming `container.entities[0]` is always the model root.
+- Restored the shark examples to the known-good shared transform path while keeping VAT animation helpers from the package.

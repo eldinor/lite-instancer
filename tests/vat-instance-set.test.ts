@@ -139,4 +139,33 @@ describe("VatInstanceSet", () => {
     expect(vat.has(c!)).toBe(false);
     expect(handle.setInstances).toHaveBeenCalled();
   });
+
+  it("does not resync playback for matrix-only batches", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, { capacity: 2 });
+    const id = vat.create();
+
+    handle.setInstances.mockClear();
+    vat.batch((writer) => {
+      writer.setMatrix(id, new Float32Array(16) as never);
+    });
+
+    expect(handle.setInstances).not.toHaveBeenCalled();
+  });
+
+  it("resyncs playback when batch visibility can change slots", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, {
+      capacity: 2,
+      visibleStrategy: "active-count"
+    });
+    const id = vat.create();
+
+    handle.setInstances.mockClear();
+    vat.batch((writer) => {
+      writer.setVisible(id, false);
+    });
+
+    expect(handle.setInstances).toHaveBeenCalled();
+  });
 });

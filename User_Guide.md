@@ -347,6 +347,8 @@ boxes.batch((writer) => {
 });
 ```
 
+For VAT sets, matrix-only batches do not rebuild playback parameters. If a batch changes visibility, playback parameters resync because visibility can change slot order under `"active-count"`.
+
 ## Non-Throwing Helpers
 
 Most direct setters throw when the ID is unknown. This is useful during development because stale IDs surface quickly.
@@ -499,7 +501,7 @@ for (const visibleId of sharks.visibleIds()) {
 }
 ```
 
-The underlying `sharks.set` is still exposed when an advanced integration specifically needs the `ColoredInstanceSet`.
+The underlying `sharks.set` is still exposed when an advanced integration specifically needs the `ColoredInstanceSet`. The shark examples keep shared transform and visibility updates on `vatSet.set`, while using `vatSet` for animation controls such as clips, phase offsets, FPS, and per-frame `update`.
 
 Use the VAT wrapper for animation state:
 

@@ -1,9 +1,7 @@
 import type { Mesh, SceneNode } from "@babylonjs/lite";
-import type { HierarchyInstanceSet } from "./hierarchy-instance-set.js";
-import type { InstanceSet } from "./instance-set.js";
-import type { InstanceId } from "./types.js";
+import type { BaseInstanceSet, InstanceId } from "./types.js";
 
-export type PickableInstanceSet = InstanceSet<unknown> | HierarchyInstanceSet<unknown>;
+export type PickableInstanceSet = Pick<BaseInstanceSet<unknown>, "getIdForSlot">;
 
 /** Result after mapping a Babylon Lite thin-instance pick back to a stable instance ID. */
 export interface InstancePick {

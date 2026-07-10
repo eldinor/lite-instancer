@@ -296,8 +296,19 @@ export function createVatInstanceSet<TMetadata = unknown>(
     setColor: (id, color) => set.setColor(id, color),
     getColor: (id, out) => set.getColor(id, out),
     batch(callback) {
-      set.batch(callback);
-      api.syncInstances();
+      let needsPlaybackSync = false;
+      set.batch((writer) => {
+        callback({
+          ...writer,
+          setVisible(id, visible) {
+            writer.setVisible(id, visible);
+            needsPlaybackSync = true;
+          }
+        });
+      });
+      if (needsPlaybackSync) {
+        api.syncInstances();
+      }
     },
     editRaw: (callback) => set.editRaw(callback),
     reserve: (capacity) => set.reserve(capacity),

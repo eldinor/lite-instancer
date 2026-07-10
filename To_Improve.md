@@ -2,9 +2,9 @@
 
 Findings from a quick API review of `@litools/instancer`.
 
-Test status at review time: `npm test` passed with 6 test files and 14 tests.
+Current test status after the API pass: `npm test` passed with 6 test files and 26 tests.
 
-Note: `git status` could not be checked because Git reported the repository as a dubious ownership directory.
+Note: Git reports this directory as dubious ownership for normal commands, so repo checks use a one-shot `safe.directory` option.
 
 ## Highest-Value API Improvements
 
@@ -221,6 +221,8 @@ If iteration helpers are added, prefer exposing them from `#slotToId` rather tha
 
 ## Documentation Improvements
 
+Status: implemented in `README.md`, `docs/README.md`, and `User_Guide.md`.
+
 Add a small API decision table:
 
 | Need | Use |
@@ -235,14 +237,26 @@ Add examples for:
 
 - Iterating IDs without external arrays.
 - Bulk updates with `batch`.
-- Handling stale IDs with `try*` APIs, if added.
-- VAT transform/visibility through `.set`.
+- Handling stale IDs with `try*` APIs.
+- VAT animation controls and direct wrapper helpers.
+- When to use the underlying VAT `.set` for advanced `ColoredInstanceSet` integrations.
 
 ## Suggested Priority
 
-1. Shared base interface.
-2. Iteration helpers.
-3. Bulk operations.
-4. Non-throwing `try*` methods.
-5. VAT API consistency pass.
-6. Dirty-slot tracking for hierarchy sync.
+Completed:
+
+- Shared base interface.
+- Iteration helpers.
+- Bulk operations.
+- Non-throwing `try*` methods.
+- Transform convenience helpers.
+- Metadata query/update helpers.
+- VAT API consistency pass.
+- User guide, README, docs README, and changelog updates.
+
+Still worth considering:
+
+1. Dirty-slot tracking for hierarchy sync.
+2. Snapshot/restore helpers.
+3. Higher-level picking helpers such as hierarchy registration or nearest-point picking.
+4. Optional manager-level API for apps that coordinate several sets.

@@ -106,6 +106,8 @@ boxes.batch((writer) => {
 });
 ```
 
+For VAT sets, matrix-only batches update transforms without rebuilding playback parameters. Batched visibility changes resync playback because visibility strategies can move backing slots.
+
 Use `editRaw` only when you need direct access to the matrix/color arrays. When writing raw data, mark dirty slots yourself.
 
 ## Picking
@@ -164,7 +166,7 @@ sharks.setVisible(id, false);
 sharks.update(deltaSeconds);
 ```
 
-VAT sets expose common instance helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. Use `.set` only when you need the underlying `ColoredInstanceSet`.
+VAT sets expose common instance helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. Use `.set` when an integration specifically needs the underlying `ColoredInstanceSet`; the shark examples keep that path for shared transform updates and use the VAT wrapper for animation controls.
 
 ## Examples
 
