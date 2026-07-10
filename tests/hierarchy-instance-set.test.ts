@@ -102,4 +102,30 @@ describe("HierarchyInstanceSet", () => {
     expect(set.tryTranslate(missing, [1, 1, 1])).toBe(false);
     expect(set.trySetScale(missing, 1)).toBe(false);
   });
+
+  it("queries and updates metadata for hierarchy instances", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const root = { children: [], worldMatrix: new Float32Array(16), worldMatrixVersion: 0 } as never;
+    const set = createHierarchyInstanceSet<{ kind: "speaker" | "case"; active: boolean }>(root, { capacity: 4 });
+    const [a, b, c] = set.createMany([
+      { metadata: { kind: "speaker", active: false } },
+      { metadata: { kind: "case", active: true } },
+      { metadata: { kind: "speaker", active: true } }
+    ]);
+    const missing = toInstanceId(999);
+
+    expect(set.findByMetadata((metadata) => metadata.active)).toBe(b);
+    expect(set.filterByMetadata((metadata) => metadata.kind === "speaker").sort()).toEqual([a, c].sort());
+
+    expect(set.updateMetadata(a!, (metadata) => metadata && { ...metadata, active: true })).toEqual({
+      kind: "speaker",
+      active: true
+    });
+    expect(set.getMetadata(a!)?.active).toBe(true);
+
+    expect(set.updateMetadata(c!, () => undefined)).toBeUndefined();
+    expect(set.getMetadata(c!)).toBeUndefined();
+    expect(set.tryUpdateMetadata(missing, () => ({ kind: "case", active: false }))).toBeUndefined();
+  });
 });

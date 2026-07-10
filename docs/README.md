@@ -48,6 +48,13 @@ boxes.setVisible(id, false);
 boxes.setMetadata(id, { team: "red" });
 ```
 
+Use `findByMetadata`, `filterByMetadata`, and `updateMetadata` for common app-state queries.
+
+```ts
+const selected = boxes.filterByMetadata((metadata) => metadata.selected);
+boxes.updateMetadata(id, (metadata) => metadata && { ...metadata, selected: true });
+```
+
 ## Iteration and Bulk Helpers
 
 Use `ids`, `visibleIds`, `slots`, and `entries` to inspect live IDs in current slot order without keeping a duplicate ID array.
@@ -130,8 +137,8 @@ const picked = pickScreenSpaceInstanceFromPointer({
   canvas,
   camera,
   ids,
-  has: (id) => sharks.set.has(id),
-  isVisible: (id) => sharks.set.getVisible(id),
+  has: (id) => sharks.has(id),
+  isVisible: (id) => sharks.getVisible(id),
   getWorldPosition: (id) => getCurrentCenter(id),
   getScreenRadius: () => 32
 });
@@ -153,8 +160,11 @@ const id = sharks.create({
 
 sharks.setClip(id, "Turn");
 sharks.setPhaseOffset(id, 1.2);
+sharks.setVisible(id, false);
 sharks.update(deltaSeconds);
 ```
+
+VAT sets expose common instance helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. Use `.set` only when you need the underlying `ColoredInstanceSet`.
 
 ## Examples
 

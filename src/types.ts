@@ -63,6 +63,19 @@ export interface InstanceTransformUpdate {
   transform: InstanceTransformInput;
 }
 
+/** Metadata predicate used by query helpers. */
+export type InstanceMetadataPredicate<TMetadata = unknown> = (
+  metadata: TMetadata,
+  id: InstanceId,
+  slot: number
+) => boolean;
+
+/** Metadata updater. Return `undefined` to delete metadata for the ID. */
+export type InstanceMetadataUpdater<TMetadata = unknown> = (
+  current: TMetadata | undefined,
+  id: InstanceId
+) => TMetadata | undefined;
+
 /** Options shared by single-mesh thin instance sets. */
 export interface InstanceSetOptions {
   /** Initial number of instance slots to allocate. Defaults to 128. */
@@ -206,6 +219,14 @@ export interface BaseInstanceSet<TMetadata = unknown> {
   setMetadata(id: InstanceId, metadata: TMetadata): void;
   /** Set app metadata associated with an ID. Returns false when the ID is unknown. */
   trySetMetadata(id: InstanceId, metadata: TMetadata): boolean;
+  /** Find the first ID whose metadata matches. IDs without metadata are skipped. */
+  findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined;
+  /** Return all IDs whose metadata matches. IDs without metadata are skipped. */
+  filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[];
+  /** Update or delete metadata for an ID. Throws when the ID is unknown. */
+  updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
+  /** Update or delete metadata for an ID. Returns undefined when the ID is unknown or metadata was deleted. */
+  tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
   /** Delete app metadata for an ID. */
   deleteMetadata(id: InstanceId): boolean;
 

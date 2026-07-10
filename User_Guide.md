@@ -115,10 +115,10 @@ boxes.trySetScale(idFromUi, 1);
 const position = boxes.getPositionOrUndefined(idFromUi);
 ```
 
-These helpers are available on both single-mesh sets and hierarchy sets. For VAT sets, use the underlying `set`:
+These helpers are available on single-mesh sets, hierarchy sets, and VAT sets:
 
 ```ts
-sharks.set.translate(id, [0, 0, 1]);
+sharks.translate(id, [0, 0, 1]);
 ```
 
 ## Creating Hierarchy Instances
@@ -253,6 +253,49 @@ boxes.deleteMetadata(id);
 ```
 
 Metadata is not uploaded to the GPU. It is app-side state associated with the stable ID.
+
+Use `findByMetadata` when you need the first matching ID:
+
+```ts
+const selected = boxes.findByMetadata((metadata) => metadata.selected);
+```
+
+Use `filterByMetadata` when you need every matching ID:
+
+```ts
+const blueTeam = boxes.filterByMetadata((metadata) => metadata.team === "blue");
+boxes.setVisibleMany(blueTeam, true);
+```
+
+The predicate receives metadata, ID, and current slot:
+
+```ts
+const frontSlotBlue = boxes.findByMetadata(
+  (metadata, id, slot) => metadata.team === "blue" && slot < boxes.visibleCount
+);
+```
+
+Use `updateMetadata` for small reducer-style edits:
+
+```ts
+boxes.updateMetadata(id, (metadata) =>
+  metadata ? { ...metadata, selected: !metadata.selected } : metadata
+);
+```
+
+Return `undefined` from `updateMetadata` to delete metadata for that ID:
+
+```ts
+boxes.updateMetadata(id, () => undefined);
+```
+
+Use `tryUpdateMetadata` when the ID may be stale:
+
+```ts
+boxes.tryUpdateMetadata(idFromUi, (metadata) =>
+  metadata ? { ...metadata, selected: false } : metadata
+);
+```
 
 ## Bulk Updates
 
@@ -409,9 +452,9 @@ const picked = pickScreenSpaceInstanceFromPointer({
   event,
   canvas,
   camera,
-  ids: sharks.set.visibleIds(),
-  has: (id) => sharks.set.has(id),
-  isVisible: (id) => sharks.set.getVisible(id),
+  ids: sharks.visibleIds(),
+  has: (id) => sharks.has(id),
+  isVisible: (id) => sharks.getVisible(id),
   getWorldPosition: (id) => sharkCenters.get(id),
   getScreenRadius: () => 32
 });
@@ -444,16 +487,19 @@ const id = sharks.create({
 });
 ```
 
-Use the underlying `set` for transforms, visibility, metadata, colors, iteration, and bulk helpers:
+Use common instance helpers directly for transforms, visibility, metadata, colors, iteration, and bulk updates:
 
 ```ts
-sharks.set.setTransform(id, { position: [1, 0, 0] });
-sharks.set.setVisible(id, false);
+sharks.setTransform(id, { position: [1, 0, 0] });
+sharks.setVisible(id, false);
+sharks.setMetadata(id, { label: "hidden shark" });
 
-for (const visibleId of sharks.set.visibleIds()) {
+for (const visibleId of sharks.visibleIds()) {
   updateSharkLabel(visibleId);
 }
 ```
+
+The underlying `sharks.set` is still exposed when an advanced integration specifically needs the `ColoredInstanceSet`.
 
 Use the VAT wrapper for animation state:
 

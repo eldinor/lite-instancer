@@ -61,6 +61,16 @@ boxes.setVisible(id, false);
 boxes.setMetadata(id, { team: "red" });
 ```
 
+Use metadata helpers to query or update app state attached to IDs:
+
+```ts
+const selected = boxes.filterByMetadata((metadata) => metadata.selected);
+
+boxes.updateMetadata(id, (metadata) =>
+  metadata ? { ...metadata, selected: true } : metadata
+);
+```
+
 ## Iteration and Bulk Helpers
 
 Use `ids`, `visibleIds`, `slots`, and `entries` when you want the set to be the source of truth for live IDs:
@@ -158,8 +168,8 @@ const picked = pickScreenSpaceInstanceFromPointer({
   canvas,
   camera,
   ids,
-  has: (id) => sharks.set.has(id),
-  isVisible: (id) => sharks.set.getVisible(id),
+  has: (id) => sharks.has(id),
+  isVisible: (id) => sharks.getVisible(id),
   getWorldPosition: (id) => getCurrentCenter(id),
   getScreenRadius: () => 32
 });
@@ -181,8 +191,11 @@ const id = sharks.create({
 
 sharks.setClip(id, "Turn");
 sharks.setPhaseOffset(id, 1.2);
+sharks.setVisible(id, false);
 sharks.update(deltaSeconds);
 ```
+
+VAT sets expose the common instance-set helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. The underlying `sharks.set` remains available for advanced integrations.
 
 ## Examples
 

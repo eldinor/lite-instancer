@@ -188,4 +188,32 @@ describe("InstanceSet", () => {
     expect(instances.tryTranslate(missing, [1, 1, 1])).toBe(false);
     expect(instances.trySetScale(missing, 1)).toBe(false);
   });
+
+  it("queries and updates metadata by stable id", async () => {
+    const { createInstanceSet } = await import("../src/instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const mesh = {} as never;
+    const instances = createInstanceSet<{ team: "blue" | "red"; selected: boolean }>(mesh, { capacity: 4 });
+    const [a, b, c] = instances.createMany([
+      { metadata: { team: "blue", selected: false } },
+      { metadata: { team: "red", selected: true } },
+      { metadata: { team: "blue", selected: true } }
+    ]);
+    const noMetadata = instances.create();
+    const missing = toInstanceId(999);
+
+    expect(instances.findByMetadata((metadata) => metadata.selected)).toBe(b);
+    expect(instances.filterByMetadata((metadata) => metadata.team === "blue").sort()).toEqual([a, c].sort());
+    expect(instances.filterByMetadata(() => true)).not.toContain(noMetadata);
+
+    expect(instances.updateMetadata(a!, (metadata) => metadata && { ...metadata, selected: true })).toEqual({
+      team: "blue",
+      selected: true
+    });
+    expect(instances.getMetadata(a!)?.selected).toBe(true);
+
+    expect(instances.updateMetadata(c!, () => undefined)).toBeUndefined();
+    expect(instances.getMetadata(c!)).toBeUndefined();
+    expect(instances.tryUpdateMetadata(missing, () => ({ team: "red", selected: false }))).toBeUndefined();
+  });
 });

@@ -3,12 +3,27 @@ import {
   bakeVat,
   type AnimationGroup,
   type EngineContext,
+  type Mat4,
   type Mesh,
   type VatClip,
   type VatHandle
 } from "@babylonjs/lite";
 import { createInstanceSet, type ColoredInstanceSet } from "./instance-set.js";
-import type { InstanceId, InstanceSetOptions, InstanceTransformInput } from "./types.js";
+import type {
+  InstanceBatchWriter,
+  InstanceColorInput,
+  InstanceEntry,
+  InstanceId,
+  InstanceMatrixUpdate,
+  InstanceMetadataPredicate,
+  InstanceMetadataUpdater,
+  InstanceSetOptions,
+  InstanceSlotEntry,
+  InstanceTransformInput,
+  InstanceTransformUpdate,
+  RawInstanceWriter,
+  Vec3Like
+} from "./types.js";
 
 /** Options for a VAT-backed animated instance set. */
 export interface VatInstanceSetOptions extends Omit<InstanceSetOptions, "gpuCulling"> {
@@ -52,13 +67,74 @@ export interface VatInstanceSet<TMetadata = unknown> {
   readonly clips: Record<string, VatClip>;
   /** Shared default clip used by instances without a per-instance clip override. */
   readonly activeClip: string | undefined;
+  /** Number of live animated IDs, visible or hidden. */
+  readonly count: number;
+  /** Allocated instance capacity. */
+  readonly capacity: number;
+  /** Number of currently visible animated IDs. */
+  readonly visibleCount: number;
 
   /** Create an animated instance and return its stable ID. */
   create(options?: VatInstanceCreateOptions<TMetadata>): InstanceId;
+  /** Create many animated instances and return IDs in input order. */
+  createMany(items: Iterable<VatInstanceCreateOptions<TMetadata>>): InstanceId[];
   /** Remove an animated instance. */
   remove(id: InstanceId): boolean;
+  /** Remove many animated instances. Returns the number actually removed. */
+  removeMany(ids: Iterable<InstanceId>): number;
   /** Remove every animated instance. */
   clear(): void;
+  /** Check whether an animated ID still exists. */
+  has(id: InstanceId): boolean;
+  /** Get the current backing slot for an ID. */
+  getSlot(id: InstanceId): number | undefined;
+  /** Get the ID currently occupying a backing slot. */
+  getIdForSlot(slot: number): InstanceId | undefined;
+  /** Iterate all live IDs in current slot order. */
+  ids(): IterableIterator<InstanceId>;
+  /** Iterate visible live IDs in current slot order. */
+  visibleIds(): IterableIterator<InstanceId>;
+  /** Iterate all live ID/slot pairs in current slot order. */
+  slots(): IterableIterator<InstanceSlotEntry>;
+  /** Iterate all live IDs with slots and metadata in current slot order. */
+  entries(): IterableIterator<InstanceEntry<TMetadata>>;
+  /** Run a callback for every live ID in current slot order. */
+  forEach(callback: (id: InstanceId, slot: number) => void): void;
+  setMatrix(id: InstanceId, matrix: Mat4): void;
+  trySetMatrix(id: InstanceId, matrix: Mat4): boolean;
+  getMatrix(id: InstanceId, out?: Mat4): Mat4;
+  getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined;
+  setTransform(id: InstanceId, transform: InstanceTransformInput): void;
+  trySetTransform(id: InstanceId, transform: InstanceTransformInput): boolean;
+  getPosition(id: InstanceId, out?: Float32Array): Float32Array;
+  getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined;
+  setPosition(id: InstanceId, position: Vec3Like): void;
+  trySetPosition(id: InstanceId, position: Vec3Like): boolean;
+  translate(id: InstanceId, delta: Vec3Like): void;
+  tryTranslate(id: InstanceId, delta: Vec3Like): boolean;
+  setScale(id: InstanceId, scale: Vec3Like | number): void;
+  trySetScale(id: InstanceId, scale: Vec3Like | number): boolean;
+  setMatrices(items: Iterable<InstanceMatrixUpdate>): void;
+  setTransforms(items: Iterable<InstanceTransformUpdate>): void;
+  getVisible(id: InstanceId): boolean;
+  getVisibleOrUndefined(id: InstanceId): boolean | undefined;
+  setVisible(id: InstanceId, visible: boolean): void;
+  trySetVisible(id: InstanceId, visible: boolean): boolean;
+  setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void;
+  getMetadata(id: InstanceId): TMetadata | undefined;
+  setMetadata(id: InstanceId, metadata: TMetadata): void;
+  trySetMetadata(id: InstanceId, metadata: TMetadata): boolean;
+  findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined;
+  filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[];
+  updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
+  tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
+  deleteMetadata(id: InstanceId): boolean;
+  setColor(id: InstanceId, color: InstanceColorInput): void;
+  getColor(id: InstanceId, out?: Float32Array): Float32Array;
+  batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void;
+  editRaw(callback: (raw: RawInstanceWriter) => void): void;
+  reserve(capacity: number): void;
+  dispose(): void;
   /** Return the shared default clip data. */
   getActiveClip(): VatClip | undefined;
   /** Return an instance's effective clip name, including the shared default fallback. */
@@ -111,6 +187,15 @@ export function createVatInstanceSet<TMetadata = unknown>(
     get activeClip() {
       return activeClip;
     },
+    get count() {
+      return set.count;
+    },
+    get capacity() {
+      return set.capacity;
+    },
+    get visibleCount() {
+      return set.visibleCount;
+    },
     create(createOptions = {}) {
       const id = set.create(createOptions.transform, createOptions.metadata);
       const clipName = createOptions.clip && handle.clips[createOptions.clip] ? createOptions.clip : undefined;
@@ -126,6 +211,13 @@ export function createVatInstanceSet<TMetadata = unknown>(
       api.syncInstances();
       return id;
     },
+    createMany(items) {
+      const ids: InstanceId[] = [];
+      for (const item of items) {
+        ids.push(api.create(item));
+      }
+      return ids;
+    },
     remove(id) {
       const removed = set.remove(id);
       if (removed) {
@@ -134,8 +226,83 @@ export function createVatInstanceSet<TMetadata = unknown>(
       }
       return removed;
     },
+    removeMany(ids) {
+      let removed = 0;
+      for (const id of ids) {
+        if (set.remove(id)) {
+          playback.delete(id);
+          removed++;
+        }
+      }
+      if (removed > 0) {
+        api.syncInstances();
+      }
+      return removed;
+    },
     clear() {
       set.clear();
+      playback.clear();
+      api.syncInstances();
+    },
+    has: (id) => set.has(id),
+    getSlot: (id) => set.getSlot(id),
+    getIdForSlot: (slot) => set.getIdForSlot(slot),
+    ids: () => set.ids(),
+    visibleIds: () => set.visibleIds(),
+    slots: () => set.slots(),
+    entries: () => set.entries(),
+    forEach: (callback) => set.forEach(callback),
+    setMatrix: (id, matrix) => set.setMatrix(id, matrix),
+    trySetMatrix: (id, matrix) => set.trySetMatrix(id, matrix),
+    getMatrix: (id, out) => set.getMatrix(id, out),
+    getMatrixOrUndefined: (id, out) => set.getMatrixOrUndefined(id, out),
+    setTransform: (id, transform) => set.setTransform(id, transform),
+    trySetTransform: (id, transform) => set.trySetTransform(id, transform),
+    getPosition: (id, out) => set.getPosition(id, out),
+    getPositionOrUndefined: (id, out) => set.getPositionOrUndefined(id, out),
+    setPosition: (id, position) => set.setPosition(id, position),
+    trySetPosition: (id, position) => set.trySetPosition(id, position),
+    translate: (id, delta) => set.translate(id, delta),
+    tryTranslate: (id, delta) => set.tryTranslate(id, delta),
+    setScale: (id, scale) => set.setScale(id, scale),
+    trySetScale: (id, scale) => set.trySetScale(id, scale),
+    setMatrices: (items) => set.setMatrices(items),
+    setTransforms: (items) => set.setTransforms(items),
+    getVisible: (id) => set.getVisible(id),
+    getVisibleOrUndefined: (id) => set.getVisibleOrUndefined(id),
+    setVisible(id, visible) {
+      set.setVisible(id, visible);
+      api.syncInstances();
+    },
+    trySetVisible(id, visible) {
+      const updated = set.trySetVisible(id, visible);
+      if (updated) {
+        api.syncInstances();
+      }
+      return updated;
+    },
+    setVisibleMany(ids, visible) {
+      set.setVisibleMany(ids, visible);
+      api.syncInstances();
+    },
+    getMetadata: (id) => set.getMetadata(id),
+    setMetadata: (id, metadata) => set.setMetadata(id, metadata),
+    trySetMetadata: (id, metadata) => set.trySetMetadata(id, metadata),
+    findByMetadata: (predicate) => set.findByMetadata(predicate),
+    filterByMetadata: (predicate) => set.filterByMetadata(predicate),
+    updateMetadata: (id, updater) => set.updateMetadata(id, updater),
+    tryUpdateMetadata: (id, updater) => set.tryUpdateMetadata(id, updater),
+    deleteMetadata: (id) => set.deleteMetadata(id),
+    setColor: (id, color) => set.setColor(id, color),
+    getColor: (id, out) => set.getColor(id, out),
+    batch(callback) {
+      set.batch(callback);
+      api.syncInstances();
+    },
+    editRaw: (callback) => set.editRaw(callback),
+    reserve: (capacity) => set.reserve(capacity),
+    dispose() {
+      set.dispose();
       playback.clear();
       api.syncInstances();
     },

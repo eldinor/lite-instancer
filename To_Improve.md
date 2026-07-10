@@ -101,11 +101,9 @@ That would make stale-ID handling cleaner for apps with UI state, network state,
 
 ### 5. Make VAT API Feel More Consistent
 
-`VatInstanceSet` exposes the underlying instance set as `.set`, while normal and hierarchy sets expose operations directly.
+Status: implemented with direct wrappers for common instance-set operations while keeping `.set` available.
 
-Both styles are defensible, but the current difference is noticeable.
-
-Option A: re-expose common instance operations directly:
+`VatInstanceSet` now exposes common instance operations directly:
 
 ```ts
 has(id: InstanceId): boolean;
@@ -113,19 +111,20 @@ setTransform(id: InstanceId, transform: InstanceTransformInput): void;
 setVisible(id: InstanceId, visible: boolean): void;
 getMetadata(id: InstanceId): TMetadata | undefined;
 setMetadata(id: InstanceId, metadata: TMetadata): void;
+setColor(id: InstanceId, color: InstanceColorInput): void;
 ```
 
-Option B: make the composition model explicit in docs:
+Typical usage now looks like:
 
 ```ts
-vat.set.setTransform(id, transform);
-vat.set.setVisible(id, false);
-vat.set.setMetadata(id, metadata);
+vat.setTransform(id, transform);
+vat.setVisible(id, false);
+vat.setMetadata(id, metadata);
 vat.setColor(id, color);
-vat.animation.setClip(id, clip);
+vat.setClip(id, clip);
 ```
 
-The important part is helping users predict where methods live.
+The underlying `.set` remains available for advanced integrations that specifically need the `ColoredInstanceSet`.
 
 ## Possible New Functions
 
@@ -149,6 +148,8 @@ setRotationQuaternion(id: InstanceId, rotation: QuatLike): void;
 These would make the library feel more like logical object management and less like direct buffer management.
 
 ### Metadata Queries
+
+Status: implemented for query, filter, update, and non-throwing update helpers.
 
 Metadata is already supported; query helpers would make it more useful.
 

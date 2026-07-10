@@ -75,4 +75,68 @@ describe("VatInstanceSet", () => {
     expect(vat.getClip(overridden)).toBe("Turn");
     expect(vat.setClip(overridden, "Missing")).toBe(false);
   });
+
+  it("exposes common instance-set operations directly", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const vat = createVatInstanceSet<{ label: string; selected: boolean }>(
+      {} as never,
+      {} as never,
+      [] as never,
+      { capacity: 4, colors: true }
+    );
+    const [a, b] = vat.createMany([
+      { transform: { position: [1, 2, 3], scale: 1 }, metadata: { label: "a", selected: false } },
+      { transform: { position: [4, 5, 6], scale: 1 }, metadata: { label: "b", selected: true } }
+    ]);
+    const missing = toInstanceId(999);
+
+    expect(vat.count).toBe(2);
+    expect(vat.has(a!)).toBe(true);
+    expect(vat.getIdForSlot(vat.getSlot(b!) ?? -1)).toBe(b);
+    expect(Array.from(vat.ids()).sort()).toEqual([a, b].sort());
+    expect(vat.findByMetadata((metadata) => metadata.selected)).toBe(b);
+
+    vat.setPosition(a!, [7, 8, 9]);
+    vat.translate(a!, [1, -2, 3]);
+    vat.setScale(a!, [2, 3, 4]);
+    vat.setColor(a!, [1, 0, 0, 1]);
+    vat.updateMetadata(a!, (metadata) => metadata && { ...metadata, selected: true });
+
+    const matrix = vat.getMatrix(a!);
+    expect(Array.from(vat.getPosition(a!))).toEqual([8, 6, 12]);
+    expect(matrix[0]).toBe(2);
+    expect(matrix[5]).toBe(3);
+    expect(matrix[10]).toBe(4);
+    expect(vat.getMetadata(a!)?.selected).toBe(true);
+    expect(Array.from(vat.getColor(a!))).toEqual([1, 0, 0, 1]);
+
+    expect(vat.trySetVisible(missing, false)).toBe(false);
+    expect(vat.getMatrixOrUndefined(missing)).toBeUndefined();
+  });
+
+  it("syncs playback after direct visibility and bulk removal wrappers", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet<{ label: string }>({} as never, {} as never, [] as never, {
+      capacity: 4,
+      visibleStrategy: "active-count"
+    });
+    const [a, b, c] = vat.createMany([
+      { metadata: { label: "a" }, clip: "Swim", offset: 1, fps: 20 },
+      { metadata: { label: "b" }, clip: "Turn", offset: 2, fps: 10 },
+      { metadata: { label: "c" }, clip: "Swim", offset: 3, fps: 21 }
+    ]);
+
+    handle.setInstances.mockClear();
+    vat.setVisible(b!, false);
+
+    expect(vat.getVisible(b!)).toBe(false);
+    expect(handle.setInstances).toHaveBeenCalled();
+
+    handle.setInstances.mockClear();
+    expect(vat.removeMany([a!, c!])).toBe(2);
+    expect(vat.has(a!)).toBe(false);
+    expect(vat.has(c!)).toBe(false);
+    expect(handle.setInstances).toHaveBeenCalled();
+  });
 });

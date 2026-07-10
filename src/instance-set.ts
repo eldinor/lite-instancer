@@ -29,6 +29,8 @@ import {
   type InstanceColorInput,
   type InstanceId,
   type InstanceMatrixUpdate,
+  type InstanceMetadataPredicate,
+  type InstanceMetadataUpdater,
   type InstanceSetOptions,
   type InstanceSlotEntry,
   type InstanceTransformInput,
@@ -441,6 +443,45 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     }
     this.setMetadata(id, metadata);
     return true;
+  }
+
+  findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined {
+    for (const { id, slot } of this.slots()) {
+      const metadata = this.#metadata.get(id);
+      if (metadata !== undefined && predicate(metadata, id, slot)) {
+        return id;
+      }
+    }
+    return undefined;
+  }
+
+  filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[] {
+    const ids: InstanceId[] = [];
+    for (const { id, slot } of this.slots()) {
+      const metadata = this.#metadata.get(id);
+      if (metadata !== undefined && predicate(metadata, id, slot)) {
+        ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    assertKnownId(id, this.#idToSlot.get(id));
+    const next = updater(this.#metadata.get(id), id);
+    if (next === undefined) {
+      this.#metadata.delete(id);
+      return undefined;
+    }
+    this.#metadata.set(id, next);
+    return next;
+  }
+
+  tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.updateMetadata(id, updater);
   }
 
   deleteMetadata(id: InstanceId): boolean {
