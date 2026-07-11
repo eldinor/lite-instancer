@@ -56,6 +56,37 @@
         color: #cbd5e1;
         background: #171c22;
       }
+      .credits {
+        position: fixed;
+        right: 16px;
+        bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .credits a {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #8f9aaa;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .credits a:hover {
+        background: transparent;
+        color: #e8edf2;
+      }
+      .github-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .github-link svg {
+        width: 15px;
+        height: 15px;
+        fill: currentColor;
+      }
     </style>
   </head>
   <body>
@@ -78,5 +109,14 @@
         <li><a href="/examples/dist-vat-acrobatic-plane/">Dist VAT Acrobatic Plane <small>Imports the built package from dist and animates acrobatic plane VAT instances.</small></a></li>
       </ul>
     </main>
+    <div class="credits">
+      <a href="https://babylonpress.org/" target="_blank" rel="noreferrer">Created by BabylonPress</a>
+      <a class="github-link" href="https://github.com/eldinor/lite-instancer" target="_blank" rel="noreferrer" aria-label="eldinor/lite-instancer on GitHub">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 0.2a8 8 0 0 0-2.5 15.6c0.4 0.1 0.5-0.2 0.5-0.4v-1.4c-2.1 0.5-2.5-0.9-2.5-0.9-0.3-0.8-0.8-1-0.8-1-0.7-0.5 0.1-0.5 0.1-0.5 0.7 0.1 1.1 0.8 1.1 0.8 0.7 1.1 1.8 0.8 2.2 0.6 0.1-0.5 0.3-0.8 0.5-1-1.7-0.2-3.4-0.8-3.4-3.7 0-0.8 0.3-1.5 0.8-2-0.1-0.2-0.3-1 0.1-2 0 0 0.6-0.2 2.1 0.8a7.2 7.2 0 0 1 3.8 0c1.5-1 2.1-0.8 2.1-0.8 0.4 1 0.2 1.8 0.1 2 0.5 0.5 0.8 1.2 0.8 2 0 2.9-1.8 3.5-3.4 3.7 0.3 0.2 0.5 0.7 0.5 1.4v2.1c0 0.2 0.1 0.5 0.5 0.4A8 8 0 0 0 8 0.2Z" />
+        </svg>
+        <span>eldinor/lite-instancer</span>
+      </a>
+    </div>
   </body>
 </html>

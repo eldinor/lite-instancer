@@ -2,8 +2,14 @@
   "name": "@litools/instancer",
   "version": "0.1.0",
   "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.",
+  "homepage": "https://instancer.babylonpress.org/",
   "type": "module",
   "license": "MIT",
+  "author": {
+    "name": "Andrei Stepanov",
+    "email": "eldinor@gmail.com",
+    "url": "https://babylonpress.org/"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -23,8 +29,10 @@
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
+    "build:examples": "npm run build && vite build --config vite.examples.config.ts",
     "docs": "typedoc",
     "dev": "vite --host 0.0.0.0",
+    "preview:examples": "vite preview --host 0.0.0.0 --outDir examples-dist",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
