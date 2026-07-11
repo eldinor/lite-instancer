@@ -5,7 +5,11 @@ vi.mock("@babylonjs/lite", () => ({
   setHierarchyInstanceCount: vi.fn((pool, count) => {
     pool.count = count;
   }),
-  setHierarchyInstanceMatrix: vi.fn(),
+  setHierarchyInstanceMatrix: vi.fn((pool, index) => {
+    if (index >= pool.count) {
+      throw new Error("setHierarchyInstanceMatrix index must reference an active hierarchy instance");
+    }
+  }),
   invalidateRenderBundles: vi.fn(),
   enableThinInstanceGpuCulling: vi.fn()
 }));
@@ -101,6 +105,24 @@ describe("HierarchyInstanceSet", () => {
     expect(set.trySetPosition(missing, [0, 0, 0])).toBe(false);
     expect(set.tryTranslate(missing, [1, 1, 1])).toBe(false);
     expect(set.trySetScale(missing, 1)).toBe(false);
+  });
+
+  it("activates scale-zero hierarchy slots before syncing their matrix", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const { setHierarchyInstanceCount, setHierarchyInstanceMatrix } = await import("@babylonjs/lite");
+    const syncCount = vi.mocked(setHierarchyInstanceCount);
+    const syncMatrix = vi.mocked(setHierarchyInstanceMatrix);
+    const root = { children: [], worldMatrix: new Float32Array(16), worldMatrixVersion: 0 } as never;
+    const set = createHierarchyInstanceSet(root, { capacity: 2, visibleStrategy: "scale-zero" });
+
+    syncCount.mockClear();
+    syncMatrix.mockClear();
+
+    set.create({ position: [1, 0, 0] });
+
+    expect(syncCount).toHaveBeenCalledWith(set.pool, 1);
+    expect(syncMatrix).toHaveBeenCalledTimes(1);
+    expect(syncMatrix.mock.invocationCallOrder[0]).toBeGreaterThan(syncCount.mock.invocationCallOrder[0] ?? 0);
   });
 
   it("syncs only dirty hierarchy slots for direct matrix updates", async () => {

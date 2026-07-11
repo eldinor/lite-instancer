@@ -114,6 +114,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     const matrix = composeMat4(transform);
     const { id, slot } = this.#slots.create(metadata);
     this.#writeMatrixAt(slot, matrix);
+    this.#markCountDirty();
     this.setVisible(id, true);
     this.#markSlotDirty(slot);
     this.#flushDirtyIfReady();
