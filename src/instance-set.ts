@@ -11,7 +11,8 @@ import {
   type Mat4,
   type Mesh
 } from "@babylonjs/lite";
-import { assertKnownId, assertValidCapacity, InstancerError } from "./errors.js";
+import { assertValidCapacity, InstancerError } from "./errors.js";
+import { InstanceSlotStore } from "./slot-store.js";
 import {
   composeMat4,
   copyMat4,
@@ -36,8 +37,7 @@ import {
   type InstanceTransformInput,
   type InstanceTransformUpdate,
   type RawInstanceWriter,
-  type Vec3Like,
-  toInstanceId
+  type Vec3Like
 } from "./types.js";
 
 /**
@@ -72,14 +72,9 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   readonly mesh: Mesh;
 
   #capacity: number;
-  #count = 0;
-  #visibleCount = 0;
-  #nextId = 1;
+  #slots = new InstanceSlotStore<TMetadata>("instance");
   #matrices: Float32Array;
   #colors: Float32Array | undefined;
-  #idToSlot = new Map<InstanceId, number>();
-  #slotToId: InstanceId[] = [];
-  #metadata = new Map<InstanceId, TMetadata>();
   #hiddenMatrices = new Map<InstanceId, Mat4>();
   #visibleStrategy: "active-count" | "scale-zero";
   #grow: "none" | "double" | "exact";
@@ -109,7 +104,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   get count(): number {
-    return this.#count;
+    return this.#slots.count;
   }
 
   get capacity(): number {
@@ -118,23 +113,16 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   get visibleCount(): number {
     if (this.#visibleStrategy === "scale-zero") {
-      return this.#count - this.#hiddenMatrices.size;
+      return this.#slots.count - this.#hiddenMatrices.size;
     }
-    return this.#visibleCount;
+    return this.#slots.visibleCount;
   }
 
   create(transform?: InstanceTransformInput, metadata?: TMetadata): InstanceId {
-    this.#ensureCapacity(this.#count + 1);
-    const id = toInstanceId(this.#nextId++);
+    this.#ensureCapacity(this.#slots.count + 1);
     const matrix = composeMat4(transform);
-    const slot = this.#count++;
-
-    this.#slotToId[slot] = id;
-    this.#idToSlot.set(id, slot);
+    const { id, slot } = this.#slots.create(metadata);
     this.#writeMatrixAt(slot, matrix);
-    if (metadata !== undefined) {
-      this.#metadata.set(id, metadata);
-    }
 
     this.setVisible(id, true);
     this.#syncDrawCount();
@@ -143,32 +131,18 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   createMany(items: Iterable<InstanceCreateInput<TMetadata>>): InstanceId[] {
     const inputs = Array.from(items);
-    this.reserve(this.#count + inputs.length);
+    this.reserve(this.#slots.count + inputs.length);
     return inputs.map((item) => this.create(item.transform, item.metadata));
   }
 
   remove(id: InstanceId): boolean {
-    const slot = this.#idToSlot.get(id);
-    if (slot === undefined) {
+    const removed =
+      this.#visibleStrategy === "active-count"
+        ? this.#slots.remove(id, (a, b) => this.#swapSlotBuffers(a, b))
+        : this.#removeScaleZero(id);
+    if (!removed) {
       return false;
     }
-
-    if (this.#visibleStrategy === "active-count" && slot < this.#visibleCount) {
-      const lastVisible = this.#visibleCount - 1;
-      this.#swapSlots(slot, lastVisible);
-      this.#visibleCount--;
-      const removedSlot = this.#visibleCount;
-      if (removedSlot !== this.#count - 1) {
-        this.#swapSlots(removedSlot, this.#count - 1);
-      }
-    } else if (slot !== this.#count - 1) {
-      this.#swapSlots(slot, this.#count - 1);
-    }
-
-    this.#count--;
-    this.#slotToId.length = this.#count;
-    this.#idToSlot.delete(id);
-    this.#metadata.delete(id);
     this.#hiddenMatrices.delete(id);
     this.#syncDrawCount();
     return true;
@@ -185,73 +159,45 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   clear(): void {
-    this.#count = 0;
-    this.#visibleCount = 0;
-    this.#slotToId = [];
-    this.#idToSlot.clear();
-    this.#metadata.clear();
+    this.#slots.clear();
     this.#hiddenMatrices.clear();
     this.#syncDrawCount();
   }
 
   has(id: InstanceId): boolean {
-    return this.#idToSlot.has(id);
+    return this.#slots.has(id);
   }
 
   getSlot(id: InstanceId): number | undefined {
-    return this.#idToSlot.get(id);
+    return this.#slots.getSlot(id);
   }
 
   getIdForSlot(slot: number): InstanceId | undefined {
-    return this.#slotToId[slot];
+    return this.#slots.getIdForSlot(slot);
   }
 
   *ids(): IterableIterator<InstanceId> {
-    for (let slot = 0; slot < this.#count; slot++) {
-      const id = this.#slotToId[slot];
-      if (id !== undefined) {
-        yield id;
-      }
-    }
+    yield* this.#slots.ids();
   }
 
   *visibleIds(): IterableIterator<InstanceId> {
-    for (let slot = 0; slot < this.#count; slot++) {
-      const id = this.#slotToId[slot];
-      if (id !== undefined && this.getVisible(id)) {
-        yield id;
-      }
-    }
+    yield* this.#slots.visibleIds((id) => this.getVisible(id));
   }
 
   *slots(): IterableIterator<InstanceSlotEntry> {
-    for (let slot = 0; slot < this.#count; slot++) {
-      const id = this.#slotToId[slot];
-      if (id !== undefined) {
-        yield { id, slot };
-      }
-    }
+    yield* this.#slots.slots();
   }
 
   *entries(): IterableIterator<InstanceEntry<TMetadata>> {
-    for (const { id, slot } of this.slots()) {
-      const metadata = this.#metadata.get(id);
-      if (metadata === undefined) {
-        yield { id, slot };
-      } else {
-        yield { id, slot, metadata };
-      }
-    }
+    yield* this.#slots.entries();
   }
 
   forEach(callback: (id: InstanceId, slot: number) => void): void {
-    for (const { id, slot } of this.slots()) {
-      callback(id, slot);
-    }
+    this.#slots.forEach(callback);
   }
 
   setMatrix(id: InstanceId, matrix: Mat4): void {
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
+    const slot = this.#slots.requireSlot(id);
     if (this.#visibleStrategy === "scale-zero" && !this.getVisible(id)) {
       this.#hiddenMatrices.set(id, copyMat4(matrix));
       return;
@@ -269,7 +215,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getMatrix(id: InstanceId, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
+    const slot = this.#slots.requireSlot(id);
     const hidden = this.#hiddenMatrices.get(id);
     if (hidden) {
       (out as Float32Array).set(hidden);
@@ -360,9 +306,8 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getVisible(id: InstanceId): boolean {
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
     if (this.#visibleStrategy === "active-count") {
-      return slot < this.#visibleCount;
+      return this.#slots.getActiveCountVisible(id);
     }
     return !this.#hiddenMatrices.has(id);
   }
@@ -375,21 +320,12 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   setVisible(id: InstanceId, visible: boolean): void {
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
+    const slot = this.#slots.requireSlot(id);
 
     if (this.#visibleStrategy === "active-count") {
-      const currentlyVisible = slot < this.#visibleCount;
-      if (currentlyVisible === visible) {
-        return;
+      if (this.#slots.setActiveCountVisible(id, visible, (a, b) => this.#swapSlotBuffers(a, b))) {
+        this.#syncDrawCount();
       }
-      if (visible) {
-        this.#swapSlots(slot, this.#visibleCount);
-        this.#visibleCount++;
-      } else {
-        this.#visibleCount--;
-        this.#swapSlots(slot, this.#visibleCount);
-      }
-      this.#syncDrawCount();
       return;
     }
 
@@ -429,63 +365,35 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getMetadata(id: InstanceId): TMetadata | undefined {
-    return this.#metadata.get(id);
+    return this.#slots.getMetadata(id);
   }
 
   setMetadata(id: InstanceId, metadata: TMetadata): void {
-    assertKnownId(id, this.#idToSlot.get(id));
-    this.#metadata.set(id, metadata);
+    this.#slots.setMetadata(id, metadata);
   }
 
   trySetMetadata(id: InstanceId, metadata: TMetadata): boolean {
-    if (!this.has(id)) {
-      return false;
-    }
-    this.setMetadata(id, metadata);
-    return true;
+    return this.#slots.trySetMetadata(id, metadata);
   }
 
   findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined {
-    for (const { id, slot } of this.slots()) {
-      const metadata = this.#metadata.get(id);
-      if (metadata !== undefined && predicate(metadata, id, slot)) {
-        return id;
-      }
-    }
-    return undefined;
+    return this.#slots.findByMetadata(predicate);
   }
 
   filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[] {
-    const ids: InstanceId[] = [];
-    for (const { id, slot } of this.slots()) {
-      const metadata = this.#metadata.get(id);
-      if (metadata !== undefined && predicate(metadata, id, slot)) {
-        ids.push(id);
-      }
-    }
-    return ids;
+    return this.#slots.filterByMetadata(predicate);
   }
 
   updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
-    assertKnownId(id, this.#idToSlot.get(id));
-    const next = updater(this.#metadata.get(id), id);
-    if (next === undefined) {
-      this.#metadata.delete(id);
-      return undefined;
-    }
-    this.#metadata.set(id, next);
-    return next;
+    return this.#slots.updateMetadata(id, updater);
   }
 
   tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
-    if (!this.has(id)) {
-      return undefined;
-    }
-    return this.updateMetadata(id, updater);
+    return this.#slots.tryUpdateMetadata(id, updater);
   }
 
   deleteMetadata(id: InstanceId): boolean {
-    return this.#metadata.delete(id);
+    return this.#slots.deleteMetadata(id);
   }
 
   setColor(id: InstanceId, color: InstanceColorInput): void {
@@ -494,7 +402,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       setThinInstanceColors(this.mesh, this.#colors);
       this.#requestBundleInvalidation();
     }
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
+    const slot = this.#slots.requireSlot(id);
     this.#writeColorAt(slot, color);
     if (this.#batchDepth === 0) {
       setThinInstanceColor(this.mesh, slot, color[0], color[1], color[2], color[3]);
@@ -509,7 +417,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       out.fill(1);
       return out;
     }
-    const slot = assertKnownId(id, this.#idToSlot.get(id));
+    const slot = this.#slots.requireSlot(id);
     out.set(this.#colors.subarray(slot * 4, slot * 4 + 4));
     return out;
   }
@@ -589,7 +497,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   #resize(capacity: number): void {
     const nextMatrices = new Float32Array(capacity * 16);
-    nextMatrices.set(this.#matrices.subarray(0, this.#count * 16));
+    nextMatrices.set(this.#matrices.subarray(0, this.#slots.count * 16));
     this.#matrices = nextMatrices;
     this.#capacity = capacity;
     setThinInstances(this.mesh, this.#matrices, this.#capacity);
@@ -597,7 +505,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
     if (this.#colors) {
       const nextColors = new Float32Array(capacity * 4);
-      nextColors.set(this.#colors.subarray(0, this.#count * 4));
+      nextColors.set(this.#colors.subarray(0, this.#slots.count * 4));
       this.#colors = nextColors;
       setThinInstanceColors(this.mesh, this.#colors);
       this.#requestBundleInvalidation();
@@ -606,24 +514,15 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#syncDrawCount();
   }
 
-  #swapSlots(a: number, b: number): void {
-    if (a === b) {
-      return;
-    }
-    const aId = this.#slotToId[a];
-    const bId = this.#slotToId[b];
-    if (aId === undefined || bId === undefined) {
-      throw new InstancerError("Cannot swap empty instance slots");
-    }
+  #removeScaleZero(id: InstanceId): boolean {
+    return this.#slots.remove(id, (a, b) => this.#swapSlotBuffers(a, b));
+  }
 
+  #swapSlotBuffers(a: number, b: number): void {
     this.#swapMatrix(a, b);
     if (this.#colors) {
       this.#swapColor(a, b);
     }
-    this.#slotToId[a] = bId;
-    this.#slotToId[b] = aId;
-    this.#idToSlot.set(aId, b);
-    this.#idToSlot.set(bId, a);
   }
 
   #writeMatrixAt(slot: number, matrix: Mat4): void {
@@ -664,7 +563,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   #markMatrixDirty(slot: number): void {
-    if (slot < this.#visibleCount || this.#visibleStrategy === "scale-zero") {
+    if (slot < this.#slots.visibleCount || this.#visibleStrategy === "scale-zero") {
       setThinInstanceMatrix(this.mesh, slot, this.#matrices.subarray(slot * 16, slot * 16 + 16) as Mat4);
       this.#requestBundleInvalidation();
     }
@@ -687,7 +586,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   #syncDrawCount(): void {
-    const drawCount = this.#visibleStrategy === "active-count" ? this.#visibleCount : this.#count;
+    const drawCount = this.#visibleStrategy === "active-count" ? this.#slots.visibleCount : this.#slots.count;
     setThinInstanceCount(this.mesh, drawCount);
     this.#requestBundleInvalidation();
   }

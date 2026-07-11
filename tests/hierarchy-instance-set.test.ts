@@ -103,6 +103,65 @@ describe("HierarchyInstanceSet", () => {
     expect(set.trySetScale(missing, 1)).toBe(false);
   });
 
+  it("syncs only dirty hierarchy slots for direct matrix updates", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const { setHierarchyInstanceCount, setHierarchyInstanceMatrix } = await import("@babylonjs/lite");
+    const syncCount = vi.mocked(setHierarchyInstanceCount);
+    const syncMatrix = vi.mocked(setHierarchyInstanceMatrix);
+    const root = { children: [], worldMatrix: new Float32Array(16), worldMatrixVersion: 0 } as never;
+    const set = createHierarchyInstanceSet(root, { capacity: 4, visibleStrategy: "active-count" });
+    const ids = set.createMany([
+      { transform: { position: [0, 0, 0] } },
+      { transform: { position: [1, 0, 0] } },
+      { transform: { position: [2, 0, 0] } }
+    ]);
+
+    syncCount.mockClear();
+    syncMatrix.mockClear();
+
+    set.setTransform(ids[1]!, { position: [9, 0, 0] });
+
+    expect(syncCount).not.toHaveBeenCalled();
+    expect(syncMatrix).toHaveBeenCalledTimes(1);
+    expect(syncMatrix.mock.calls[0]?.[1]).toBe(set.getSlot(ids[1]!));
+  });
+
+  it("defers hierarchy batch syncs to dirty slots and handles hidden active-count updates", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const { setHierarchyInstanceCount, setHierarchyInstanceMatrix } = await import("@babylonjs/lite");
+    const syncCount = vi.mocked(setHierarchyInstanceCount);
+    const syncMatrix = vi.mocked(setHierarchyInstanceMatrix);
+    const root = { children: [], worldMatrix: new Float32Array(16), worldMatrixVersion: 0 } as never;
+    const set = createHierarchyInstanceSet(root, { capacity: 4, visibleStrategy: "active-count" });
+    const ids = set.createMany([
+      { transform: { position: [0, 0, 0] } },
+      { transform: { position: [1, 0, 0] } },
+      { transform: { position: [2, 0, 0] } },
+      { transform: { position: [3, 0, 0] } }
+    ]);
+    const hidden = ids[1]!;
+
+    syncCount.mockClear();
+    syncMatrix.mockClear();
+    set.setVisible(hidden, false);
+
+    expect(syncCount).toHaveBeenCalledTimes(1);
+    expect(syncMatrix).toHaveBeenCalledTimes(1);
+
+    syncCount.mockClear();
+    syncMatrix.mockClear();
+    set.setTransform(hidden, { position: [9, 0, 0] });
+
+    expect(syncCount).not.toHaveBeenCalled();
+    expect(syncMatrix).not.toHaveBeenCalled();
+
+    set.setVisible(hidden, true);
+
+    expect(syncCount).toHaveBeenCalledTimes(1);
+    expect(syncMatrix).toHaveBeenCalledTimes(1);
+    expect(syncMatrix.mock.calls[0]?.[1]).toBe(set.getSlot(hidden));
+  });
+
   it("queries and updates metadata for hierarchy instances", async () => {
     const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
     const { toInstanceId } = await import("../src/types.js");
