@@ -45,14 +45,15 @@ So the package creates stable IDs:
 const id = boxes.create({ position: [0, 0, 0], scale: 1 });
 ```
 
-Internally, each manager keeps two mappings:
+Internally, the package keeps this bookkeeping in a shared `InstanceSlotStore` used by both `InstanceSet` and `HierarchyInstanceSet`:
 
 ```ts
-#idToSlot = new Map<InstanceId, number>();
-#slotToId: InstanceId[] = [];
+const slots = new InstanceSlotStore<TMetadata>("instance");
 ```
 
-When slots move, these maps are updated. Your app keeps the ID and only asks for a slot when it needs low-level Babylon Lite details:
+The store owns stable IDs, current slots, active-count visibility order, and metadata. Rendering backends still own the actual matrix/color buffers or hierarchy pool uploads.
+
+When slots move, the store updates ID/slot mappings and asks the backend to swap its slot data. Your app keeps the ID and only asks for a slot when it needs low-level Babylon Lite details:
 
 ```ts
 const slot = boxes.getSlot(id);
@@ -78,12 +79,8 @@ if (options.colors) {
 Creating an instance:
 
 ```ts
-const id = toInstanceId(this.#nextId++);
 const matrix = composeMat4(transform);
-const slot = this.#count++;
-
-this.#slotToId[slot] = id;
-this.#idToSlot.set(id, slot);
+const { id, slot } = this.#slots.create(metadata);
 this.#writeMatrixAt(slot, matrix);
 ```
 
@@ -161,15 +158,10 @@ For `active-count`, visible removal may do two swaps:
 
 For other cases, it swaps with the last live slot.
 
-The key is that `#swapSlots` swaps matrices, colors, and ID mappings together:
+The key is that the slot store decides which slots move, while the backend swaps the matching buffer data:
 
 ```ts
-this.#swapMatrix(a, b);
-this.#swapColor(a, b);
-this.#slotToId[a] = bId;
-this.#slotToId[b] = aId;
-this.#idToSlot.set(aId, b);
-this.#idToSlot.set(bId, a);
+this.#slots.remove(id, (a, b) => this.#swapSlotBuffers(a, b));
 ```
 
 That is why the app can safely keep IDs even when slots change.
@@ -189,6 +181,8 @@ boxes.batch((writer) => {
 During the callback, updates are collected. At the end, the set flushes thin-instance changes and invalidates render bundles once.
 
 Use `batch` for most app code.
+
+For hierarchy pools, batched updates also use dirty-slot tracking. Matrix-only changes upload only affected visible hierarchy slots instead of resyncing the whole visible range.
 
 ## Raw Updates
 
@@ -245,6 +239,13 @@ const id = boomboxes.create(transform, {
 ```
 
 Even if the source GLB has many child meshes, the manager treats each created hierarchy instance as one logical app object.
+
+Hierarchy updates use dirty-slot tracking for common edits:
+
+- `setMatrix` and `setTransform` mark one slot dirty
+- active-count visibility swaps mark the affected slots and count dirty
+- `batch` flushes dirty visible slots at the end
+- rebuilds and clear paths still perform a full pool sync
 
 ## Picking
 
@@ -327,11 +328,12 @@ const set = createInstanceSet(mesh, {
 });
 ```
 
-The helper exposes the underlying set:
+The helper exposes common instance-set methods directly and keeps the underlying set available:
 
 ```ts
-vatSet.set.setVisible(id, false);
-vatSet.set.setMetadata(id, metadata);
+vatSet.setVisible(id, false);
+vatSet.setMetadata(id, metadata);
+vatSet.set.setColor(id, [1, 0, 0, 1]);
 ```
 
 And animation controls:

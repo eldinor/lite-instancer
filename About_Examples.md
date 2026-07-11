@@ -1,10 +1,10 @@
 # About Examples
 
-This project includes runnable examples that show the main ways to use `@litools/instancer` with Babylon Lite.
+This project includes examples that show the main ways to use `@litools/instancer` with Babylon Lite.
 
-For code snippets and implementation notes, see `About_Examples_Extended.md`.
+For API-focused code snippets and usage notes, see `About_Examples_Extended.md`.
 
-For the package architecture behind these examples, see `How_It_Works.md`.
+For the package concepts used by these examples, see `How_It_Works.md`.
 
 Run the examples with one dev server:
 
@@ -46,7 +46,7 @@ Use it when you want to see app-level data attached to instance IDs.
 
 Path: `/examples/primitive-mixed-playground/`
 
-Shows boxes, spheres, and cylinders managed by separate `InstanceSet` managers in one scene. One picking flow resolves clicks across all managers, while each primitive type keeps its own capacity, visibility, metadata, stable IDs, and colors.
+Shows boxes, spheres, and cylinders managed by separate `InstanceSet`s in one scene. One picking flow resolves clicks across all sets, while each primitive type keeps its own capacity, visibility, metadata, stable IDs, and colors.
 
 It also has a strategy switch for comparing `active-count` and `scale-zero` visibility.
 
@@ -121,4 +121,4 @@ This is the most complete animated example and demonstrates clip, phase, fps, vi
 
 Path: `/examples/shared/`
 
-This folder is not a runnable example. It contains shared setup for the examples: scene creation, camera, lights, the debug panel, picking helpers, materials, and common styles.
+This folder is not an example. It contains shared setup for the examples: scene creation, camera, lights, the debug panel, picking helpers, materials, and common styles.

@@ -218,7 +218,7 @@ Then open the root examples page. Useful demos:
 - Shark Phase Buckets: per-instance VAT phase/fps variation.
 - Shark Clip Mixer: per-instance VAT clip assignment.
 
-See `About_Examples.md` for a fuller explanation of every runnable example, and `About_Examples_Extended.md` for important code snippets from each one.
+See `About_Examples.md` for a fuller explanation of every example, and `About_Examples_Extended.md` for important code snippets from each one.
 
 ## Docs
 

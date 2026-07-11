@@ -19,7 +19,10 @@
 - Included `CHANGELOG.md` and `User_Guide.md` in the package file list.
 - Narrowed `PickingRegistry`'s accepted set contract to the slot lookup it actually uses, which keeps picking registration compatible with set-like wrappers.
 - VAT `batch` now avoids rebuilding per-slot playback parameters for matrix-only batches. It still resyncs playback when batched visibility changes can move slots.
+- Shared ID, slot, active-count visibility, metadata, and iteration bookkeeping now lives in one internal slot store used by both single-mesh and hierarchy sets.
+- `HierarchyInstanceSet` now tracks dirty slots and flushes targeted hierarchy matrix updates for common matrix, visibility, batch, and raw-edit paths.
+- Updated example docs to focus on public API usage patterns and removed internal-oriented wording.
 
 ### Fixed
 
-- Restored the shark examples to the known-good shared transform path while keeping VAT animation helpers from the package.
+- Restored the shark examples to the shared transform path while keeping VAT animation helpers from the package.

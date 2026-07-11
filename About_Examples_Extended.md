@@ -1,6 +1,6 @@
 # About Examples Extended
 
-This document explains the important code patterns behind each example. It is meant as a code-reading guide: each section shows the small piece that matters most, then explains why the example uses it.
+This document explains how each example uses the public `@litools/instancer` API. Each section highlights the API calls worth copying, then explains when that pattern is useful in an app.
 
 Run all examples from one dev server:
 
@@ -36,7 +36,7 @@ That helper runs Babylon Lite GPU picking and asks `PickingRegistry` to convert 
 
 ## Basic Thin Instances
 
-Important creation code:
+API setup:
 
 ```ts
 const tiles = createInstanceSet<TileMeta>(mesh, {
@@ -50,9 +50,9 @@ const tiles = createInstanceSet<TileMeta>(mesh, {
 ctx.registry.register(mesh, tiles);
 ```
 
-The example shows the default mental model: one mesh, one `InstanceSet`, stable numeric IDs, and a registry for picking.
+The example shows the default API model: one mesh, one `InstanceSet`, stable numeric IDs, and a registry for picking.
 
-The important metadata pattern:
+Metadata pattern:
 
 ```ts
 const id = tiles.create(makeMatrix(gridX(col), 0, gridZ(row), 1), {
@@ -82,7 +82,7 @@ This demonstrates the normal high-level update path: many ID-based updates, one 
 
 ## Primitive Box Field
 
-Important creation code:
+API setup:
 
 ```ts
 const boxes = createInstanceSet<BoxMeta>(mesh, {
@@ -120,7 +120,7 @@ Pinned boxes stop moving in the render loop. This shows how metadata can drive b
 
 ## Primitive Sphere Cloud
 
-Important creation code:
+API setup:
 
 ```ts
 const spheres = createInstanceSet<SphereMeta>(mesh, {
@@ -159,7 +159,7 @@ This is the pattern to use when your app wants semantic groups like teams, layer
 
 ## Primitive Mixed Playground
 
-Important creation code:
+API setup:
 
 ```ts
 let strategy: VisibilityStrategy = initialStrategy === "scale-zero" ? "scale-zero" : "active-count";
@@ -178,7 +178,7 @@ const layers = [
 ];
 ```
 
-The example has several independent `InstanceSet`s at once. The registry maps all source meshes to their manager:
+The example has several independent `InstanceSet`s at once. The registry maps each pickable mesh to the set that owns its IDs:
 
 ```ts
 ctx.registry.register(boxMesh, boxes).register(sphereMesh, spheres).register(cylinderMesh, cylinders);
@@ -191,7 +191,7 @@ const picked = await pickInstance(ctx, event);
 const layer = layers.find((item) => item.set === picked.set);
 ```
 
-The important color fix is storing the color seed in metadata:
+Color metadata pattern:
 
 ```ts
 layer.set.setMetadata(id, { ...meta, colorSeed });
@@ -202,7 +202,7 @@ This keeps recoloring stable even when visibility or removal causes slot swaps.
 
 ## Visibility Layers
 
-Important strategy code:
+Visibility strategy setup:
 
 ```ts
 const initialStrategy = new URLSearchParams(window.location.search).get("strategy");
@@ -265,7 +265,7 @@ instances.editRaw((raw) => {
 
 ## BoomBox Grid
 
-Important GLB loading code:
+GLB loading setup:
 
 ```ts
 const container = await loadGltf(ctx.engine, BOOMBOX_URL);
@@ -287,7 +287,7 @@ const boomboxes = createHierarchyInstanceSet<BoomBoxMeta>(root, {
 });
 ```
 
-The important matrix pattern preserves the GLB root transform:
+Matrix pattern:
 
 ```ts
 function makeBoomBoxMatrix(x: number, y: number, z: number, scale: number, yaw: number): Mat4 {
@@ -301,11 +301,11 @@ The example picks by world point and resolves to the nearest logical BoomBox:
 return findNearestVisibleBoomBox(pick.pickedPoint[0], pick.pickedPoint[2]);
 ```
 
-This is often more reliable for hierarchy assets than trusting the raw slot reported by a child mesh hit.
+This is often more reliable for hierarchy assets than selecting only from the thin-instance index reported by a child mesh hit.
 
 ## BoomBox Picker
 
-This example focuses on hierarchy picking diagnostics.
+This example focuses on the API flow for hierarchy picking.
 
 First it verifies that the picked mesh belongs to the loaded GLB root:
 
@@ -332,11 +332,11 @@ Finally it selects the logical object by picked world point:
 const logicalId = findNearestVisibleBoomBox(pick.pickedPoint[0], pick.pickedPoint[2]);
 ```
 
-The example shows that hierarchy picking can need both a root check and an app-level logical resolution step.
+The example shows that hierarchy picking can need both a root check and an app-level ID resolution step.
 
 ## BoomBox Rebuild Growth
 
-Important creation code:
+API setup:
 
 ```ts
 const boomboxes = createHierarchyInstanceSet<BoomBoxMeta>(root, {
@@ -388,7 +388,7 @@ This demonstrates how to keep picking useful after hierarchy pool rebuilds.
 
 ## Shark School Shared Animation
 
-Important VAT creation code:
+VAT setup:
 
 ```ts
 const vatSet = createVatInstanceSet<SharkMeta>(ctx.engine, skinnedMeshes[0], animationGroups, {
@@ -445,7 +445,7 @@ function applyVatPhaseBuckets(): void {
 }
 ```
 
-The important idea: one baked animation clip can look less synchronized when each instance reads a different time offset and fps.
+The API idea: one baked animation clip can look less synchronized when each instance uses a different time offset and fps.
 
 ## Shark Clip Mixer
 
@@ -504,8 +504,8 @@ This example combines stable IDs, metadata, per-instance animation clips, phase 
 
 For a normal app with one repeated mesh, start from `Basic Thin Instances`.
 
-For several primitive types in one scene, copy the layer pattern from `Primitive Mixed Playground`.
+For several primitive types in one scene, copy the multi-set pattern from `Primitive Mixed Playground`.
 
-For loaded GLB hierarchies, copy the setup from `BoomBox Grid`, then copy the picking diagnostics from `BoomBox Picker`.
+For loaded GLB hierarchies, copy the setup from `BoomBox Grid`, then copy the picking flow from `BoomBox Picker`.
 
 For animated skinned GLB instances, copy the VAT setup from `Shark School Shared Animation`, then add phase or clip control from the two later shark examples.

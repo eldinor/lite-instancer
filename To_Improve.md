@@ -2,7 +2,7 @@
 
 Findings from a quick API review of `@litools/instancer`.
 
-Current test status after the API pass: `npm test` passed with 6 test files and 26 tests.
+Current test status after the API and internals pass: `npm test` passed with 6 test files and 28 tests.
 
 Note: Git reports this directory as dubious ownership for normal commands, so repo checks use a one-shot `safe.directory` option.
 
@@ -10,9 +10,11 @@ Note: Git reports this directory as dubious ownership for normal commands, so re
 
 ### 1. Add a Shared Base Instance Interface
 
+Status: implemented.
+
 `InstanceSet` and `HierarchyInstanceSet` expose very similar app-level behavior: stable IDs, slot lookup, metadata, visibility, batching, raw editing, reserve, clear, and dispose.
 
-Consider adding a shared interface such as:
+The package now exposes a shared interface such as:
 
 ```ts
 export interface BaseInstanceSet<TMetadata = unknown> {
@@ -46,13 +48,15 @@ export interface BaseInstanceSet<TMetadata = unknown> {
 }
 ```
 
-This would make user utilities easier to write across single meshes and hierarchy pools.
+This makes user utilities easier to write across single meshes and hierarchy pools.
 
 ### 2. Add Iteration Helpers
 
-Right now users need to keep external ID arrays or loop over slots manually. That works, but it creates repeated boilerplate for picking, updates, visibility filters, UI selection, and serialization.
+Status: implemented.
 
-Useful additions:
+Users no longer need to keep external ID arrays or loop over slots manually for common set-owned iteration.
+
+Available helpers:
 
 ```ts
 ids(): Iterable<InstanceId>;
@@ -62,13 +66,15 @@ entries(): Iterable<{ id: InstanceId; slot: number; metadata?: TMetadata }>;
 forEach(callback: (id: InstanceId, slot: number) => void): void;
 ```
 
-These should probably exist on both `InstanceSet` and `HierarchyInstanceSet`.
+These exist on both `InstanceSet` and `HierarchyInstanceSet`.
 
 ### 3. Add Bulk Operations
 
-The existing `batch` API is good, but common user operations could be made more ergonomic and less error-prone.
+Status: implemented.
 
-Possible functions:
+The existing `batch` API is still available, and common user operations now have direct helpers.
+
+Available helpers:
 
 ```ts
 createMany(items: Iterable<{ transform?: InstanceTransformInput; metadata?: TMetadata }>): InstanceId[];
@@ -78,17 +84,19 @@ setTransforms(items: Iterable<{ id: InstanceId; transform: InstanceTransformInpu
 setMatrices(items: Iterable<{ id: InstanceId; matrix: Mat4 }>): void;
 ```
 
-These could internally use `batch` and reduce accidental per-instance flushing.
+These reduce repeated per-instance boilerplate in app code.
 
 ### 4. Clarify Throwing vs Non-Throwing API Behavior
 
-Current behavior is mixed:
+Status: implemented for the common stale-ID paths.
+
+The intentionally mixed behavior is now documented by paired APIs:
 
 - `remove(id)` returns `false` for unknown IDs.
 - `setMatrix`, `getMatrix`, `setVisible`, and `setMetadata` throw for unknown IDs.
 - VAT methods sometimes return `false` and sometimes no-op for unknown IDs.
 
-Consider adding explicit non-throwing alternatives:
+Non-throwing alternatives include:
 
 ```ts
 trySetMatrix(id: InstanceId, matrix: Mat4): boolean;
@@ -97,7 +105,7 @@ trySetVisible(id: InstanceId, visible: boolean): boolean;
 getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined;
 ```
 
-That would make stale-ID handling cleaner for apps with UI state, network state, or deferred operations.
+This makes stale-ID handling cleaner for apps with UI state, network state, or deferred operations.
 
 ### 5. Make VAT API Feel More Consistent
 
@@ -132,9 +140,9 @@ The underlying `.set` remains available for advanced integrations that specifica
 
 Status: implemented for position reads/writes, translation, and scale updates.
 
-The transform utilities are already useful, but users will likely want object-level helpers that avoid manual matrix composition.
+The transform utilities are already useful, and object-level helpers now avoid manual matrix composition for common movement and scale operations.
 
-Possible additions:
+Implemented helpers plus possible future rotation helpers:
 
 ```ts
 getPosition(id: InstanceId, out?: Float32Array): Float32Array;
@@ -205,19 +213,21 @@ This should remain optional. The current direct factory APIs are simple and shou
 
 ### Hierarchy Syncing
 
-`HierarchyInstanceSet` currently syncs all visible slots in `#syncVisiblePool()`.
+Status: implemented.
 
-That is simple and reliable, but for large hierarchy pools it could become expensive when only a few slots changed.
+`HierarchyInstanceSet` now tracks dirty matrix slots for targeted updates. Simple matrix edits, raw dirty marks, and active-count visibility swaps flush only affected visible slots when possible.
 
-Potential improvement:
+Current behavior:
 
-- Track dirty matrix slots during `setMatrix`, `setTransform`, visibility swaps, and raw edits.
-- During `batch`, flush only dirty visible slots.
-- Keep full sync for rebuilds, clear, and capacity changes.
+- Dirty matrix slots are tracked during `setMatrix`, `setTransform`, visibility swaps, and raw edits.
+- During `batch`, only dirty visible slots are flushed.
+- Full sync remains for rebuilds, clear, and capacity-reset paths.
 
 ### Slot Iteration Source of Truth
 
-If iteration helpers are added, prefer exposing them from `#slotToId` rather than requiring users to maintain duplicate ID arrays. This makes active-count swaps, removals, and growth easier to reason about.
+Status: implemented.
+
+Shared ID/slot/metadata bookkeeping now lives in the internal `InstanceSlotStore`. Both `InstanceSet` and `HierarchyInstanceSet` use it for stable IDs, active-count slot movement, metadata, and iteration helpers.
 
 ## Documentation Improvements
 
@@ -252,11 +262,12 @@ Completed:
 - Transform convenience helpers.
 - Metadata query/update helpers.
 - VAT API consistency pass.
+- Shared internal slot store for duplicated slot-management logic.
+- Dirty-slot tracking for hierarchy sync.
 - User guide, README, docs README, and changelog updates.
 
 Still worth considering:
 
-1. Dirty-slot tracking for hierarchy sync.
-2. Snapshot/restore helpers.
-3. Higher-level picking helpers such as hierarchy registration or nearest-point picking.
-4. Optional manager-level API for apps that coordinate several sets.
+1. Snapshot/restore helpers.
+2. Higher-level picking helpers such as hierarchy registration or nearest-point picking.
+3. Optional manager-level API for apps that coordinate several sets.
