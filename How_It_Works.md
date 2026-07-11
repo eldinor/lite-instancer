@@ -277,13 +277,13 @@ const id = set.getIdForSlot(thinInstanceIndex);
 
 For one rigid mesh, this is usually enough.
 
-For GLB hierarchies, picking can be more subtle because the hit may land on a child mesh or prototype-related mesh. In those cases, use:
+For GLB hierarchies, a click may hit one of the asset's child meshes rather than the logical object your app created. In those cases, use:
 
 ```ts
 belongsToHierarchyRoot(pickedMesh, glbRoot);
 ```
 
-Then resolve the final app ID with the picked world point or nearest logical center.
+`belongsToHierarchyRoot` first confirms that the picked mesh belongs to the expected GLB root. Then resolve the final `InstanceId` with `PickingRegistry`, the picked world point, or a nearest logical center depending on the interaction.
 
 ## Screen-Space Picking
 
