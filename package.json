@@ -37,7 +37,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.8.0"
+    "@babylonjs/lite": "^1.10.0"
   },
   "peerDependenciesMeta": {
     "@babylonjs/lite": {
@@ -45,7 +45,7 @@
     }
   },
   "devDependencies": {
-    "@babylonjs/lite": "^1.8.0",
+    "@babylonjs/lite": "^1.10.0",
     "@preact/signals": "^2.9.3",
     "@webgpu/types": "^0.1.71",
     "babylon-lite-explorer": "^0.3.1",
