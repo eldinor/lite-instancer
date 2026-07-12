@@ -3,6 +3,27 @@
   "version": "0.2.0",
   "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.",
   "homepage": "https://instancer.babylonpress.org/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eldinor/lite-instancer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eldinor/lite-instancer/issues"
+  },
+  "keywords": [
+    "babylonjs",
+    "babylon-lite",
+    "babylonjs-lite",
+    "thin-instances",
+    "instancing",
+    "instance-pool",
+    "picking",
+    "vat",
+    "vertex-animation-texture",
+    "webgl",
+    "webgpu",
+    "3d"
+  ],
   "type": "module",
   "license": "MIT",
   "author": {
@@ -11,6 +32,9 @@
     "url": "https://babylonpress.org/"
   },
   "sideEffects": false,
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,6 +50,7 @@
   "files": [
     "dist",
     "CHANGELOG.md",
+    "LICENSE",
     "docs/README.md",
     "README.md",
     "User_Guide.md"
@@ -37,7 +62,8 @@
     "dev": "vite --host 0.0.0.0",
     "preview:examples": "vite preview --host 0.0.0.0 --outDir examples-dist",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {
     "@babylonjs/lite": "^1.10.0"
@@ -54,7 +80,7 @@
     "babylon-lite-explorer": "^0.3.1",
     "preact": "^10.29.7",
     "typedoc": "^0.28.20",
-    "typescript": "^6.0.0-beta",
+    "typescript": "^6.0.3",
     "vite": "^8.1.4",
     "vitest": "^4.1.10"
   }

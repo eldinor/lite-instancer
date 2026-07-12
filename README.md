@@ -12,6 +12,10 @@ Created by [BabylonPress](https://babylonpress.org/).
 npm install @litools/instancer @babylonjs/lite
 ```
 
+## Runtime
+
+This package is ESM-only.
+
 ## Which API Should I Use?
 
 Use `createInstanceSet` for one mesh:
@@ -200,6 +204,14 @@ sharks.update(deltaSeconds);
 ```
 
 VAT sets expose common instance-set helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. The underlying `sharks.set` remains available for advanced integrations that specifically need the `ColoredInstanceSet`; the shark examples use that underlying set for their shared transform path while using `createVatInstanceSet` for animation helpers.
+
+## Cleanup
+
+Dispose an instance set when it is no longer needed:
+
+```ts
+boxes.dispose();
+```
 
 ## Examples
 
