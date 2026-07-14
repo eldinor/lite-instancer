@@ -18,7 +18,9 @@ const htmlInputs = {
   "shark-school-shared-animation": "examples/shark-school-shared-animation/index.html",
   "shark-phase-buckets": "examples/shark-phase-buckets/index.html",
   "shark-clip-mixer": "examples/shark-clip-mixer/index.html",
-  "dist-vat-acrobatic-plane": "examples/dist-vat-acrobatic-plane/index.html"
+  "dist-vat-acrobatic-plane": "examples/dist-vat-acrobatic-plane/index.html",
+  "xbot-basic-animation": "examples/xbot-basic-animation/index.html",
+  "xbot-vat-sword-sync": "examples/xbot-vat-sword-sync/index.html"
 };
 
 export default defineConfig({
