@@ -500,6 +500,50 @@ for (const id of ids) {
 
 This example combines stable IDs, metadata, per-instance animation clips, phase offsets, fps variation, visibility, and screen-space picking.
 
+## GLB VAT Socket Configurator
+
+The configurator is the end-user placement workflow for a character GLB plus a rigid attachment GLB. It discovers only nodes animated by every loaded clip:
+
+```ts
+const sockets = getVatSocketCandidates(animationGroups);
+```
+
+That all-clip filter keeps a selected socket usable after clip changes. The exported `VatAttachmentPreset` records the socket key, glTF node index, readable node name, asset references, and the user-controlled grip transform. The preview can show one character or five synchronized characters with optional phase and FPS variation.
+
+The attachment remains a full hierarchy, not a flattened mesh:
+
+```ts
+const socketKey = "right-hand";
+const attachments = createHierarchyInstanceSet(attachmentRoot, {
+  capacity: previewCount,
+  engine: ctx.engine,
+  visibleStrategy: "scale-zero"
+});
+const controller = createVatAttachmentController({
+  characters,
+  attachments,
+  socketAsset,
+  socket: socketKey
+});
+```
+
+After character playback advances, the controller samples the matching VAT frame and updates the attachment hierarchy. This is also why its per-frame call must come after `characters.update(deltaSeconds)`.
+
+## Unarmed VAT Arena Crowd
+
+The arena demonstrates how to scale a cinematic crowd without baking an entire animation library. It loads `Unarmed.glb` once per behavioral group and passes only each group's explicit clip list to `createVatCharacterSet`:
+
+```ts
+const characters = createVatCharacterSet(ctx.engine, root, selectedAnimations, {
+  capacity: 1000,
+  visibleStrategy: "scale-zero"
+});
+```
+
+There are three independent groups: vanguard runners, a melee field, and a sentry ring. Together they bake nine selected clips from the source asset's 64 clips. Each group has 1,000 allocated IDs, while density changes only visibility, from 100 visible IDs per group (300 total) to 1,000 per group (3,000 total).
+
+Transforms are written in one batch per group and VAT playback advances once per group per frame. Stable deterministic seeds, phase offsets, and small FPS variation keep the crowd from marching in lockstep.
+
 ## What To Copy First
 
 For a normal app with one repeated mesh, start from `Basic Thin Instances`.
@@ -509,3 +553,7 @@ For several primitive types in one scene, copy the multi-set pattern from `Primi
 For loaded GLB hierarchies, copy the setup from `BoomBox Grid`, then copy the picking flow from `BoomBox Picker`.
 
 For animated skinned GLB instances, copy the VAT setup from `Shark School Shared Animation`, then add phase or clip control from the two later shark examples.
+
+For a multi-part character plus a full GLB weapon, start with `GLB VAT Socket Configurator`; its exported preset and TypeScript snippet are the direct handoff to an application.
+
+For a fixed-clip large crowd, start with `Unarmed VAT Arena Crowd` and keep clip selection out of the frame loop.

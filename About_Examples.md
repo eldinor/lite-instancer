@@ -117,6 +117,30 @@ Shows per-instance VAT clip assignment. Selected instances can switch animation 
 
 This is the most complete animated example and demonstrates clip, phase, fps, visibility, and selection together.
 
+## Ready Player VAT Sword Sync
+
+Path: `/examples/xbot-vat-sword-sync/`
+
+Shows a VAT character with a rigid sword synchronized to an animated right-hand socket. It is the compact reference for the attachment-controller update order: update the character VAT playback first, then update the attachment controller.
+
+## Samba Girl VAT Sword Sync
+
+Path: `/examples/samba-girl-vat-sword-sync/`
+
+Shows the same socket workflow on the multi-part HVGirl GLB. It is useful for checking that synchronized secondary VAT meshes and glTF-to-Lite transform handling remain correct.
+
+## GLB VAT Socket Configurator
+
+Path: `/examples/glb-vat-socket-configurator/`
+
+Loads Ready Player or Samba Girl, or a local character GLB, alongside the curated Fantasy Sword or a local attachment GLB. It lists sockets animated in every clip, previews one or five characters with phase/FPS variation, exposes numeric grip translation/rotation/scale controls, and exports a portable `VatAttachmentPreset` JSON plus matching TypeScript setup.
+
+## Unarmed VAT Arena Crowd
+
+Path: `/examples/unarmed-vat-arena/`
+
+Builds a 3,000-capacity local-GLB arena from three independently baked VAT groups of up to 1,000 fighters each. It deliberately bakes only nine named clips from `Unarmed.glb`, offers density modes from 300 through 3,000, and uses `scale-zero` visibility so instance/animation slots remain aligned.
+
 ## Shared Example Code
 
 Path: `/examples/shared/`

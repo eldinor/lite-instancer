@@ -47,6 +47,20 @@ export interface VatPlaybackSample {
   alpha: number;
 }
 
+/**
+ * Minimal animated-instance surface consumed by VAT socket attachments.
+ *
+ * Both {@link VatInstanceSet} and higher-level coordinated character sets
+ * implement this, so attachment synchronization does not depend on how a
+ * character's skinned mesh parts are managed.
+ */
+export interface VatPlaybackSource {
+  has(id: InstanceId): boolean;
+  getVisible(id: InstanceId): boolean;
+  getMatrix(id: InstanceId, out?: Mat4): Mat4;
+  getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
+}
+
 /** Creation options for one VAT-backed instance. */
 export interface VatInstanceCreateOptions<TMetadata = unknown> {
   /** Initial instance transform. */
@@ -67,7 +81,7 @@ export interface VatInstanceCreateOptions<TMetadata = unknown> {
  * The helper bakes Babylon Lite animation groups, attaches VAT playback to `mesh`, and exposes an
  * underlying `ColoredInstanceSet` for transforms, metadata, visibility, colors, and picking.
  */
-export interface VatInstanceSet<TMetadata = unknown> {
+export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   /** Underlying thin instance set. Use this for transforms, visibility, metadata, colors, and IDs. */
   readonly set: ColoredInstanceSet<TMetadata>;
   /** VAT-backed mesh used by the underlying set. */

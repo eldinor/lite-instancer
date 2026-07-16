@@ -9,6 +9,8 @@ This guide explains how to use the main `@litools/instancer` APIs in an app. The
 | Repeat one mesh many times | `createInstanceSet` |
 | Repeat a loaded GLB or scene-node tree | `createHierarchyInstanceSet` |
 | Repeat one skinned mesh with VAT animation | `createVatInstanceSet` |
+| Repeat a multi-part skinned character GLB with VAT | `createVatCharacterSet` |
+| Bind a rigid GLB attachment to a VAT socket | `createVatAttachmentBinding` |
 | Resolve rigid thin-instance picks | `createPickingRegistry` |
 | Pick animated or deformed visuals by logical centers | `pickScreenSpaceInstanceFromPointer` |
 
@@ -543,6 +545,46 @@ swordAttachments.update();
 By default sockets use discrete frames, matching the current Lite VAT shader. `sampleVatSocket(..., { interpolate: true })` is available for non-VAT consumers that prefer smooth TRS interpolation.
 
 The temporary socket baker adapter uses private Babylon Lite animation-controller fields until Lite provides a public capture API.
+
+### Multi-part characters and full GLB attachments
+
+Use `createVatCharacterSet` for characters such as Samba Girl whose skinned visual is split into several meshes. One primary VAT set is canonical; all secondary VAT mesh sets automatically receive the same stable IDs, transforms, visibility, clip assignments, phase offsets, and FPS overrides.
+
+`createVatAttachmentController` accepts any `BaseInstanceSet`, so a rigid attachment can be a single mesh or a complete hierarchy created with `createHierarchyInstanceSet`.
+
+For the usual GLB-to-GLB path, `createVatAttachmentBinding` builds that hierarchy set and controller from a `VatAttachmentPreset`:
+
+```ts
+import {
+  createVatAttachmentBinding,
+  createVatCharacterSet,
+  type VatAttachmentPreset
+} from "@litools/instancer";
+
+const characters = createVatCharacterSet(engine, characterRoot, allAnimations, {
+  capacity: 300,
+  visibleStrategy: "scale-zero"
+});
+const weapon = createVatAttachmentBinding({
+  engine,
+  character: characters,
+  attachmentRoot: weaponRoot,
+  socketAsset,
+  preset: preset as VatAttachmentPreset
+});
+
+const characterId = characters.create({ clip: "Idle" });
+const weaponId = weapon.create();
+weapon.bind(characterId, weaponId);
+
+// Every render frame, after advancing the character VAT set:
+characters.update(deltaSeconds);
+weapon.update();
+```
+
+The GLB VAT Socket Configurator exports `VatAttachmentPreset` JSON. It stores a version, character and attachment asset references, the socket key/node index/node name, `clipScope: "all"`, and grip translation, pitch/yaw/roll in degrees, and XYZ scale. A locally uploaded asset is represented by its filename only. `serializeVatAttachmentPreset()` writes the JSON; `createVatAttachmentPreset()` clones it for safe application-owned state.
+
+When replacing an imported GLB/VAT preview or scene, call `disposeVatGlbAssets({ scene, containers, disposables })` with the no-longer-needed `AssetContainer`s and character/binding wrappers. Do not dispose a resource that is still shared by an active VAT character or attachment binding.
 
 ## Capacity and Growth
 

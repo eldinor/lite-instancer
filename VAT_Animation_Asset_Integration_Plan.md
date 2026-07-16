@@ -2,7 +2,9 @@
 
 ## Status
 
-Architecture and implementation plan only. No runtime API is committed by this document.
+First-release implementation completed. The runtime now includes `VatCharacterSet`, baked socket assets, the private-access-isolated Babylon Lite socket baker, `VatAttachmentController`, preset-backed hierarchy bindings, subpath exports, GLB/VAT lifecycle helpers, Ready Player and Samba Girl sword-sync examples, the GLB VAT Socket Configurator, and the Unarmed VAT Arena Crowd.
+
+The remaining external dependency is unchanged: the socket baker temporarily reads private Babylon Lite animation-controller state. The requested public Lite API is tracked separately in `Babylon_Lite_VAT_Node_Transform_Capture_Issue.md`.
 
 ## Goal
 
@@ -189,7 +191,7 @@ Socket data belongs to a rig, but the current `createVatInstanceSet()` represent
 
 Do not duplicate socket tracks for each primitive.
 
-A later, separate feature can introduce a `VatCharacterSet`/`VatRigInstanceSet` that coordinates multiple VAT mesh parts under one stable character ID. This is useful for HVGirl-style assets but is not required to prove socket sampling.
+The implemented `VatCharacterSet` coordinates multiple VAT mesh parts under one stable character ID. A later general-purpose `VatRigInstanceSet` could extend this beyond the current character-focused contract.
 
 ## Tree-shakable packaging plan
 
@@ -331,7 +333,7 @@ Do not include these in the first socket release:
 - arbitrary scalar channels;
 - GPU socket sampling;
 - GPU-driven attachment transforms;
-- a multi-mesh `VatRigInstanceSet` abstraction.
+- a more general multi-mesh rig abstraction beyond the current `VatCharacterSet`.
 
 They can share clip metadata and the playback clock later, but each needs its own semantics. In particular, events require interval-crossing logic across loops, and root motion requires stateful delta accumulation; neither is just another instantaneous socket sample.
 
@@ -369,7 +371,7 @@ Mitigation: explicit subpaths plus production bundle fixture tests.
 
 ## Recommended first implementation slice
 
-The smallest valuable vertical slice is:
+The smallest valuable vertical slice was:
 
 1. public Babylon Lite node-transform capture at VAT frames;
 2. `VatInstanceSet.timeSeconds` and `getPlaybackSample()`;
@@ -378,4 +380,4 @@ The smallest valuable vertical slice is:
 5. one Ready Player example, one multi-part HVGirl example;
 6. subpath exports and bundle fixtures.
 
-This delivers the sword/shield/particle attachment foundation described in the proposals while keeping the existing instancer small, composable, and genuinely tree-shakable.
+This slice is now delivered. The implementation keeps the root import backward compatible and exposes focused `core`, `vat`, `animation`, and `vat-sockets` subpaths so applications can select the API surface they need.

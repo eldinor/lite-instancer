@@ -13,9 +13,9 @@ import {
   mat4Multiply,
   invalidateRenderBundles,
   onBeforeRender,
-  removeFromScene,
   vec3,
   type ArcRotateCamera,
+  type AssetContainer,
   type Mat4,
   type Mesh,
   type SceneNode
@@ -28,6 +28,8 @@ import {
   createVatAttachmentController,
   createVatAttachmentPreset,
   createVatInstanceSet,
+  disposeVatGlbAssets,
+  getVatSocketCandidates,
   quaternionFromEulerDegrees,
   sampleVatSocket,
   serializeVatAttachmentPreset,
@@ -60,6 +62,9 @@ interface SocketChoice {
 }
 
 interface PreviewRuntime {
+  socketSource: AssetContainer;
+  characterContainer: AssetContainer;
+  attachmentContainer: AssetContainer;
   characterRoot: SceneNode;
   attachmentRoot: SceneNode;
   characterMeshes: Mesh[];
@@ -333,7 +338,7 @@ async function rebuildPreview(): Promise<void> {
       throw new Error("Character GLB needs skinned meshes and at least one animation group.");
     }
     const characters = createVatInstanceSet(ctx.engine, firstMesh, animations, { capacity: 5, engine: ctx.engine, visibleStrategy: "scale-zero" });
-    const socketChoices = getSocketChoices(sourceAnimations);
+    const socketChoices = getVatSocketCandidates(sourceAnimations);
     if (socketChoices.length === 0) {
       throw new Error("No node is animated by every clip, so there is no socket safe for all-clip VAT baking.");
     }
@@ -360,7 +365,7 @@ async function rebuildPreview(): Promise<void> {
     const attachmentIds = matrices.map(() => attachments.create());
     const controller = createVatAttachmentController({ characters, attachments, socketAsset, socket: "attachment" });
     const nextRuntime: PreviewRuntime = {
-      characterRoot, attachmentRoot, characterMeshes: [firstMesh, ...characterMeshes], attachmentMeshes, characters, secondary, secondaryIds,
+      socketSource, characterContainer, attachmentContainer, characterRoot, attachmentRoot, characterMeshes: [firstMesh, ...characterMeshes], attachmentMeshes, characters, secondary, secondaryIds,
       characterIds, attachments, attachmentIds, socketAsset, socketChoices, controller,
       attachmentRootMatrix: new Float32Array(attachmentRoot.worldMatrix) as Mat4, activeAnimationIndex: 0
     };
@@ -482,24 +487,6 @@ function setMarkerMatrix(marker: Mesh, matrix: Mat4): void {
   marker.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 }
 
-function getSocketChoices(animations: readonly { targetedAnimations: readonly { nodeIndex?: number; targetName?: string }[] }[]): SocketChoice[] {
-  const counts = new Map<number, { nodeName: string; count: number }>();
-  for (const animation of animations) {
-    const seen = new Set<number>();
-    for (const target of animation.targetedAnimations) {
-      if (target.nodeIndex === undefined || seen.has(target.nodeIndex)) continue;
-      seen.add(target.nodeIndex);
-      const item = counts.get(target.nodeIndex) ?? { nodeName: target.targetName ?? `node_${target.nodeIndex}`, count: 0 };
-      item.count++;
-      counts.set(target.nodeIndex, item);
-    }
-  }
-  return [...counts.entries()]
-    .filter(([, item]) => item.count === animations.length)
-    .map(([nodeIndex, item]) => ({ nodeIndex, nodeName: item.nodeName }))
-    .sort((a, b) => a.nodeName.localeCompare(b.nodeName));
-}
-
 function getGrip(): VatAttachmentGrip {
   return { translation: [grip.x, grip.y, grip.z], rotationEulerDegrees: [grip.pitch, grip.yaw, grip.roll], scale: [grip.sx, grip.sy, grip.sz] };
 }
@@ -516,7 +503,7 @@ function getPreset(): VatAttachmentPreset {
 
 function createTypeScriptSnippet(preset: VatAttachmentPreset): string {
   const source = (asset: VatAttachmentAssetReference, variable: string) => asset.kind === "url" ? `const ${variable} = ${JSON.stringify(asset.url)};` : `const ${variable} = "/assets/${asset.fileName}"; // Copy the uploaded GLB here`;
-  return `import { addToScene, bakeVat, loadGltf, mat4Compose, mat4Multiply, onBeforeRender, type Mesh, type SceneNode } from "@babylonjs/lite";\nimport { attachVatSafely, bakeVatSocketAsset, createHierarchyInstanceSet, createInstanceSet, createVatAttachmentController, createVatInstanceSet, quaternionFromEulerDegrees } from "@litools/instancer";\n\n${source(preset.character, "characterUrl")}\n${source(preset.attachment, "attachmentUrl")}\n\nconst character = await loadGltf(engine, characterUrl);\naddToScene(scene, character);\nconst characterRoot = character.entities[0] as SceneNode;\nconst [primaryMesh, ...secondaryMeshes] = collectSkinnedMeshes(characterRoot);\nif (!primaryMesh) throw new Error("Character needs a skinned mesh");\nconst animations = character.animationGroups ?? [];\nconst heroes = createVatInstanceSet(engine, primaryMesh, animations, { capacity: 1, engine });\nconst heroId = heroes.create();\nconst socketAsset = bakeVatSocketAsset(engine, animations, { clips: heroes.clips, sockets: { ${JSON.stringify(preset.socket.key)}: ${preset.socket.nodeIndex} } });\nconst secondary = secondaryMeshes.map((mesh) => ({ handle: attachVatSafely(engine, mesh, bakeVat(engine, mesh, animations)), set: createInstanceSet(mesh, { capacity: 1, engine }) }));\nfor (const part of secondary) part.set.create();\n\nconst weapon = await loadGltf(engine, attachmentUrl);\naddToScene(scene, weapon);\nconst weaponRoot = weapon.entities[0] as SceneNode;\nconst weapons = createHierarchyInstanceSet(weaponRoot, { capacity: 1, engine });\nconst weaponId = weapons.create();\nconst sync = createVatAttachmentController({ characters: heroes, attachments: weapons, socketAsset, socket: ${JSON.stringify(preset.socket.key)} });\nconst [qx, qy, qz, qw] = quaternionFromEulerDegrees(${preset.grip.rotationEulerDegrees.join(", ")});\nconst userGrip = mat4Compose(${preset.grip.translation.join(", ")}, qx, qy, qz, qw, ${preset.grip.scale.join(", ")});\nsync.bind(heroId, weaponId, { gripOffset: mat4Multiply(userGrip, weaponRoot.worldMatrix) });\nonBeforeRender(scene, (deltaMs) => { heroes.update(deltaMs * 0.001); for (const part of secondary) part.handle.update(deltaMs * 0.001); sync.update(); });\n\nfunction collectSkinnedMeshes(root: SceneNode): Mesh[] {\n  const meshes: Mesh[] = [];\n  const stack: SceneNode[] = [root];\n  while (stack.length) { const node = stack.pop()!; if ("skeleton" in node && node.skeleton) meshes.push(node as Mesh); stack.push(...node.children); }\n  return meshes;\n}\n`;
+  return `import { addToScene, loadGltf, onBeforeRender, type SceneNode } from "@babylonjs/lite";\nimport { createVatCharacterSet, disposeVatGlbAssets } from "@litools/instancer/vat";\nimport { bakeVatSocketAsset, createVatAttachmentBinding, validateVatAttachmentPreset, type VatAttachmentPreset } from "@litools/instancer/vat-sockets";\n\n${source(preset.character, "characterUrl")}\n${source(preset.attachment, "attachmentUrl")}\n\nconst preset: VatAttachmentPreset = ${JSON.stringify(preset, null, 2)};\n\n// Keep an unrendered source solely for the original glTF socket tracks.\nconst socketSource = await loadGltf(engine, characterUrl);\nconst socketAnimations = socketSource.animationGroups ?? [];\nconst validation = validateVatAttachmentPreset(preset, socketAnimations);\nif (!validation.valid) throw new Error(validation.reason);\n\nconst character = await loadGltf(engine, characterUrl);\naddToScene(scene, character);\nconst characterRoot = character.entities[0] as SceneNode;\nconst animations = character.animationGroups ?? [];\nconst hero = createVatCharacterSet(engine, characterRoot, animations, { capacity: 1, engine });\nconst heroId = hero.create();\nconst socketAsset = bakeVatSocketAsset(engine, socketAnimations, {\n  clips: hero.clips,\n  sockets: { [preset.socket.key]: preset.socket.nodeIndex }\n});\n\nconst weapon = await loadGltf(engine, attachmentUrl);\naddToScene(scene, weapon);\nconst weaponRoot = weapon.entities[0] as SceneNode;\nconst attachment = createVatAttachmentBinding({\n  engine,\n  character: hero,\n  attachmentRoot: weaponRoot,\n  socketAsset,\n  preset,\n  instanceOptions: { capacity: 1 }\n});\nconst weaponId = attachment.create();\nif (!attachment.bind(heroId, weaponId)) throw new Error("Could not bind weapon to VAT socket");\n\n// hero.play("Run"); // switches every skinned mesh part together\nonBeforeRender(scene, (deltaMs) => {\n  hero.update(deltaMs * 0.001);\n  attachment.update();\n});\n\n// On model replacement or page teardown, release both rendered and source GLBs.\n// disposeVatGlbAssets({ scene, containers: [socketSource, character, weapon], disposables: [hero, attachment] });\n`;
 }
 
 function createCharacterMatrices(count: number, scale: number): Mat4[] {
@@ -527,10 +514,11 @@ function createCharacterMatrices(count: number, scale: number): Mat4[] {
 function cleanupRuntime(): void {
   if (!runtime) return;
   runtime.controller.clear();
-  runtime.characters.set.dispose();
-  runtime.attachments.dispose();
-  for (const part of runtime.secondary) part.set.dispose();
-  for (const mesh of [...runtime.characterMeshes, ...runtime.attachmentMeshes]) removeFromScene(ctx.scene, mesh);
+  disposeVatGlbAssets({
+    scene: ctx.scene,
+    containers: [runtime.socketSource, runtime.characterContainer, runtime.attachmentContainer],
+    disposables: [runtime.characters.set, runtime.attachments, ...runtime.secondary.map((part) => part.set)]
+  });
   runtime = undefined;
 }
 

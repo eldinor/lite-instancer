@@ -22,7 +22,8 @@ const htmlInputs = {
   "xbot-basic-animation": "examples/xbot-basic-animation/index.html",
   "xbot-vat-sword-sync": "examples/xbot-vat-sword-sync/index.html",
   "samba-girl-vat-sword-sync": "examples/samba-girl-vat-sword-sync/index.html",
-  "glb-vat-socket-configurator": "examples/glb-vat-socket-configurator/index.html"
+  "glb-vat-socket-configurator": "examples/glb-vat-socket-configurator/index.html",
+  "unarmed-vat-arena": "examples/unarmed-vat-arena/index.html"
 };
 
 export default defineConfig({

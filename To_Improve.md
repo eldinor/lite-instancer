@@ -240,6 +240,8 @@ Add a small API decision table:
 | One repeated mesh | `createInstanceSet` |
 | GLB or scene-node hierarchy | `createHierarchyInstanceSet` |
 | Skinned/VAT animation | `createVatInstanceSet` |
+| Multi-part skinned VAT character | `createVatCharacterSet` |
+| VAT socket with a rigid GLB attachment | `createVatAttachmentBinding` |
 | Rigid GPU picking | `createPickingRegistry` |
 | Deformed/logical picking | `pickScreenSpaceInstanceFromPointer` |
 
@@ -250,6 +252,7 @@ Add examples for:
 - Handling stale IDs with `try*` APIs.
 - VAT animation controls and direct wrapper helpers.
 - When to use the underlying VAT `.set` for advanced `ColoredInstanceSet` integrations.
+- Multi-part character sets, full-hierarchy socket attachments, portable attachment presets, and GLB/VAT lifecycle disposal.
 
 ## Suggested Priority
 

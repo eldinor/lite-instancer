@@ -18,6 +18,15 @@ export * from "./hierarchy-instance-set.js";
 export * from "./picking-registry.js";
 export * from "./screen-space-picking.js";
 export * from "./vat-instance-set.js";
+export * from "./vat-character-set.js";
+export * from "./vat-attach.js";
+export * from "./vat-socket-asset.js";
+export * from "./vat-socket-babylon-baker.js";
+export * from "./vat-attachment-controller.js";
+export * from "./vat-attachment-preset.js";
+export * from "./vat-socket-candidates.js";
+export * from "./vat-attachment-binding.js";
+export * from "./vat-gltf-lifecycle.js";
 export * from "./errors.js";
 ```
 
@@ -26,6 +35,8 @@ The most important APIs are:
 - `createInstanceSet`: one mesh, many thin instances.
 - `createHierarchyInstanceSet`: one scene-node or GLB hierarchy, many logical instances.
 - `createVatInstanceSet`: one skinned mesh with baked VAT animation, many animated instances.
+- `createVatCharacterSet`: every skinned mesh in one character GLB, synchronized as one logical VAT character.
+- `createVatAttachmentController` and `createVatAttachmentBinding`: sample a baked socket and synchronize a single mesh or full rigid GLB attachment.
 - `PickingRegistry`: maps Babylon Lite thin-instance picks back to stable IDs.
 - `pickScreenSpaceInstanceFromPointer`: logical picking for deformed or animated visuals.
 
@@ -349,6 +360,16 @@ vatSet.update(deltaSeconds);
 `scale-zero` is the default visibility strategy because VAT playback data is slot-based. Keeping slots stable avoids unnecessary surprises.
 
 GPU culling defaults to false because animated vertices can move outside the rest mesh bounds.
+
+## VAT Character Sets and Attachments
+
+`createVatCharacterSet` extends the single-mesh VAT model to a complete character hierarchy. The first skinned mesh is canonical. For every secondary skinned mesh, the character set creates a matching VAT handle and instance set, maps secondary IDs to canonical IDs, and mirrors transform, visibility, clip, phase, and FPS state. This lets callers manage a multi-part character through one stable ID.
+
+Sockets are baked as named transform tracks indexed by clip and VAT frame. `createVatAttachmentController` reads a character's current playback sample, obtains the matching socket matrix, composes its optional grip matrix, and writes the result to the attachment ID. The attachment type is `BaseInstanceSet`, so the same controller supports thin-instance weapons and `HierarchyInstanceSet` attachment GLBs.
+
+`createVatAttachmentBinding` assembles the common full-GLB path: it creates a hierarchy attachment set, validates that the selected socket has tracks for every baked clip, composes the exported grip with the attachment root's authored matrix, and owns the controller cleanup. `VatAttachmentPreset` is intentionally JSON-only and does not embed uploaded file bytes or temporary URLs.
+
+Imported GLB/VAT resources are explicit lifecycle resources. `disposeVatGlbAssets({ scene, containers, disposables })` first disposes the supplied wrappers, then removes and frees every mesh in each supplied container. Call it only after those resources are no longer used by an active scene.
 
 ## Transform Inputs
 

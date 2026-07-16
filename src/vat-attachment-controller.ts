@@ -2,7 +2,7 @@ import { mat4Compose, mat4Multiply, type Mat4 } from "@babylonjs/lite";
 import type { BaseInstanceSet } from "./types.js";
 import type { InstanceId } from "./types.js";
 import { createVatSocketTransform, sampleVatSocket, type VatSocketAsset } from "./vat-socket-asset.js";
-import type { VatInstanceSet } from "./vat-instance-set.js";
+import type { VatPlaybackSource } from "./vat-instance-set.js";
 
 export interface VatAttachmentBindingOptions {
   /** Transform from the baked socket to the attachment's local grip. */
@@ -10,7 +10,8 @@ export interface VatAttachmentBindingOptions {
 }
 
 export interface VatAttachmentControllerOptions<TCharacter = unknown, TAttachment = unknown> {
-  readonly characters: VatInstanceSet<TCharacter>;
+  /** VAT playback source for the animated character, including coordinated multi-mesh sets. */
+  readonly characters: VatPlaybackSource;
   /** A single-mesh or hierarchy instance set for the rigid attachment asset. */
   readonly attachments: BaseInstanceSet<TAttachment>;
   readonly socketAsset: VatSocketAsset;
