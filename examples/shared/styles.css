@@ -93,3 +93,124 @@ button {
 button:hover {
   background: #2c3440;
 }
+
+.configurator-editor {
+  display: grid;
+  gap: 7px;
+  max-height: calc(100vh - 265px);
+  margin: 12px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.configurator-editor legend,
+.configurator-editor strong {
+  color: #c9d7e6;
+  font-weight: 650;
+}
+
+.config-row,
+.config-number {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) minmax(96px, 1.3fr);
+  align-items: center;
+  gap: 7px;
+  color: #b8c3cf;
+}
+
+.configurator-editor select,
+.configurator-editor input {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: #151a20;
+  color: #f8fafc;
+  font: inherit;
+}
+
+.configurator-editor input[type="number"] {
+  padding: 4px 6px;
+}
+
+.configurator-editor input[type="file"] {
+  padding: 3px;
+  font-size: 10px;
+}
+
+.configurator-editor button {
+  min-height: 28px;
+}
+
+.attachment-configurator-panel {
+  top: 0;
+  right: 16px;
+  left: auto;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+
+.attachment-configurator-panel .configurator-editor {
+  max-height: none;
+  flex: 1;
+}
+
+.upload-guidance {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 20;
+  width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid rgba(139, 211, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(17, 25, 33, 0.96);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+  color: #e8edf2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -12px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.upload-guidance.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+.upload-guidance strong {
+  color: #8bd3ff;
+  font-size: 13px;
+}
+
+.upload-guidance p {
+  margin: 6px 0 10px;
+  color: #c9d7e6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.upload-guidance button {
+  min-height: 26px;
+  padding: 3px 10px;
+}
+
+.config-range {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) minmax(90px, 1.4fr) 40px;
+  align-items: center;
+  gap: 7px;
+  color: #b8c3cf;
+}
+
+.config-range output {
+  color: #f8fafc;
+  text-align: right;
+}

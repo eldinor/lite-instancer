@@ -38,7 +38,12 @@ export interface DebugPanel {
   button(label: string, onClick: () => void): HTMLButtonElement;
 }
 
-export async function createExample(title: string): Promise<ExampleContext> {
+export interface CreateExampleOptions {
+  /** Create and attach the shared default ArcRotate camera. Defaults to true. */
+  createDefaultCamera?: boolean;
+}
+
+export async function createExample(title: string, options: CreateExampleOptions = {}): Promise<ExampleContext> {
   const app = document.querySelector<HTMLDivElement>("#app");
   if (!app) {
     throw new Error("Missing #app");
@@ -54,10 +59,12 @@ export async function createExample(title: string): Promise<ExampleContext> {
   const scene = createSceneContext(engine);
   scene.clearColor = { r: 0.025, g: 0.028, b: 0.034, a: 1 };
 
-  const camera = createArcRotateCamera(-Math.PI / 4, Math.PI / 3.2, 34, vec3(0, 0, 0));
-  scene.camera = camera;
-  addToScene(scene, camera);
-  attachControl(camera, canvas, scene);
+  if (options.createDefaultCamera ?? true) {
+    const camera = createArcRotateCamera(-Math.PI / 4, Math.PI / 3.2, 34, vec3(0, 0, 0));
+    scene.camera = camera;
+    addToScene(scene, camera);
+    attachControl(camera, canvas, scene);
+  }
   addToScene(scene, createHemisphericLight([0, 1, 0], 1.1));
 
   const picker = createGpuPicker(scene);

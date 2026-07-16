@@ -51,6 +51,17 @@ const sharks = createVatInstanceSet(engine, skinnedMesh, animationGroups, {
 });
 ```
 
+Use `createVatCharacterSet` when a character GLB has several skinned mesh parts. It creates one logical VAT character whose secondary meshes mirror the primary mesh's IDs, transforms, visibility, clip, phase, and FPS:
+
+```ts
+import { createVatCharacterSet } from "@litools/instancer";
+
+const heroes = createVatCharacterSet(engine, characterRoot, animationGroups, {
+  capacity: 300,
+  visibleStrategy: "scale-zero"
+});
+```
+
 Use `PickingRegistry` for normal thin-instance picking. Use `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
 
 ## Stable IDs
@@ -205,6 +216,68 @@ sharks.update(deltaSeconds);
 
 VAT sets expose common instance-set helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. The underlying `sharks.set` remains available for advanced integrations that specifically need the `ColoredInstanceSet`; the shark examples use that underlying set for their shared transform path while using `createVatInstanceSet` for animation helpers.
 
+## VAT Sockets and Attachments
+
+Bake named animated sockets once, then bind a separate instanced weapon to each stable VAT character ID. The attachment controller reads the same clip, phase offset, FPS override, and clock as `VatInstanceSet`, so attachments remain on the rendered VAT frame.
+
+```ts
+import {
+  bakeVatSocketAsset,
+  createInstanceSet,
+  createVatAttachmentController,
+  createVatInstanceSet
+} from "@litools/instancer";
+
+const characters = createVatInstanceSet(engine, characterMesh, animations);
+const sockets = bakeVatSocketAsset(engine, sourceAnimations, {
+  clips: characters.clips,
+  sockets: { sword: "RightHand" }
+});
+const swords = createInstanceSet(swordMesh, { engine, capacity: 100 });
+const attachments = createVatAttachmentController({
+  characters,
+  attachments: swords,
+  socketAsset: sockets,
+  socket: "sword"
+});
+
+attachments.bind(characterId, swordId, { gripOffset });
+
+// Every frame, after characters.update(deltaSeconds):
+attachments.update();
+```
+
+`attachments` accepts the shared `BaseInstanceSet` contract, so the controller works with either a single mesh from `createInstanceSet()` or an entire attachment GLB from `createHierarchyInstanceSet()`.
+
+For a full character GLB, a full weapon GLB, and a preset exported by the configurator, use `createVatAttachmentBinding()`. It preserves the attachment's authored root transform, applies the configured grip, and provides the hierarchy set plus controller as one lifecycle unit:
+
+```ts
+import { createVatAttachmentBinding, createVatCharacterSet } from "@litools/instancer";
+
+const heroes = createVatCharacterSet(engine, characterRoot, animations, { capacity: 300 });
+const sword = createVatAttachmentBinding({
+  engine,
+  character: heroes,
+  attachmentRoot: swordRoot,
+  socketAsset,
+  preset
+});
+
+const heroId = heroes.create({ clip: "Idle" });
+const swordId = sword.create();
+sword.bind(heroId, swordId);
+
+// Each frame, in this order:
+heroes.update(deltaSeconds);
+sword.update();
+```
+
+`VatAttachmentPreset` is a portable, side-effect-free JSON shape containing asset references, socket node index/name/key, and grip translation, Euler-degree rotation, and XYZ scale. Use `serializeVatAttachmentPreset()` to save it. Local uploads retain only a filename placeholder; binary GLB data and temporary blob URLs are never embedded. When replacing a preview or level, release its containers and wrappers with `disposeVatGlbAssets({ scene, containers, disposables })` after nothing active still shares them.
+
+For explicit bundle boundaries, use `@litools/instancer/core`, `@litools/instancer/vat`, `@litools/instancer/animation`, and `@litools/instancer/vat-sockets`. The root import remains fully supported. `@litools/instancer/animation` exports the pure socket sampler without the Babylon Lite baker adapter.
+
+`bakeVatSocketAsset` temporarily uses Babylon Lite's private animation-controller world-matrix buffer. This adapter is isolated and will be replaced when Lite exposes public VAT-frame socket capture.
+
 ## Cleanup
 
 Dispose an instance set when it is no longer needed:
@@ -231,6 +304,9 @@ Then open the root examples page. Useful demos:
 - Shark School Shared Animation: synchronized VAT animation.
 - Shark Phase Buckets: per-instance VAT phase/fps variation.
 - Shark Clip Mixer: per-instance VAT clip assignment.
+- Ready Player VAT Sword Sync and Samba Girl VAT Sword Sync: attachment synchronization across single- and multi-part VAT characters.
+- GLB VAT Socket Configurator: select an animated socket, tune an attachment GLB, and export a JSON preset plus TypeScript setup.
+- Unarmed VAT Arena Crowd: three independent VAT groups with nine selected clips and density modes from 300 to 3,000 characters.
 
 See `About_Examples.md` for a fuller explanation of every example, and `About_Examples_Extended.md` for important code snippets from each one.
 

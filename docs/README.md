@@ -33,6 +33,8 @@ const sharks = createVatInstanceSet(engine, skinnedMesh, animationGroups, {
 });
 ```
 
+Use `createVatCharacterSet` for a multi-part skinned character GLB, and `createVatAttachmentBinding` to bind a complete rigid attachment GLB from a configurator preset. The latter preserves the attachment's authored root transform and applies the exported grip offset.
+
 Use `PickingRegistry` for normal thin-instance picking, and `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
 
 For a practical walkthrough of the main functions and helpers, see `../User_Guide.md`.
@@ -168,6 +170,14 @@ sharks.update(deltaSeconds);
 
 VAT sets expose common instance helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. Use `.set` when an integration specifically needs the underlying `ColoredInstanceSet`; the shark examples keep that path for shared transform updates and use the VAT wrapper for animation controls.
 
+## VAT Characters, Sockets, and Attachment GLBs
+
+`createVatCharacterSet(engine, root, animationGroups, options)` synchronizes every skinned mesh under a character GLB. It exposes one logical stable-ID surface and can be supplied wherever a VAT playback source is expected.
+
+Bake named node tracks with `bakeVatSocketAsset()`, then either bind a single-mesh or hierarchy attachment with `createVatAttachmentController()`, or use `createVatAttachmentBinding()` for the common preset-backed GLB workflow. The controller must update after the character VAT set each frame.
+
+`VatAttachmentPreset` stores URL or local-filename asset references, socket key/node metadata, and grip translation, Euler-degree rotation, and XYZ scale. `serializeVatAttachmentPreset()` produces the exportable JSON. When an imported GLB/VAT runtime is replaced, call `disposeVatGlbAssets({ scene, containers, disposables })` after it is no longer shared.
+
 ## Examples
 
 Run one dev server:
@@ -184,6 +194,8 @@ Then open the root examples page. The most useful demos are:
 - Shark School Shared Animation: synchronized VAT animation.
 - Shark Phase Buckets: per-instance VAT phase/fps variation.
 - Shark Clip Mixer: per-instance VAT clip assignment.
+- GLB VAT Socket Configurator: multi-part character sockets, full GLB attachments, JSON, and TypeScript export.
+- Unarmed VAT Arena Crowd: three independently baked VAT groups, nine selected source clips, and 300–3,000 visible fighters.
 
 ## API Reference
 

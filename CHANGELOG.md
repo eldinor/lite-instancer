@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added multi-part `VatCharacterSet` support, reusable baked socket assets, full-hierarchy VAT attachments, portable `VatAttachmentPreset` serialization, socket candidate discovery, and GLB/VAT lifecycle disposal helpers.
+- Added the GLB VAT Socket Configurator example with Ready Player and Samba Girl presets, local GLB inputs, curated Fantasy Sword attachment, numeric grip controls, and JSON/TypeScript export.
+- Added the Unarmed VAT Arena Crowd example. It uses three independently baked groups, selects nine of the source asset's 64 clips, and supports visible crowd density from 300 through 3,000 characters.
+
+### Changed
+
+- `createVatAttachmentController()` now accepts the shared `BaseInstanceSet` contract, enabling full GLB hierarchy attachments as well as single meshes.
+
 ## 0.2.1 - 2026-07-13
 
 ### Added
