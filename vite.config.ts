@@ -1,11 +1,10 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  // `public/` contains example-only GLBs. The separate examples build copies
-  // them to `examples-dist`; publishing them with the library would make every
-  // npm consumer download demo assets they never import.
-  publicDir: false,
   build: {
+    // Keep `public/` available to `npm run dev` for the examples, but do not
+    // copy its example-only GLBs into the library package's `dist/` output.
+    copyPublicDir: false,
     lib: {
       entry: {
         index: "src/index.ts",
