@@ -111,6 +111,8 @@ let activeAnimationIndex = vatAnimations.findIndex((animation) => animation.name
 if (activeAnimationIndex < 0) {
   activeAnimationIndex = 0;
 }
+let phaseSpreadEnabled = false;
+let fpsVariationEnabled = false;
 activateClip(activeAnimationIndex);
 onBeforeRender(ctx.scene, (deltaMs) => {
   const deltaSeconds = deltaMs * 0.001;
@@ -137,10 +139,22 @@ ctx.panel.set("active animation", vatAnimations[activeAnimationIndex]?.name ?? "
 ctx.panel.set("vat mesh parts", secondaryVatSets.length + 1);
 ctx.panel.set("vat characters", characters.count);
 ctx.panel.set("swords", `${swordIds.length} thin instances synced to ${RIGHT_HAND}`);
+ctx.panel.set("per-instance phase", "aligned");
+ctx.panel.set("per-instance FPS", "clip FPS");
 ctx.panel.button("next animation", () => {
   activeAnimationIndex = (activeAnimationIndex + 1) % vatAnimations.length;
   activateClip(activeAnimationIndex);
   ctx.panel.set("active animation", vatAnimations[activeAnimationIndex]?.name ?? "none");
+});
+ctx.panel.button("toggle phase spread", () => {
+  phaseSpreadEnabled = !phaseSpreadEnabled;
+  applyPlaybackControls();
+  ctx.panel.set("per-instance phase", phaseSpreadEnabled ? "spread across clip" : "aligned");
+});
+ctx.panel.button("toggle FPS variation", () => {
+  fpsVariationEnabled = !fpsVariationEnabled;
+  applyPlaybackControls();
+  ctx.panel.set("per-instance FPS", fpsVariationEnabled ? "0.7x to 1.3x" : "clip FPS");
 });
 
 await runExample(ctx);
@@ -150,12 +164,34 @@ function activateClip(index: number): void {
   if (!animation || !characters.play(animation.name)) {
     return;
   }
+  applyPlaybackControls();
+}
+
+function applyPlaybackControls(): void {
+  const clip = characters.getActiveClip();
+  const animation = vatAnimations[activeAnimationIndex];
+  if (!clip || !animation) {
+    return;
+  }
+  const duration = clip.frameCount / clip.fps;
+  for (let index = 0; index < characterIds.length; index++) {
+    const id = characterIds[index];
+    if (id === undefined) {
+      continue;
+    }
+    characters.setPhaseOffset(id, phaseSpreadEnabled ? (index / characterIds.length) * duration : 0);
+    characters.setFps(id, fpsVariationEnabled ? clip.fps * (0.7 + index * 0.15) : undefined);
+  }
+  synchronizeSecondaryVatSets(animation.name);
+}
+
+function synchronizeSecondaryVatSets(animationName: string): void {
   for (const vatSet of secondaryVatSets) {
-    const clip = vatSet.handle.clips[animation.name];
+    const clip = vatSet.handle.clips[animationName];
     if (!clip) {
       continue;
     }
-    vatSet.handle.play(animation.name);
+    vatSet.handle.play(animationName);
     vatSet.handle.setInstances(createVatInstanceParameters(clip.fromRow, clip.frameCount, clip.fps));
   }
 }
@@ -164,10 +200,12 @@ function createVatInstanceParameters(fromRow: number, frameCount: number, fps: n
   const params = new Float32Array(characterMatrices.length * 4);
   for (let index = 0; index < characterMatrices.length; index++) {
     const offset = index * 4;
+    const characterId = characterIds[index];
+    const sample = characterId === undefined ? undefined : characters.getPlaybackSample(characterId);
     params[offset] = fromRow;
     params[offset + 1] = fromRow + frameCount - 1;
-    params[offset + 2] = 0;
-    params[offset + 3] = fps;
+    params[offset + 2] = sample ? sample.offsetSeconds * sample.fps : 0;
+    params[offset + 3] = sample?.fps ?? fps;
   }
   return params;
 }
