@@ -205,6 +205,41 @@ sharks.update(deltaSeconds);
 
 VAT sets expose common instance-set helpers directly, including transforms, visibility, metadata, colors, iteration, and batching. The underlying `sharks.set` remains available for advanced integrations that specifically need the `ColoredInstanceSet`; the shark examples use that underlying set for their shared transform path while using `createVatInstanceSet` for animation helpers.
 
+## VAT Sockets and Attachments
+
+Bake named animated sockets once, then bind a separate instanced weapon to each stable VAT character ID. The attachment controller reads the same clip, phase offset, FPS override, and clock as `VatInstanceSet`, so attachments remain on the rendered VAT frame.
+
+```ts
+import {
+  bakeVatSocketAsset,
+  createInstanceSet,
+  createVatAttachmentController,
+  createVatInstanceSet
+} from "@litools/instancer";
+
+const characters = createVatInstanceSet(engine, characterMesh, animations);
+const sockets = bakeVatSocketAsset(engine, sourceAnimations, {
+  clips: characters.clips,
+  sockets: { sword: "RightHand" }
+});
+const swords = createInstanceSet(swordMesh, { engine, capacity: 100 });
+const attachments = createVatAttachmentController({
+  characters,
+  attachments: swords,
+  socketAsset: sockets,
+  socket: "sword"
+});
+
+attachments.bind(characterId, swordId, { gripOffset });
+
+// Every frame, after characters.update(deltaSeconds):
+attachments.update();
+```
+
+For explicit bundle boundaries, use `@litools/instancer/core`, `@litools/instancer/vat`, `@litools/instancer/animation`, and `@litools/instancer/vat-sockets`. The root import remains fully supported. `@litools/instancer/animation` exports the pure socket sampler without the Babylon Lite baker adapter.
+
+`bakeVatSocketAsset` temporarily uses Babylon Lite's private animation-controller world-matrix buffer. This adapter is isolated and will be replaced when Lite exposes public VAT-frame socket capture.
+
 ## Cleanup
 
 Dispose an instance set when it is no longer needed:

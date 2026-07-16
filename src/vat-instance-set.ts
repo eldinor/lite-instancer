@@ -36,6 +36,17 @@ export interface VatInstanceSetOptions extends Omit<InstanceSetOptions, "gpuCull
   clip?: string;
 }
 
+/** Allocation-free description of the VAT row currently used by one instance. */
+export interface VatPlaybackSample {
+  clip: string;
+  timeSeconds: number;
+  offsetSeconds: number;
+  fps: number;
+  frame: number;
+  nextFrame: number;
+  alpha: number;
+}
+
 /** Creation options for one VAT-backed instance. */
 export interface VatInstanceCreateOptions<TMetadata = unknown> {
   /** Initial instance transform. */
@@ -67,6 +78,8 @@ export interface VatInstanceSet<TMetadata = unknown> {
   readonly clips: Record<string, VatClip>;
   /** Shared default clip used by instances without a per-instance clip override. */
   readonly activeClip: string | undefined;
+  /** Elapsed VAT playback time in seconds. */
+  readonly timeSeconds: number;
   /** Number of live animated IDs, visible or hidden. */
   readonly count: number;
   /** Allocated instance capacity. */
@@ -139,6 +152,8 @@ export interface VatInstanceSet<TMetadata = unknown> {
   getActiveClip(): VatClip | undefined;
   /** Return an instance's effective clip name, including the shared default fallback. */
   getClip(id: InstanceId): string | undefined;
+  /** Return the VAT row selection currently used by an instance. */
+  getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
   /** Change the shared default clip for instances that do not override it. */
   play(clip: string): boolean;
   /** Advance VAT playback. Call once per frame. */
@@ -177,6 +192,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
   });
 
   let activeClip = initialClip;
+  let timeSeconds = 0;
   const playback = new Map<InstanceId, VatInstancePlayback>();
 
   const api: VatInstanceSet<TMetadata> = {
@@ -186,6 +202,9 @@ export function createVatInstanceSet<TMetadata = unknown>(
     clips: handle.clips,
     get activeClip() {
       return activeClip;
+    },
+    get timeSeconds() {
+      return timeSeconds;
     },
     get count() {
       return set.count;
@@ -326,6 +345,25 @@ export function createVatInstanceSet<TMetadata = unknown>(
       }
       return playback.get(id)?.clip ?? activeClip;
     },
+    getPlaybackSample(id, out) {
+      if (!set.has(id)) {
+        return undefined;
+      }
+      const item = playback.get(id);
+      const name = item?.clip ?? activeClip;
+      const clip = getClip(handle.clips, name);
+      if (!clip || !name) {
+        return undefined;
+      }
+      return writePlaybackSample(
+        out ?? { clip: name, timeSeconds: 0, offsetSeconds: 0, fps: 0, frame: 0, nextFrame: 0, alpha: 0 },
+        name,
+        clip,
+        timeSeconds,
+        item?.offset ?? 0,
+        item?.fps ?? clip.fps
+      );
+    },
     play(clip) {
       if (!handle.clips[clip]) {
         return false;
@@ -336,6 +374,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
       return true;
     },
     update(deltaSeconds) {
+      timeSeconds += deltaSeconds;
       handle.update(deltaSeconds);
     },
     setClip(id, clip) {
@@ -391,8 +430,9 @@ export function createVatInstanceSet<TMetadata = unknown>(
         }
         params[slot * 4] = clip.fromRow;
         params[slot * 4 + 1] = clip.fromRow + clip.frameCount - 1;
-        params[slot * 4 + 2] = item?.offset ?? getDefaultOffset(slot, set.count, clip);
-        params[slot * 4 + 3] = item?.fps ?? clip.fps;
+        const fps = item?.fps ?? clip.fps;
+        params[slot * 4 + 2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
+        params[slot * 4 + 3] = fps;
       }
       handle.setInstances(params);
     }
@@ -421,4 +461,26 @@ function createPlayback(options: { clip: string | undefined; offset: number; fps
     playback.fps = options.fps;
   }
   return playback;
+}
+
+function writePlaybackSample(
+  out: VatPlaybackSample,
+  clipName: string,
+  clip: VatClip,
+  timeSeconds: number,
+  offsetSeconds: number,
+  fps: number
+): VatPlaybackSample {
+  const span = Math.max(1, clip.frameCount);
+  const raw = (offsetSeconds + timeSeconds) * fps;
+  const wrapped = raw - Math.floor(raw / span) * span;
+  const frame = Math.floor(wrapped);
+  out.clip = clipName;
+  out.timeSeconds = timeSeconds;
+  out.offsetSeconds = offsetSeconds;
+  out.fps = fps;
+  out.frame = frame;
+  out.nextFrame = (frame + 1) % span;
+  out.alpha = wrapped - frame;
+  return out;
 }

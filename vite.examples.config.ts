@@ -20,7 +20,8 @@ const htmlInputs = {
   "shark-clip-mixer": "examples/shark-clip-mixer/index.html",
   "dist-vat-acrobatic-plane": "examples/dist-vat-acrobatic-plane/index.html",
   "xbot-basic-animation": "examples/xbot-basic-animation/index.html",
-  "xbot-vat-sword-sync": "examples/xbot-vat-sword-sync/index.html"
+  "xbot-vat-sword-sync": "examples/xbot-vat-sword-sync/index.html",
+  "samba-girl-vat-sword-sync": "examples/samba-girl-vat-sword-sync/index.html"
 };
 
 export default defineConfig({

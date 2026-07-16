@@ -57,8 +57,8 @@ describe("VatInstanceSet", () => {
     const aSlot = vat.set.getSlot(a) ?? -1;
     const cSlot = vat.set.getSlot(c) ?? -1;
 
-    expect(Array.from(params.slice(aSlot * 4, aSlot * 4 + 4))).toEqual([0, 9, 1, 21]);
-    expect(Array.from(params.slice(cSlot * 4, cSlot * 4 + 4))).toEqual([20, 24, 3, 12]);
+    expect(Array.from(params.slice(aSlot * 4, aSlot * 4 + 4))).toEqual([0, 9, 21, 21]);
+    expect(Array.from(params.slice(cSlot * 4, cSlot * 4 + 4))).toEqual([20, 24, 36, 12]);
   });
 
   it("supports shared clip defaults and per-id clip overrides", async () => {
@@ -167,5 +167,17 @@ describe("VatInstanceSet", () => {
     });
 
     expect(handle.setInstances).toHaveBeenCalled();
+  });
+
+  it("exposes the same frame selection used by VAT playback", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, { capacity: 1, clip: "Swim" });
+    const id = vat.create({ offset: 0.5, fps: 20 });
+
+    vat.update(0.25);
+    const sample = vat.getPlaybackSample(id!);
+
+    expect(sample).toMatchObject({ clip: "Swim", timeSeconds: 0.25, offsetSeconds: 0.5, fps: 20, frame: 5 });
+    expect(sample?.nextFrame).toBe(6);
   });
 });

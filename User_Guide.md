@@ -513,6 +513,37 @@ sharks.setFps(id, 18);
 sharks.update(deltaSeconds);
 ```
 
+## VAT sockets and instanced attachments
+
+Sockets are baked once from source animation groups and sampled from `VatInstanceSet` playback state. Bind weapons by stable IDs, not backing slots:
+
+```ts
+import {
+  bakeVatSocketAsset,
+  createVatAttachmentController
+} from "@litools/instancer";
+
+const sockets = bakeVatSocketAsset(engine, sourceAnimations, {
+  clips: sharks.clips,
+  sockets: { sword: "RightHand" }
+});
+const swordAttachments = createVatAttachmentController({
+  characters: sharks,
+  attachments: swords,
+  socketAsset: sockets,
+  socket: "sword"
+});
+
+swordAttachments.bind(sharkId, swordId, { gripOffset });
+
+// Call after sharks.update(deltaSeconds).
+swordAttachments.update();
+```
+
+By default sockets use discrete frames, matching the current Lite VAT shader. `sampleVatSocket(..., { interpolate: true })` is available for non-VAT consumers that prefer smooth TRS interpolation.
+
+The temporary socket baker adapter uses private Babylon Lite animation-controller fields until Lite provides a public capture API.
+
 ## Capacity and Growth
 
 `capacity` controls initial allocation.

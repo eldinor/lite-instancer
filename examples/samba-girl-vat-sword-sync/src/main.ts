@@ -20,16 +20,19 @@ import {
 } from "../../../src/index.js";
 import { collectMeshes, createExample, runExample } from "../../shared/app.js";
 
-const MODEL_URL = "https://raw.githubusercontent.com/eldinor/ForBJS/master/all-anim.glb";
+const MODEL_URL = "https://assets.babylonjs.com/meshes/HVGirl.glb";
+const ENVIRONMENT_URL = "https://assets.babylonjs.com/environments/environmentSpecular.env";
 const BRDF_URL = "https://raw.githubusercontent.com/BabylonJS/Babylon-Lite/master/lab/public/brdf-lut.png";
-const RIGHT_HAND = "RightHand";
+const CLIP_NAME = "Samba";
+const RIGHT_HAND = "mixamorig:RightHand";
+const CHARACTER_SCALE = 0.1;
 
-const ctx = await createExample("Xbot VAT Sword Sync");
+const ctx = await createExample("Samba Girl VAT Sword Sync");
 ctx.panel.set("asset", "loading");
-await loadEnvironment(ctx.scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { brdfUrl: BRDF_URL });
+await loadEnvironment(ctx.scene, ENVIRONMENT_URL, { brdfUrl: BRDF_URL });
 
-// This container is evaluated only once to bake socket tracks. It is never added
-// to the scene and no live skeleton is used during playback.
+// This source rig exists only while socket tracks are baked. It is not rendered
+// and no live skeleton participates in the runtime animation loop.
 const socketSource = await loadGltf(ctx.engine, MODEL_URL);
 const sourceAnimations = socketSource.animationGroups ?? [];
 
@@ -43,13 +46,14 @@ const vatMeshes = collectMeshes(vatRoot).filter(hasSkeleton);
 const vatAnimations = vatContainer.animationGroups ?? [];
 const firstMesh = vatMeshes.shift();
 if (!firstMesh || sourceAnimations.length === 0 || vatAnimations.length === 0) {
-  throw new Error("Xbot GLB must provide skinned meshes and animation groups");
+  throw new Error("HVGirl.glb must provide skinned meshes and animation groups");
 }
 
 const characters = createVatInstanceSet(ctx.engine, firstMesh, vatAnimations, {
   capacity: 5,
   engine: ctx.engine,
-  visibleStrategy: "scale-zero"
+  visibleStrategy: "scale-zero",
+  clip: CLIP_NAME
 });
 const sockets = bakeVatSocketAsset(ctx.engine, sourceAnimations, {
   clips: characters.clips,
@@ -62,11 +66,11 @@ const secondaryVatSets = vatMeshes.map((mesh) => {
 });
 
 const characterMatrices = [
-  mat4Compose(-2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(0, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(-1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9)
+  mat4Compose(-2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  mat4Compose(0, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  mat4Compose(2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  mat4Compose(-1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  mat4Compose(1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE)
 ];
 const characterIds = characterMatrices.map((matrix) => characters.create({ transform: matrix, offset: 0 }));
 for (const vatSet of secondaryVatSets) {
@@ -75,7 +79,7 @@ for (const vatSet of secondaryVatSets) {
   }
 }
 
-const sword = createCylinder(ctx.engine, { height: 0.675, diameter: 0.07 });
+const sword = createCylinder(ctx.engine, { height: 0.7, diameter: 0.065 });
 sword.material = createPbrMaterial({
   baseColorFactor: [0.82, 0.86, 0.95, 1],
   metallicFactor: 0.78,
@@ -92,7 +96,9 @@ const swordSync = createVatAttachmentController({
   socketAsset: sockets,
   socket: "sword"
 });
-const gripOffset = mat4Compose(-0.03, 0.39, 0.01, 0.0610485, 0, 0, 0.9981348, 1, 1, 1);
+// HVGirl carries a 0.01 animated-rig scale under a model subsequently scaled
+// by CHARACTER_SCALE. This grip preserves a meter-sized sword in that space.
+const gripOffset = mat4Compose(0, 350, 0, 0, 0, 0, 1, 1000, 1000, 1000);
 for (let index = 0; index < characterIds.length; index++) {
   const characterId = characterIds[index];
   const swordId = swordIds[index];
@@ -101,7 +107,10 @@ for (let index = 0; index < characterIds.length; index++) {
   }
 }
 
-let activeAnimationIndex = 0;
+let activeAnimationIndex = vatAnimations.findIndex((animation) => animation.name === CLIP_NAME);
+if (activeAnimationIndex < 0) {
+  activeAnimationIndex = 0;
+}
 activateClip(activeAnimationIndex);
 onBeforeRender(ctx.scene, (deltaMs) => {
   const deltaSeconds = deltaMs * 0.001;
@@ -114,18 +123,20 @@ onBeforeRender(ctx.scene, (deltaMs) => {
 
 const camera = ctx.scene.camera;
 if (isArcRotateCamera(camera)) {
-  camera.radius = 4.2;
+  camera.radius = 10;
   camera.target.x = 0;
-  camera.target.y = 0.95;
+  camera.target.y = 0.9;
   camera.target.z = 0;
 }
 
-ctx.panel.set("asset", "all-anim.glb");
-ctx.panel.set("mode", "VAT sockets + thin sword attachments");
+ctx.panel.set("asset", "HVGirl.glb");
+ctx.panel.set("source coordinates", "glTF RH");
+ctx.panel.set("scene coordinates", "Babylon Lite LH (loader converted)");
+ctx.panel.set("model normalization", `${CHARACTER_SCALE}x instance scale`);
+ctx.panel.set("active animation", vatAnimations[activeAnimationIndex]?.name ?? "none");
 ctx.panel.set("vat mesh parts", secondaryVatSets.length + 1);
 ctx.panel.set("vat characters", characters.count);
 ctx.panel.set("swords", `${swordIds.length} thin instances synced to ${RIGHT_HAND}`);
-ctx.panel.set("active animation", vatAnimations[activeAnimationIndex]?.name ?? "none");
 ctx.panel.button("next animation", () => {
   activeAnimationIndex = (activeAnimationIndex + 1) % vatAnimations.length;
   activateClip(activeAnimationIndex);
