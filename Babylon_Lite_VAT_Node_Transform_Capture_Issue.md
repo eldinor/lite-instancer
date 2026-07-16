@@ -45,7 +45,7 @@ It also avoids relying on debug-only controller state and gives all Lite consume
 
 ## Acceptance criteria
 
-1. Xbot and `HVGirl.glb` capture a right-hand transform for each frame of several clips.
+1. Ready Player and `HVGirl.glb` capture a right-hand transform for each frame of several clips.
 2. A rigid attachment composed as `instanceWorld * socketModel * gripOffset` remains aligned through clip changes and loop wrap.
 3. Captured frame indices match VAT rows at the first, middle, final, and wrapped frames.
 4. No public consumer needs `_ctrl`, `_debugWorldMat`, or another private Lite field.

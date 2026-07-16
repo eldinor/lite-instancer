@@ -66,4 +66,35 @@ describe("VAT attachment controller", () => {
     expect(writes).toHaveLength(1);
     expect(Array.from(writes[0]!.slice(12, 15))).toEqual([102, 3, 4]);
   });
+
+  it("does not override an attachment hidden by its caller", async () => {
+    const { createVatAttachmentController } = await import("../src/vat-attachment-controller.js");
+    const characterId = 1 as never;
+    const attachmentId = 10 as never;
+    const setVisible = vi.fn();
+    const controller = createVatAttachmentController({
+      characters: {
+        has: () => true,
+        getVisible: () => true,
+        getPlaybackSample: () => ({ clip: "Walk", timeSeconds: 0, offsetSeconds: 0, fps: 10, frame: 0, nextFrame: 1, alpha: 0 }),
+        getMatrix: () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+      } as never,
+      attachments: {
+        has: () => true,
+        getVisible: () => false,
+        batch: (callback: (writer: { setMatrix(): void; setVisible(id: number, value: boolean): void }) => void) => callback({ setMatrix: vi.fn(), setVisible })
+      } as never,
+      socketAsset: {
+        version: 1,
+        space: "gltf-rh-model-world",
+        basis: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+        clips: { Walk: { name: "Walk", fps: 10, frameCount: 1, durationSeconds: 0.1 } },
+        sockets: { sword: { Walk: { translations: new Float32Array([0, 0, 0]), rotations: new Float32Array([0, 0, 0, 1]) } } }
+      },
+      socket: "sword"
+    });
+    controller.bind(characterId, attachmentId);
+    controller.update();
+    expect(setVisible).not.toHaveBeenCalled();
+  });
 });

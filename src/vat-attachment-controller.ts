@@ -1,5 +1,5 @@
 import { mat4Compose, mat4Multiply, type Mat4 } from "@babylonjs/lite";
-import type { ColoredInstanceSet } from "./instance-set.js";
+import type { BaseInstanceSet } from "./types.js";
 import type { InstanceId } from "./types.js";
 import { createVatSocketTransform, sampleVatSocket, type VatSocketAsset } from "./vat-socket-asset.js";
 import type { VatInstanceSet } from "./vat-instance-set.js";
@@ -11,7 +11,8 @@ export interface VatAttachmentBindingOptions {
 
 export interface VatAttachmentControllerOptions<TCharacter = unknown, TAttachment = unknown> {
   readonly characters: VatInstanceSet<TCharacter>;
-  readonly attachments: ColoredInstanceSet<TAttachment>;
+  /** A single-mesh or hierarchy instance set for the rigid attachment asset. */
+  readonly attachments: BaseInstanceSet<TAttachment>;
   readonly socketAsset: VatSocketAsset;
   readonly socket: string;
   /** Hide an attachment while its character is hidden. Defaults to true. */
@@ -39,6 +40,7 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
   options: VatAttachmentControllerOptions<TCharacter, TAttachment>
 ): VatAttachmentController {
   const bindings = new Map<InstanceId, Binding>();
+  const hiddenByCharacter = new Set<InstanceId>();
   const hideWithCharacter = options.hideWithCharacter ?? true;
   const pose = createVatSocketTransform();
   const playback = { clip: "", timeSeconds: 0, offsetSeconds: 0, fps: 0, frame: 0, nextFrame: 0, alpha: 0 };
@@ -56,6 +58,10 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
       return true;
     },
     unbind(characterId) {
+      const attachmentId = bindings.get(characterId)?.attachmentId;
+      if (attachmentId !== undefined) {
+        hiddenByCharacter.delete(attachmentId);
+      }
       return bindings.delete(characterId);
     },
     getAttachment(characterId) {
@@ -66,12 +72,14 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
       options.attachments.batch((writer) => {
         for (const [characterId, binding] of bindings) {
           if (!options.characters.has(characterId) || !options.attachments.has(binding.attachmentId)) {
+            hiddenByCharacter.delete(binding.attachmentId);
             bindings.delete(characterId);
             continue;
           }
           const visible = options.characters.getVisible(characterId);
           if (!visible && hideWithCharacter) {
             writer.setVisible(binding.attachmentId, false);
+            hiddenByCharacter.add(binding.attachmentId);
             continue;
           }
           const sample = options.characters.getPlaybackSample(characterId, playback);
@@ -94,7 +102,7 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
           const socketWithGrip = mat4Multiply(mat4Multiply(options.socketAsset.basis as Mat4, socketMatrix), binding.gripOffset);
           const world = mat4Multiply(options.characters.getMatrix(characterId, characterMatrix), socketWithGrip);
           writer.setMatrix(binding.attachmentId, world);
-          if (hideWithCharacter && !options.attachments.getVisible(binding.attachmentId)) {
+          if (hideWithCharacter && hiddenByCharacter.delete(binding.attachmentId)) {
             writer.setVisible(binding.attachmentId, true);
           }
           updated++;
@@ -104,6 +112,7 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
     },
     clear() {
       bindings.clear();
+      hiddenByCharacter.clear();
     }
   };
 }

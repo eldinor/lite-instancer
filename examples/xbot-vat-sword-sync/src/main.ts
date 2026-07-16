@@ -1,6 +1,5 @@
 import {
   addToScene,
-  attachVat,
   bakeVat,
   createCylinder,
   createPbrMaterial,
@@ -14,6 +13,7 @@ import {
 } from "@babylonjs/lite";
 import {
   bakeVatSocketAsset,
+  attachVatSafely,
   createInstanceSet,
   createVatAttachmentController,
   createVatInstanceSet
@@ -24,7 +24,7 @@ const MODEL_URL = "https://raw.githubusercontent.com/eldinor/ForBJS/master/all-a
 const BRDF_URL = "https://raw.githubusercontent.com/BabylonJS/Babylon-Lite/master/lab/public/brdf-lut.png";
 const RIGHT_HAND = "RightHand";
 
-const ctx = await createExample("Xbot VAT Sword Sync");
+const ctx = await createExample("Ready Player VAT Sword Sync");
 ctx.panel.set("asset", "loading");
 await loadEnvironment(ctx.scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { brdfUrl: BRDF_URL });
 
@@ -43,7 +43,7 @@ const vatMeshes = collectMeshes(vatRoot).filter(hasSkeleton);
 const vatAnimations = vatContainer.animationGroups ?? [];
 const firstMesh = vatMeshes.shift();
 if (!firstMesh || sourceAnimations.length === 0 || vatAnimations.length === 0) {
-  throw new Error("Xbot GLB must provide skinned meshes and animation groups");
+  throw new Error("Ready Player GLB must provide skinned meshes and animation groups");
 }
 
 const characters = createVatInstanceSet(ctx.engine, firstMesh, vatAnimations, {
@@ -56,7 +56,7 @@ const sockets = bakeVatSocketAsset(ctx.engine, sourceAnimations, {
   sockets: { sword: RIGHT_HAND }
 });
 const secondaryVatSets = vatMeshes.map((mesh) => {
-  const handle = attachVat(ctx.engine, mesh, bakeVat(ctx.engine, mesh, vatAnimations));
+  const handle = attachVatSafely(ctx.engine, mesh, bakeVat(ctx.engine, mesh, vatAnimations));
   const set = createInstanceSet(mesh, { capacity: 5, engine: ctx.engine, visibleStrategy: "scale-zero" });
   return { handle, set };
 });

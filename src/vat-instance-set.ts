@@ -1,5 +1,4 @@
 import {
-  attachVat,
   bakeVat,
   type AnimationGroup,
   type EngineContext,
@@ -9,6 +8,7 @@ import {
   type VatHandle
 } from "@babylonjs/lite";
 import { createInstanceSet, type ColoredInstanceSet } from "./instance-set.js";
+import { attachVatSafely } from "./vat-attach.js";
 import type {
   InstanceBatchWriter,
   InstanceColorInput,
@@ -183,7 +183,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
 ): VatInstanceSet<TMetadata> {
   const baked = bakeVat(engine, mesh, animationGroups);
   const initialClip = options.clip ?? Object.keys(baked.clips)[0];
-  const handle = attachVat(engine, mesh, baked, initialClip);
+  const handle = attachVatSafely(engine, mesh, baked, initialClip);
   const { clip: _clip, ...setOptions } = options;
   const set = createInstanceSet<TMetadata>(mesh, {
     ...setOptions,

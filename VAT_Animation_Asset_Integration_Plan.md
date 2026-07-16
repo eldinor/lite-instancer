@@ -259,7 +259,7 @@ Record bundle sizes in the fixture tests to catch accidental dependency regressi
 ### Phase 0: contracts and feasibility spike
 
 - Confirm a public Babylon Lite API for capturing selected node TRS at VAT frames.
-- Define the model-space root and handedness contract using both Xbot and HVGirl.
+- Define the model-space root and handedness contract using both Ready Player and HVGirl.
 - Write golden frame tests comparing a baked right-hand socket against the live skeleton at several frames per clip.
 - Confirm the exact VAT shader frame/loop formula, including the duplicated endpoint frame.
 
@@ -289,7 +289,7 @@ Exit criterion: pure unit tests sample known poses correctly without creating an
 - Convert every pose into the declared model space.
 - Reuse VAT clip FPS/frame counts rather than recomputing an independent timeline.
 - Bake socket data once for multi-primitive rigs.
-- Add Xbot and HVGirl golden comparisons.
+- Add Ready Player and HVGirl golden comparisons.
 
 Exit criterion: all sampled clips remain aligned with VAT at the first, middle, last, and loop-wrap frames.
 
@@ -314,7 +314,7 @@ Exit criterion: core-only and VAT-only fixtures contain none of the optional soc
 
 ### Phase 6: examples and documentation
 
-- Refactor Xbot sword sync to use baked socket tracks and the attachment controller.
+- Refactor Ready Player sword sync to use baked socket tracks and the attachment controller.
 - Refactor Samba Girl to prove multi-primitive reuse and clip switching.
 - Add one per-instance phase/FPS example to prove attachments do not drift.
 - Document coordinate space, grip offsets, stable-ID binding, memory cost, and the tree-shakable import paths.
@@ -347,7 +347,7 @@ Mitigation: make the public capture API a Phase 0 gate.
 
 Risk: glTF conversion, authored root scale, or a second mirror produces displaced or reversed weapons.
 
-Mitigation: version the space contract and use Xbot plus HVGirl golden tests.
+Mitigation: version the space contract and use Ready Player plus HVGirl golden tests.
 
 ### CPU cost
 
@@ -375,7 +375,7 @@ The smallest valuable vertical slice is:
 2. `VatInstanceSet.timeSeconds` and `getPlaybackSample()`;
 3. versioned TRS socket tracks and `sampleVatSocket()`;
 4. a stable-ID attachment controller;
-5. one Xbot example, one multi-part HVGirl example;
+5. one Ready Player example, one multi-part HVGirl example;
 6. subpath exports and bundle fixtures.
 
 This delivers the sword/shield/particle attachment foundation described in the proposals while keeping the existing instancer small, composable, and genuinely tree-shakable.

@@ -1,6 +1,5 @@
 import {
   addToScene,
-  attachVat,
   bakeVat,
   createCylinder,
   createPbrMaterial,
@@ -14,6 +13,7 @@ import {
 } from "@babylonjs/lite";
 import {
   bakeVatSocketAsset,
+  attachVatSafely,
   createInstanceSet,
   createVatAttachmentController,
   createVatInstanceSet
@@ -60,7 +60,7 @@ const sockets = bakeVatSocketAsset(ctx.engine, sourceAnimations, {
   sockets: { sword: RIGHT_HAND }
 });
 const secondaryVatSets = vatMeshes.map((mesh) => {
-  const handle = attachVat(ctx.engine, mesh, bakeVat(ctx.engine, mesh, vatAnimations));
+  const handle = attachVatSafely(ctx.engine, mesh, bakeVat(ctx.engine, mesh, vatAnimations));
   const set = createInstanceSet(mesh, { capacity: 5, engine: ctx.engine, visibleStrategy: "scale-zero" });
   return { handle, set };
 });

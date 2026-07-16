@@ -1,7 +1,5 @@
 import {
   addToScene,
-  createCylinder,
-  createPbrMaterial,
   loadGltf,
   loadEnvironment,
   mat4Compose,
@@ -15,20 +13,22 @@ import {
 } from "@babylonjs/lite";
 import { createExample, runExample } from "../../shared/app.js";
 
-const XBOT_URL = "https://raw.githubusercontent.com/eldinor/ForBJS/master/all-anim.glb";
+const READY_PLAYER_URL = "https://raw.githubusercontent.com/eldinor/ForBJS/master/all-anim.glb";
+const SWORD_URL = "/fantasy_sword.glb";
 
-const ctx = await createExample("Xbot Basic Animation");
+const ctx = await createExample("Ready Player Basic Animation");
 ctx.panel.set("asset", "loading");
 
 await loadEnvironment(ctx.scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", {
   brdfUrl: "https://raw.githubusercontent.com/BabylonJS/Babylon-Lite/master/lab/public/brdf-lut.png"
 });
 
-const container = await loadGltf(ctx.engine, XBOT_URL);
+const container = await loadGltf(ctx.engine, READY_PLAYER_URL);
 addToScene(ctx.scene, container);
 
 const camera = ctx.scene.camera;
 if (isArcRotateCamera(camera)) {
+  camera.alpha += Math.PI;
   camera.radius = 4.2;
   camera.target.x = 0;
   camera.target.y = 0.95;
@@ -52,17 +52,15 @@ if (rightHandIndex === undefined) {
   throw new Error("Character animation does not target a RightHand joint");
 }
 
-const cylinder = createCylinder(ctx.engine, { height: 0.675, diameter: 0.07 });
-cylinder.material = createPbrMaterial({
-  baseColorFactor: [0.82, 0.86, 0.95, 1],
-  metallicFactor: 0.78,
-  roughnessFactor: 0.24,
-  environmentIntensity: 1.6,
-  directIntensity: 1.35
-});
-addToScene(ctx.scene, cylinder);
-cylinder.name = "attached-cylinder";
-const grip = { x: -0.03, y: 0.39, z: 0.01, pitch: 7, yaw: 0, roll: 0 };
+const swordContainer = await loadGltf(ctx.engine, SWORD_URL);
+addToScene(ctx.scene, swordContainer);
+const swordRoot = swordContainer.entities[0];
+if (!isSceneNode(swordRoot)) {
+  throw new Error("Fantasy Sword GLB did not provide a scene-node root");
+}
+const swordRootMatrix = new Float32Array(swordRoot.worldMatrix) as Mat4;
+// Matches the curated Ready Player transform in the socket configurator.
+const grip = { x: 0.42, y: 0.09, z: 0.01, pitch: 0, yaw: 0, roll: 0, sx: 0.53, sy: 0.53, sz: 0.53 };
 let gripOffset = createGripOffset();
 
 const sceneCallbacks = ctx.scene as unknown as SceneCallbackAccess;
@@ -72,11 +70,11 @@ sceneCallbacks._beforeRender.push(() => {
   if (!handWorld) {
     return;
   }
-  const attachedWorld = mat4Multiply(handWorld, gripOffset);
+  const attachedWorld = mat4Multiply(handWorld, mat4Multiply(gripOffset, swordRootMatrix));
   const { translation, rotation, scale } = mat4Decompose(attachedWorld);
-  cylinder.position.set(translation.x, translation.y, translation.z);
-  cylinder.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
-  cylinder.scaling.set(scale.x, scale.y, scale.z);
+  swordRoot.position.set(translation.x, translation.y, translation.z);
+  swordRoot.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  swordRoot.scaling.set(scale.x, scale.y, scale.z);
 });
 
 ctx.panel.set("asset", "all-anim.glb");
@@ -86,7 +84,7 @@ ctx.panel.set("active animation", activeAnimation?.name ?? "none");
 ctx.panel.set("root", root.name || "unnamed");
 ctx.panel.set("status", activeAnimation ? "playing" : "no animation found");
 createGripTuningControls();
-ctx.panel.set("attachment", "tall cylinder → RightHand");
+ctx.panel.set("attachment", "Fantasy Sword hierarchy → RightHand");
 ctx.panel.button("next animation", () => {
   if (animations.length === 0) {
     return;
@@ -97,7 +95,7 @@ ctx.panel.button("next animation", () => {
   ctx.panel.set("active animation", activeAnimation?.name ?? "none");
 });
 ctx.panel.button("reset grip", () => {
-  Object.assign(grip, { x: -0.03, y: 0.39, z: 0.01, pitch: 7, yaw: 0, roll: 0 });
+  Object.assign(grip, { x: 0.42, y: 0.09, z: 0.01, pitch: 0, yaw: 0, roll: 0, sx: 0.53, sy: 0.53, sz: 0.53 });
   gripOffset = createGripOffset();
   syncGripInputs();
   updateGripReadout();
@@ -135,12 +133,15 @@ function createGripTuningControls(): void {
   controls.style.cssText = "display:grid;gap:6px;margin:12px 0 0;padding:8px;border:1px solid rgba(255,255,255,.14);border-radius:6px;font-size:12px";
   ctx.panel.root.append(controls);
 
-  addGripSlider(controls, "X", "x", -0.4, 0.4, 0.01);
+  addGripSlider(controls, "X", "x", -0.6, 0.6, 0.01);
   addGripSlider(controls, "Y", "y", -0.1, 0.6, 0.01);
   addGripSlider(controls, "Z", "z", -0.4, 0.4, 0.01);
   addGripSlider(controls, "Pitch", "pitch", -180, 180, 1);
   addGripSlider(controls, "Yaw", "yaw", -180, 180, 1);
   addGripSlider(controls, "Roll", "roll", -180, 180, 1);
+  addGripSlider(controls, "Scale X", "sx", 0.01, 2, 0.01);
+  addGripSlider(controls, "Scale Y", "sy", 0.01, 2, 0.01);
+  addGripSlider(controls, "Scale Z", "sz", 0.01, 2, 0.01);
   updateGripReadout();
 }
 
@@ -177,7 +178,7 @@ function addGripSlider(
 
 function createGripOffset(): Mat4 {
   const [x, y, z, w] = quaternionFromEulerDegrees(grip.pitch, grip.yaw, grip.roll);
-  return mat4Compose(grip.x, grip.y, grip.z, x, y, z, w, 1, 1, 1);
+  return mat4Compose(grip.x, grip.y, grip.z, x, y, z, w, grip.sx, grip.sy, grip.sz);
 }
 
 function quaternionFromEulerDegrees(pitch: number, yaw: number, roll: number): [number, number, number, number] {
@@ -196,7 +197,7 @@ function quaternionFromEulerDegrees(pitch: number, yaw: number, roll: number): [
 function updateGripReadout(): void {
   ctx.panel.set(
     "grip transform",
-    `pos [${grip.x.toFixed(2)}, ${grip.y.toFixed(2)}, ${grip.z.toFixed(2)}], rot [${grip.pitch}, ${grip.yaw}, ${grip.roll}]°`
+    `pos [${grip.x.toFixed(2)}, ${grip.y.toFixed(2)}, ${grip.z.toFixed(2)}], rot [${grip.pitch}, ${grip.yaw}, ${grip.roll}]°, scale [${grip.sx.toFixed(2)}, ${grip.sy.toFixed(2)}, ${grip.sz.toFixed(2)}]`
   );
 }
 
