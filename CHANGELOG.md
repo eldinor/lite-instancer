@@ -1,15 +1,20 @@
 # Changelog
 
-## 0.3.1 - 2026-07-17
+## 0.3.2 - 2026-07-17
 
 ### Changed
 
-- Updated the Babylon Lite peer and development dependency to `^1.11.0`.
 - Coalesced VAT playback-parameter uploads during `VatInstanceSet.createMany()` and coordinated `VatCharacterSet.createMany()` calls, avoiding repeated full uploads while preserving per-instance playback data.
 
 ### Fixed
 
 - Serve example-only public GLB assets during local development, so the Ready Player examples and GLB VAT Socket Configurator load `/fantasy_sword.glb` as a binary asset instead of Vite's HTML fallback.
+
+## 0.3.1 - 2026-07-17
+
+### Changed
+
+- Updated the Babylon Lite peer and development dependency to `^1.11.0`.
 
 ## 0.3.0 - 2026-07-16
 
