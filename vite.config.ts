@@ -1,10 +1,10 @@
 import { defineConfig } from "vite";
 
-export default defineConfig({
-  // `public/` contains example-only GLBs. The separate examples build copies
-  // them to `examples-dist`; publishing them with the library would make every
-  // npm consumer download demo assets they never import.
-  publicDir: false,
+export default defineConfig(({ command }) => ({
+  // `public/` contains example-only GLBs. Serve them during local development
+  // so example URLs such as `/fantasy_sword.glb` resolve to binary assets, but
+  // exclude them from the published library build.
+  publicDir: command === "serve" ? "public" : false,
   build: {
     lib: {
       entry: {
@@ -22,4 +22,4 @@ export default defineConfig({
     },
     sourcemap: true
   }
-});
+}));

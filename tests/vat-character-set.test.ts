@@ -59,4 +59,19 @@ describe("VatCharacterSet", () => {
     expect(handles[0]!.update).toHaveBeenCalledWith(0.25);
     expect(handles[1]!.update).toHaveBeenCalledWith(0.25);
   });
+
+  it("coalesces playback uploads when creating multiple coordinated characters", async () => {
+    const { createVatCharacterSet } = await import("../src/vat-character-set.js");
+    const device = { queue: { submit: vi.fn(), onSubmittedWorkDone: vi.fn(() => Promise.resolve()) } };
+    const primaryMesh = { skeleton: { boneTexture: { destroy: vi.fn() } }, children: [] };
+    const secondaryMesh = { skeleton: { boneTexture: { destroy: vi.fn() } }, children: [] };
+    const root = { children: [primaryMesh, secondaryMesh] };
+    const character = createVatCharacterSet({ _device: device } as never, root as never, [{}] as never, { capacity: 4 });
+
+    character.createMany([{ offset: 0 }, { offset: 0.5 }, { offset: 1 }]);
+
+    expect(handles).toHaveLength(2);
+    expect(handles[0]!.setInstances).toHaveBeenCalledTimes(1);
+    expect(handles[1]!.setInstances).toHaveBeenCalledTimes(1);
+  });
 });

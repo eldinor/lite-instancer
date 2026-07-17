@@ -183,8 +183,18 @@ export function createVatCharacterSet<TMetadata = unknown>(
       return id;
     },
     createMany(items) {
-      const ids: InstanceId[] = [];
-      for (const item of items) ids.push(api.create(item));
+      const createOptions = Array.from(items);
+      const ids = primary.createMany(createOptions);
+      for (let index = 0; index < ids.length; index++) {
+        const id = ids[index]!;
+        const options = createOptions[index]!;
+        for (const part of secondary) {
+          const secondaryId = part.set.create(options.transform);
+          part.primaryBySecondary.set(secondaryId, id);
+          part.secondaryByPrimary.set(id, secondaryId);
+        }
+      }
+      synchronizeSecondaryPlayback();
       return ids;
     },
     remove(id) {

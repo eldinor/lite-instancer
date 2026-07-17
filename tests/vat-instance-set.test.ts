@@ -76,6 +76,20 @@ describe("VatInstanceSet", () => {
     expect(vat.setClip(overridden, "Missing")).toBe(false);
   });
 
+  it("coalesces createMany playback uploads into one complete parameter update", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, { capacity: 4, clip: "Swim" });
+
+    vat.createMany([{ offset: 1 }, { clip: "Turn", offset: 2 }, { offset: 3 }]);
+
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+    expect(Array.from(handle.setInstances.mock.lastCall?.[0] as Float32Array)).toEqual([
+      0, 9, 20, 20,
+      20, 24, 20, 10,
+      0, 9, 60, 20
+    ]);
+  });
+
   it("exposes common instance-set operations directly", async () => {
     const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
     const { toInstanceId } = await import("../src/types.js");

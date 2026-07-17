@@ -208,6 +208,50 @@ export function createVatInstanceSet<TMetadata = unknown>(
   let activeClip = initialClip;
   let timeSeconds = 0;
   const playback = new Map<InstanceId, VatInstancePlayback>();
+  let playbackSyncDepth = 0;
+  let playbackSyncPending = false;
+
+  const uploadPlaybackInstances = (): void => {
+    if (!activeClip || set.count === 0) {
+      return;
+    }
+    const params = new Float32Array(set.count * 4);
+    for (let slot = 0; slot < set.count; slot++) {
+      const id = set.getIdForSlot(slot);
+      const item = id === undefined ? undefined : playback.get(id);
+      const clip = getClip(handle.clips, item?.clip ?? activeClip);
+      if (!clip) {
+        continue;
+      }
+      params[slot * 4] = clip.fromRow;
+      params[slot * 4 + 1] = clip.fromRow + clip.frameCount - 1;
+      const fps = item?.fps ?? clip.fps;
+      params[slot * 4 + 2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
+      params[slot * 4 + 3] = fps;
+    }
+    handle.setInstances(params);
+  };
+
+  const syncPlaybackInstances = (): void => {
+    if (playbackSyncDepth > 0) {
+      playbackSyncPending = true;
+      return;
+    }
+    uploadPlaybackInstances();
+  };
+
+  const batchPlaybackUpdates = <T>(callback: () => T): T => {
+    playbackSyncDepth++;
+    try {
+      return callback();
+    } finally {
+      playbackSyncDepth--;
+      if (playbackSyncDepth === 0 && playbackSyncPending) {
+        playbackSyncPending = false;
+        uploadPlaybackInstances();
+      }
+    }
+  };
 
   const api: VatInstanceSet<TMetadata> = {
     set,
@@ -245,11 +289,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
       return id;
     },
     createMany(items) {
-      const ids: InstanceId[] = [];
-      for (const item of items) {
-        ids.push(api.create(item));
-      }
-      return ids;
+      return batchPlaybackUpdates(() => Array.from(items, (item) => api.create(item)));
     },
     remove(id) {
       const removed = set.remove(id);
@@ -431,24 +471,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
       api.syncInstances();
     },
     syncInstances() {
-      if (!api.getActiveClip() || set.count === 0) {
-        return;
-      }
-      const params = new Float32Array(set.count * 4);
-      for (let slot = 0; slot < set.count; slot++) {
-        const id = set.getIdForSlot(slot);
-        const item = id === undefined ? undefined : playback.get(id);
-        const clip = getClip(handle.clips, item?.clip ?? activeClip);
-        if (!clip) {
-          continue;
-        }
-        params[slot * 4] = clip.fromRow;
-        params[slot * 4 + 1] = clip.fromRow + clip.frameCount - 1;
-        const fps = item?.fps ?? clip.fps;
-        params[slot * 4 + 2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
-        params[slot * 4 + 3] = fps;
-      }
-      handle.setInstances(params);
+      syncPlaybackInstances();
     }
   };
 
