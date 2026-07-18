@@ -1,6 +1,6 @@
 {
   "name": "@litools/instancer",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.",
   "homepage": "https://instancer.babylonpress.org/",
   "repository": {
