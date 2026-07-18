@@ -5,7 +5,7 @@
 - Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
 - Show five Shader Ball GLB copies through one hierarchy `InstanceSet`, with synchronized outlines on every mesh part.
 - Add an eight-part Marble Tower glTF scenario to the outline examples gallery.
-- Slowly rotate the Marble Tower wheel around its local axle with a dedicated teal outline.
+- Show three resource-sharing Marble Towers with distinct outline palettes and slowly rotating wheels.
 - Use retained native Lite glTF geometry directly so the outliner applies exactly one inverted-hull winding reversal.
 - Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
 

@@ -1,5 +1,6 @@
 import {
   addToScene,
+  cloneTransformNode,
   createBoxData,
   createCapsuleData,
   createCylinderData,
@@ -196,44 +197,66 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
   if (!root || !("children" in root) || !("scaling" in root)) {
     throw new Error("Marble Tower glTF did not provide a scene root");
   }
-  root.scaling.set(-0.6, 0.6, 0.6);
-  root.position.set(0, 12, 0);
+  root.scaling.set(-0.42, 0.42, 0.42);
+  root.position.set(-10, 8.4, 0);
+  const towerRoots = [root, cloneTransformNode(root), cloneTransformNode(root)];
+  towerRoots[1]!.position.set(0, 8.4, 0);
+  towerRoots[2]!.position.set(10, 8.4, 0);
   addToScene(context.scene, container);
+  addToScene(context.scene, towerRoots[1]!);
+  addToScene(context.scene, towerRoots[2]!);
 
-  const sourceMeshes = collectMeshes(root);
-  const wheel = sourceMeshes.find((source) => source.name.toLowerCase() === "wheel");
-  const wheelGeometry = wheel ? tryGetRetainedOutlineGeometry(wheel) : null;
-  if (!wheel || !wheelGeometry) {
-    throw new Error("Marble Tower glTF did not provide retained geometry for its wheel mesh");
-  }
-  const wheelPivot = computeOutlineCenter(wheelGeometry.positions);
-  const wheelBasePosition = [wheel.position.x, wheel.position.y, wheel.position.z] as const;
-  let wheelAngle = 0;
+  const towerMeshes = towerRoots.map((towerRoot) => collectMeshes(towerRoot));
+  const wheelStates = towerMeshes.map((meshes, index) => {
+    const mesh = meshes.find((source) => source.name.toLowerCase().startsWith("wheel"));
+    const geometry = mesh ? tryGetRetainedOutlineGeometry(mesh) : null;
+    if (!mesh || !geometry) {
+      throw new Error(`Marble Tower ${index + 1} did not provide retained geometry for its wheel mesh`);
+    }
+    return {
+      mesh,
+      pivot: computeOutlineCenter(geometry.positions),
+      basePosition: [mesh.position.x, mesh.position.y, mesh.position.z] as const,
+      angle: index * 0.35,
+      speed: 0.00018 + index * 0.00002
+    };
+  });
   onBeforeRender(context.scene, (deltaMs) => {
-    wheelAngle = (wheelAngle + deltaMs * 0.0002) % (Math.PI * 2);
-    rotateMeshAroundLocalX(wheel, wheelPivot, wheelBasePosition, wheelAngle);
+    for (const wheel of wheelStates) {
+      wheel.angle = (wheel.angle + deltaMs * wheel.speed) % (Math.PI * 2);
+      rotateMeshAroundLocalX(wheel.mesh, wheel.pivot, wheel.basePosition, wheel.angle);
+    }
   });
 
   const manager = createThinInstanceOutliner(context.engine, context.scene);
   const attachments: Array<ReturnType<typeof manager.attach>> = [];
   const partNames: string[] = [];
+  const palettes = [
+    { body: [1, 0.55, 0.12], wheel: [0.08, 0.82, 0.78] },
+    { body: [0.28, 0.62, 1], wheel: [0.3, 1, 0.68] },
+    { body: [0.82, 0.34, 1], wheel: [1, 0.35, 0.62] }
+  ] as const;
   let skipped = 0;
-  sourceMeshes.forEach((source) => {
-    const retainedGeometry = tryGetRetainedOutlineGeometry(source);
-    if (!retainedGeometry) {
-      skipped++;
-      return;
-    }
-    source.renderOrder = 100;
-    const attachment = manager.attach(source, {
-      geometry: retainedGeometry,
-      smoothNormals: true,
-      thickness: 8,
-      color: source === wheel ? [0.08, 0.82, 0.78] : [1, 0.55, 0.12]
+  towerMeshes.forEach((meshes, towerIndex) => {
+    const palette = palettes[towerIndex]!;
+    const wheel = wheelStates[towerIndex]!.mesh;
+    meshes.forEach((source) => {
+      const retainedGeometry = tryGetRetainedOutlineGeometry(source);
+      if (!retainedGeometry) {
+        skipped++;
+        return;
+      }
+      source.renderOrder = 100;
+      const attachment = manager.attach(source, {
+        geometry: retainedGeometry,
+        smoothNormals: true,
+        thickness: 8,
+        color: source === wheel ? palette.wheel : palette.body
+      });
+      attachment.highlight(0);
+      attachments.push(attachment);
+      partNames.push(`${towerIndex + 1}:${source.name}`);
     });
-    attachment.highlight(0);
-    attachments.push(attachment);
-    partNames.push(source.name);
   });
 
   let visible = true;
@@ -247,12 +270,15 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
     context.panel.set("highlighted", visible ? attachments.length : 0);
   });
   context.panel.set("asset", "marbleTower.gltf");
+  context.panel.set("towers", towerRoots.length);
+  context.panel.set("spacing", "10 world units");
   context.panel.set("parts", partNames.join(", "));
-  context.panel.set("source meshes", sourceMeshes.length);
+  context.panel.set("source meshes", towerMeshes.reduce((total, meshes) => total + meshes.length, 0));
   context.panel.set("outlined meshes", attachments.length);
   context.panel.set("skipped geometry", skipped);
   context.panel.set("loader", "native Babylon Lite loadGltf");
-  context.panel.set("wheel", "rotating at 0.2 rad/s with teal outline");
+  context.panel.set("wheels", "rotating at 0.18, 0.20, and 0.22 rad/s");
+  context.panel.set("palettes", "orange/teal, blue/mint, violet/pink");
   context.panel.set("winding", "inverted hull from retained glTF geometry");
   context.panel.set("outline draws", `${attachments.length} (one per mesh part)`);
   context.panel.set("outlines", "shown");
