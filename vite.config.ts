@@ -12,7 +12,8 @@ export default defineConfig(({ command }) => ({
         core: "src/core.ts",
         vat: "src/vat.ts",
         animation: "src/animation.ts",
-        "vat-sockets": "src/vat-sockets.ts"
+        "vat-sockets": "src/vat-sockets.ts",
+        outline: "src/outline.ts"
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`

@@ -64,6 +64,25 @@ const heroes = createVatCharacterSet(engine, characterRoot, animationGroups, {
 
 Use `PickingRegistry` for normal thin-instance picking. Use `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
 
+Use the optional outline subpath to highlight stable IDs without retaining backing slots:
+
+```ts
+import { createInstanceOutliner } from "@litools/instancer/outline";
+
+const outliner = createInstanceOutliner(engine, scene);
+const outlines = outliner.attach(boxes, {
+  geometry: boxData,
+  thickness: 0.04,
+  color: [0.3, 0.8, 1]
+});
+
+outlines.highlight(id);
+// Call after changing a highlighted source transform.
+outlines.refresh(id);
+```
+
+The outline renderer uses one compact thin-instance draw per attached host and stores only highlighted IDs. Use `createThinInstanceOutliner` for ordinary meshes or raw Babylon Lite thin-instance indices. Explicit source geometry is the supported contract; transparent hosts and mirrored winding remain documented limitations.
+
 ## Stable IDs
 
 The package returns numeric `InstanceId` values. Slots may change after remove, hide/show, growth, or rebuild operations. Keep IDs in your app state, and ask the set for the current slot only when you need to talk to lower-level Babylon Lite APIs.
@@ -307,6 +326,7 @@ Then open the root examples page. Useful demos:
 - Ready Player VAT Sword Sync and Samba Girl VAT Sword Sync: attachment synchronization across single- and multi-part VAT characters.
 - GLB VAT Socket Configurator: select an animated socket, tune an attachment GLB, and export a JSON preset plus TypeScript setup.
 - Unarmed VAT Arena Crowd: three independent VAT groups with nine selected clips and density modes from 300 to 3,000 characters.
+- Thin Instance Outline Gallery: outlined boxes, spheres, cylinders, capsules, toruses, torus knots, stable-ID and raw-index selection, smoothing, transformed single meshes, and animated effects.
 
 See `About_Examples.md` for a fuller explanation of every example, and `About_Examples_Extended.md` for important code snippets from each one.
 

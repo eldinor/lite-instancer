@@ -58,6 +58,10 @@
     "./vat-sockets": {
       "types": "./dist/vat-sockets.d.ts",
       "import": "./dist/vat-sockets.js"
+    },
+    "./outline": {
+      "types": "./dist/outline.d.ts",
+      "import": "./dist/outline.js"
     }
   },
   "publishConfig": {

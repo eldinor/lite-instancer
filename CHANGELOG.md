@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
+- Rebuild the Shader Ball demo from retained GLB geometry as an opaque positive-determinant host, avoiding imported hierarchy and depth-cover differences.
+- Add an eight-part Marble Tower glTF scenario to the outline examples gallery.
+- Use native Lite-loaded glTF meshes and materials in the imported outline demos, compensating the outline winding for the loader's mirrored conversion root.
+- Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
+
+### Added
+
+- Added the optional `@litools/instancer/outline` entry point with native Babylon Lite WGSL inverted-hull outlines, compact highlighted-instance pools, stable-`InstanceId` and standalone raw-index managers, per-instance colors/phases, smooth outline normals, and animated pulse, color-cycle, edge-flow, rim-flow, and sizzle effects.
+- Added the multi-scenario Thin Instance Outline Gallery for selection, box/sphere/cylinder/capsule/torus/torus-knot geometry, colors, normal smoothing, single meshes, effects, and standalone thin instances.
+- Diversified the effects gallery so pulse, color cycle, edge flow, rim flow, and sizzle run on distinct sphere, torus, capsule, torus-knot, and box silhouettes.
+
 ## 0.3.2 - 2026-07-17
 
 ### Changed
