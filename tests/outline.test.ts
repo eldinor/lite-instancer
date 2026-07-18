@@ -4,6 +4,10 @@ const beforeRenderCallbacks: Array<(deltaMs: number) => void> = [];
 
 vi.mock("@babylonjs/lite", () => ({
   createShaderMaterial: vi.fn((options) => ({ ...options, _uniforms: new Map() })),
+  createStorageBuffer: vi.fn((_engine, data) => ({ data })),
+  disposeStorageBuffer: vi.fn(),
+  updateStorageBuffer: vi.fn(),
+  setShaderStorageBuffer: vi.fn((material, name, buffer) => { material[name] = buffer; }),
   setShaderUniform: vi.fn((material, name, value) => material._uniforms.set(name, value)),
   createMeshFromData: vi.fn((_engine, name) => createNode(name)),
   addToScene: vi.fn((scene, mesh) => scene.meshes.push(mesh)),
@@ -157,5 +161,29 @@ describe("outline managers", () => {
     expect(() => attachment.setEffectParams({ sizzle: { speed: 2 } })).toThrow(/not enabled/);
     beforeRenderCallbacks[0]?.(16);
     expect((attachment.material as never as { _uniforms: Map<string, number> })._uniforms.get("time")).toBeCloseTo(0.016);
+  });
+
+  it("shares live skeleton inputs and updates outline bone matrices", async () => {
+    const lite = await import("@babylonjs/lite");
+    const { createThinInstanceOutliner } = await import("../src/outline.js");
+    const host = createNode("skinned") as ReturnType<typeof createNode> & {
+      skeleton: Record<string, unknown>;
+    };
+    const skeleton = {
+      boneMatrices: new Float32Array(64),
+      joints1Buffer: null,
+      weights1Buffer: null
+    };
+    host.skeleton = skeleton;
+    const manager = createThinInstanceOutliner({} as never, { meshes: [] } as never);
+    const attachment = manager.attach(host as never, { geometry });
+
+    expect(attachment.outlineMesh.skeleton).toBe(skeleton);
+    expect((skeleton as { _refCount?: number })._refCount).toBe(2);
+    expect(attachment.material.attributes).toContain("joints");
+    beforeRenderCallbacks[0]?.(16);
+    expect(lite.updateStorageBuffer).toHaveBeenCalledWith(expect.anything(), expect.anything(), skeleton.boneMatrices);
+    attachment.dispose();
+    expect(lite.disposeStorageBuffer).toHaveBeenCalled();
   });
 });

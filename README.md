@@ -81,7 +81,9 @@ outlines.highlight(id);
 outlines.refresh(id);
 ```
 
-The outline renderer uses one compact thin-instance draw per attached host and stores only highlighted IDs. Use `createThinInstanceOutliner` for ordinary meshes or raw Babylon Lite thin-instance indices. Explicit source geometry is the supported contract; transparent hosts and mirrored winding remain documented limitations.
+The outline renderer uses one compact thin-instance draw per attached host and stores only highlighted IDs. Use `createThinInstanceOutliner` for ordinary meshes or raw Babylon Lite thin-instance indices. A host with a live Babylon Lite skeleton automatically shares its joint/weight streams with the outline and mirrors current bone matrices each frame. Explicit source geometry is the supported contract; transparent hosts and mirrored winding remain documented limitations.
+
+The original idea for this outline feature came from [increasinglyHuman/babylon-thin-instance-outline](https://github.com/increasinglyHuman/babylon-thin-instance-outline) for Babylon.js. This package implements the approach natively for Babylon Lite and adds its own stable-ID, compact-pool, and live-skeleton workflows.
 
 ## Stable IDs
 
@@ -326,7 +328,7 @@ Then open the root examples page. Useful demos:
 - Ready Player VAT Sword Sync and Samba Girl VAT Sword Sync: attachment synchronization across single- and multi-part VAT characters.
 - GLB VAT Socket Configurator: select an animated socket, tune an attachment GLB, and export a JSON preset plus TypeScript setup.
 - Unarmed VAT Arena Crowd: three independent VAT groups with nine selected clips and density modes from 300 to 3,000 characters.
-- Thin Instance Outline Gallery: outlined boxes, spheres, cylinders, capsules, toruses, torus knots, stable-ID and raw-index selection, smoothing, transformed single meshes, and animated effects.
+- Thin Instance Outline Gallery: primitives, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, stable-ID and raw-index selection, smoothing, and animated effects.
 
 See `About_Examples.md` for a fuller explanation of every example, and `About_Examples_Extended.md` for important code snippets from each one.
 

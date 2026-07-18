@@ -62,9 +62,9 @@ outlines.refresh(id);
 outlines.clear(id);
 ```
 
-Animated effects are selected at attach time. Their uniform-backed values can be changed with `setEffectParams`; enabling a new effect requires a new attachment. `createThinInstanceOutliner` provides the same lifecycle for ordinary meshes and raw thin-instance indices, but raw indices remain the caller's responsibility when source slots move.
+Animated effects are selected at attach time. Their uniform-backed values can be changed with `setEffectParams`; enabling a new effect requires a new attachment. `createThinInstanceOutliner` provides the same lifecycle for ordinary meshes and raw thin-instance indices, but raw indices remain the caller's responsibility when source slots move. When the host has a live Babylon Lite skeleton, the outline automatically binds the same joint/weight streams and mirrors its current bone matrices before rendering, so skeletal silhouettes follow the source animation.
 
-Explicit `positions`, `normals`, and `Uint32Array` indices are the supported geometry input. The retained-geometry helper is best-effort because it reads version-sensitive Babylon Lite CPU mirrors. Outlines formally support opaque hosts. Extrusion happens in object space, so non-uniform scaling changes apparent thickness, and negative-determinant transforms can reverse the expected hull winding.
+Explicit `positions`, `normals`, and `Uint32Array` indices are the supported geometry input. Skinned outline geometry must preserve the source mesh's vertex order so its joint/weight streams remain aligned. The retained-geometry helper does this but is best-effort because it reads version-sensitive Babylon Lite CPU mirrors. Outlines formally support opaque hosts. Extrusion happens in object space, so non-uniform scaling changes apparent thickness, and negative-determinant transforms can reverse the expected hull winding.
 
 ## Creating Single-Mesh Instances
 

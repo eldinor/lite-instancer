@@ -1,17 +1,22 @@
 import {
   addToScene,
+  createStorageBuffer,
   createMeshFromData,
+  disposeStorageBuffer,
   enableThinInstanceGpuCulling,
   onBeforeRender,
   removeFromScene,
   setParent,
+  setShaderStorageBuffer,
   setShaderUniform,
   setThinInstanceCullBoundsPad,
+  updateStorageBuffer,
   type EngineContext,
   type Mat4,
   type Mesh,
   type SceneContext,
-  type ShaderMaterial
+  type ShaderMaterial,
+  type StorageBuffer
 } from "@babylonjs/lite";
 import { InstancerError } from "./errors.js";
 import { createInstanceSet, type ColoredInstanceSet, type InstanceSet } from "./instance-set.js";
@@ -60,6 +65,8 @@ abstract class CompactOutlineAttachment<TKey> {
   readonly #effects: OutlineEffects;
   readonly #defaultColor: OutlineRgb;
   readonly #detach: () => void;
+  readonly #boneMatrices: Float32Array | null;
+  readonly #boneStorage: StorageBuffer | null;
 
   constructor(
     protected readonly engine: EngineContext,
@@ -78,7 +85,10 @@ abstract class CompactOutlineAttachment<TKey> {
       options.smoothNormals ?? true,
       options.smoothNormalEpsilon ?? 1e-5
     );
-    this.material = createOutlineMaterial(options, geometry);
+    const skeleton = host.skeleton ?? null;
+    this.material = createOutlineMaterial(options, geometry, skeleton ? {
+      hasEightInfluences: skeleton.joints1Buffer !== null && skeleton.weights1Buffer !== null
+    } : undefined);
     this.outlineMesh = createMeshFromData(
       engine,
       `${host.name}-outline`,
@@ -89,6 +99,17 @@ abstract class CompactOutlineAttachment<TKey> {
     this.outlineMesh.material = this.material;
     this.outlineMesh.pickable = false;
     this.outlineMesh.receiveShadows = false;
+    if (skeleton) {
+      const sharedSkeleton = skeleton as typeof skeleton & { _refCount?: number };
+      sharedSkeleton._refCount = (sharedSkeleton._refCount ?? 1) + 1;
+      this.outlineMesh.skeleton = skeleton;
+      this.#boneMatrices = skeleton.boneMatrices;
+      this.#boneStorage = createStorageBuffer(engine, skeleton.boneMatrices, `${host.name}-outline-bones`);
+      setShaderStorageBuffer(this.material, "outlineBones", this.#boneStorage);
+    } else {
+      this.#boneMatrices = null;
+      this.#boneStorage = null;
+    }
     // Draw the opaque host first so its depth rejects the expanded hull everywhere
     // except the silhouette. Rendering the hull first can expose its full fill on
     // imported material pipelines whose opaque packets are assembled separately.
@@ -219,6 +240,9 @@ abstract class CompactOutlineAttachment<TKey> {
   }
 
   updateTime(seconds: number): void {
+    if (!this.disposed && this.#boneStorage && this.#boneMatrices) {
+      updateStorageBuffer(this.engine, this.#boneStorage, this.#boneMatrices);
+    }
     if (!this.disposed && Object.values(this.#effects).some(Boolean)) {
       setShaderUniform(this.material, "time", seconds);
     }
@@ -236,6 +260,7 @@ abstract class CompactOutlineAttachment<TKey> {
     setParent(this.outlineMesh, null);
     removeFromScene(this.scene, this.outlineMesh);
     this.#outlineInstances.dispose();
+    if (this.#boneStorage) disposeStorageBuffer(this.#boneStorage);
   }
 
   protected assertUsable(): void {

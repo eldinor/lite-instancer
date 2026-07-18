@@ -11,6 +11,10 @@ export interface OutlineEffects {
   sizzle: boolean;
 }
 
+export interface OutlineSkinning {
+  hasEightInfluences: boolean;
+}
+
 export function resolveOutlineEffects(options: OutlineAttachOptions): OutlineEffects {
   return {
     pulse: options.pulse !== undefined,
@@ -21,7 +25,11 @@ export function resolveOutlineEffects(options: OutlineAttachOptions): OutlineEff
   };
 }
 
-export function createOutlineMaterial(options: OutlineAttachOptions, geometry: PreparedOutlineGeometry): ShaderMaterial {
+export function createOutlineMaterial(
+  options: OutlineAttachOptions,
+  geometry: PreparedOutlineGeometry,
+  skinning?: OutlineSkinning
+): ShaderMaterial {
   const effects = resolveOutlineEffects(options);
   const hasEffects = Object.values(effects).some(Boolean);
   const uniforms: ShaderUniformOption[] = [
@@ -70,13 +78,19 @@ export function createOutlineMaterial(options: OutlineAttachOptions, geometry: P
       { name: "sizzleBoost", type: "f32", defaultValue: options.sizzle!.boost ?? 1 }
     );
   }
-  const sources = buildOutlineShaderSources(effects);
+  const sources = buildOutlineShaderSources(effects, skinning);
+  const attributes: Array<"position" | "normal" | "joints" | "weights" | "joints1" | "weights1"> = ["position", "normal"];
+  if (skinning) {
+    attributes.push("joints", "weights");
+    if (skinning.hasEightInfluences) attributes.push("joints1", "weights1");
+  }
   return createShaderMaterial({
     name: "instancer-outline",
     vertexSource: sources.vertex,
     fragmentSource: sources.fragment,
-    attributes: ["position", "normal"],
+    attributes,
     uniforms,
+    ...(skinning ? { storageBuffers: [{ name: "outlineBones", type: "array<vec4<f32>>" }] } : {}),
     defines: {
       OUTLINE_HAS_EFFECTS: hasEffects,
       OUTLINE_PULSE: effects.pulse,
@@ -96,7 +110,10 @@ function axisVector(axis: "x" | "y" | "z"): readonly number[] {
   return axis === "x" ? [1, 0, 0] : axis === "y" ? [0, 1, 0] : [0, 0, 1];
 }
 
-export function buildOutlineShaderSources(effects: OutlineEffects): { vertex: string; fragment: string } {
+export function buildOutlineShaderSources(
+  effects: OutlineEffects,
+  skinning?: OutlineSkinning
+): { vertex: string; fragment: string } {
   const hasEffects = Object.values(effects).some(Boolean);
   const fields = ["@builtin(position) position: vec4<f32>", "@location(0) outlineColor: vec3<f32>"];
   let location = 1;
@@ -113,12 +130,18 @@ export function buildOutlineShaderSources(effects: OutlineEffects): { vertex: st
   out.rimDirection = viewVertex.xy - viewCentroid.xy;`);
   if (effects.sizzle) vertexWrites.push("out.objectPosition = input.position;");
 
+  const skinningHelpers = skinning ? buildSkinningHelpers(skinning.hasEightInfluences) : "";
+  const positionSetup = skinning
+    ? `let influence = outlineSkinMatrix(input);
+  let finalWorld = shaderSystem.world * instanceWorld * influence;`
+    : "let finalWorld = shaderSystem.world * instanceWorld;";
   const vertex = `${output}
+${skinningHelpers}
 @vertex
 fn mainVertex(input: VertexInput) -> VertexOutput {
   var out: VertexOutput;
   let instanceWorld = mat4x4<f32>(input.world0, input.world1, input.world2, input.world3);
-  let finalWorld = shaderSystem.world * instanceWorld;
+  ${positionSetup}
   let displaced = input.position + input.normal * shaderUniforms.thickness;
   out.position = shaderSystem.viewProjection * finalWorld * vec4<f32>(displaced, 1.0);
   ${vertexWrites.join("\n  ")}
@@ -161,6 +184,25 @@ fn mainFragment(input: VertexOutput) -> @location(0) vec4<f32> {
   ${body.join("\n  ")}
 }`;
   return { vertex, fragment };
+}
+
+function buildSkinningHelpers(hasEightInfluences: boolean): string {
+  const extra = hasEightInfluences ? `
+  influence += outlineBoneMatrix(input.joints1.x) * input.weights1.x;
+  influence += outlineBoneMatrix(input.joints1.y) * input.weights1.y;
+  influence += outlineBoneMatrix(input.joints1.z) * input.weights1.z;
+  influence += outlineBoneMatrix(input.joints1.w) * input.weights1.w;` : "";
+  return `fn outlineBoneMatrix(index: u32) -> mat4x4<f32> {
+  let offset = index * 4u;
+  return mat4x4<f32>(outlineBones[offset], outlineBones[offset + 1u], outlineBones[offset + 2u], outlineBones[offset + 3u]);
+}
+fn outlineSkinMatrix(input: VertexInput) -> mat4x4<f32> {
+  var influence = outlineBoneMatrix(input.joints.x) * input.weights.x;
+  influence += outlineBoneMatrix(input.joints.y) * input.weights.y;
+  influence += outlineBoneMatrix(input.joints.z) * input.weights.z;
+  influence += outlineBoneMatrix(input.joints.w) * input.weights.w;${extra}
+  return influence;
+}`;
 }
 
 const HSL_HELPERS = `

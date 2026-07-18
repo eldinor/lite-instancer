@@ -29,4 +29,16 @@ describe("outline WGSL generation", () => {
     expect(source.fragment).toContain("sizzleNoise");
     expect(source.fragment).toContain("vec4<f32>(color, 1.0)");
   });
+
+  it("emits four- and eight-influence skeleton deformation", () => {
+    const effects = { pulse: false, colorCycle: false, edgeFlow: false, rimFlow: false, sizzle: false };
+    const four = buildOutlineShaderSources(effects, { hasEightInfluences: false });
+    const eight = buildOutlineShaderSources(effects, { hasEightInfluences: true });
+
+    expect(four.vertex).toContain("outlineBones[offset]");
+    expect(four.vertex).toContain("outlineSkinMatrix(input)");
+    expect(four.vertex).not.toContain("input.joints1");
+    expect(eight.vertex).toContain("input.joints1");
+    expect(eight.vertex).toContain("shaderSystem.world * instanceWorld * influence");
+  });
 });

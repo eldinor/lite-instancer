@@ -198,7 +198,7 @@ Then open the root examples page. The most useful demos are:
 - Shark Clip Mixer: per-instance VAT clip assignment.
 - GLB VAT Socket Configurator: multi-part character sockets, full GLB attachments, JSON, and TypeScript export.
 - Unarmed VAT Arena Crowd: three independently baked VAT groups, nine selected source clips, and 300–3,000 visible fighters.
-- Thin Instance Outline Gallery: boxes, spheres, cylinders, capsules, toruses, torus knots, selection, normal smoothing, effects, and standalone raw-index outlines.
+- Thin Instance Outline Gallery: primitives, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, selection, normal smoothing, effects, and standalone raw-index outlines.
 
 ## API Reference
 

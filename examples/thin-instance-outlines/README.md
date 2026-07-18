@@ -1,11 +1,12 @@
 # Thin Instance Outline Gallery
 
-One page with nine directly addressable Babylon Lite outline demonstrations:
+One page with ten directly addressable Babylon Lite outline demonstrations:
 
 - `?demo=selection` — stable-ID selection while instances are added, removed, hidden, and moved between slots.
 - `?demo=shapes` — outlined box, sphere, cylinder, capsule, torus, and torus knot geometry.
 - `?demo=shaderball` — five Instancer-managed copies of the native Lite-loaded Babylon Shader Ball GLB, with synchronized per-part inverted-hull outlines.
 - `?demo=marble` — three resource-sharing copies of the eight-part Marble Tower with distinct outline palettes and slowly rotating wheels.
+- `?demo=fan` — the animated Vintage Desk Fan glTF with skeletal outlines that follow its four authored animation clips.
 - `?demo=colors` — simultaneous per-instance colors and animation phases.
 - `?demo=normals` — paired smoothed and authored-normal comparisons for a box, hexagonal prism, square pyramid, and triangular prism.
 - `?demo=single` — ordinary meshes, non-uniform scaling, and mirrored scaling.

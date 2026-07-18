@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-07-18
 
 - Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
 - Show five Shader Ball GLB copies through one hierarchy `InstanceSet`, with synchronized outlines on every mesh part.
 - Add an eight-part Marble Tower glTF scenario to the outline examples gallery.
 - Show three resource-sharing Marble Towers with distinct outline palettes and slowly rotating wheels.
+- Add automatic live-skeleton deformation to outline attachments and an animated Vintage Desk Fan glTF example.
+- Update the example UI integration to `babylon-lite-explorer` 0.5.0.
 - Use retained native Lite glTF geometry directly so the outliner applies exactly one inverted-hull winding reversal.
 - Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
 

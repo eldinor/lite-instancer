@@ -9,7 +9,9 @@ import {
   createTorusKnotData,
   loadGltf,
   onBeforeRender,
+  playAnimation,
   setThinInstances,
+  stopAnimation,
   type Mat4,
   type Mesh
 } from "@babylonjs/lite";
@@ -34,13 +36,14 @@ import {
 } from "../../shared/app.js";
 import "./styles.css";
 
-type DemoName = "selection" | "shapes" | "shaderball" | "marble" | "colors" | "normals" | "single" | "effects" | "standalone";
-const demos: DemoName[] = ["selection", "shapes", "shaderball", "marble", "colors", "normals", "single", "effects", "standalone"];
+type DemoName = "selection" | "shapes" | "shaderball" | "marble" | "fan" | "colors" | "normals" | "single" | "effects" | "standalone";
+const demos: DemoName[] = ["selection", "shapes", "shaderball", "marble", "fan", "colors", "normals", "single", "effects", "standalone"];
 const demoLabels: Record<DemoName, string> = {
   selection: "Selection",
   shapes: "Shapes",
   shaderball: "Shader Ball",
   marble: "Marble Tower",
+  fan: "Animated Fan",
   colors: "Colors",
   normals: "Normals",
   single: "Single mesh",
@@ -62,6 +65,7 @@ switch (demo) {
   case "shapes": setupShapes(ctx); break;
   case "shaderball": await setupShaderBall(ctx); break;
   case "marble": await setupMarbleTower(ctx); break;
+  case "fan": await setupAnimatedFan(ctx); break;
   case "colors": setupColors(ctx); break;
   case "normals": setupNormals(ctx); break;
   case "single": setupSingle(ctx); break;
@@ -283,6 +287,87 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
   context.panel.set("outline draws", `${attachments.length} (one per mesh part)`);
   context.panel.set("outlines", "shown");
   context.panel.set("highlighted", attachments.length);
+}
+
+async function setupAnimatedFan(context: ExampleContext): Promise<void> {
+  const assetUrl = "https://assets.babylonjs.com/meshes/vintageDeskFan/vintageFan_animated.gltf";
+  context.panel.set("asset", "loading vintageFan_animated.gltf");
+
+  const container = await loadGltf(context.engine, assetUrl);
+  const root = container.entities[0];
+  if (!root || !("children" in root) || !("scaling" in root)) {
+    throw new Error("Vintage Fan glTF did not provide a scene root");
+  }
+  root.scaling.set(-0.22, 0.22, 0.22);
+  root.position.set(0, -6, 0);
+  addToScene(context.scene, container);
+
+  const meshes = collectMeshes(root);
+  const manager = createThinInstanceOutliner(context.engine, context.scene);
+  const attachments: Array<ReturnType<typeof manager.attach>> = [];
+  let skipped = 0;
+  for (const mesh of meshes) {
+    const retainedGeometry = tryGetRetainedOutlineGeometry(mesh);
+    if (!retainedGeometry) {
+      skipped++;
+      continue;
+    }
+    mesh.renderOrder = 100;
+    const name = mesh.name.toLowerCase();
+    const color: [number, number, number] = name.includes("blade")
+      ? [1, 0.5, 0.12]
+      : name.includes("head")
+        ? [0.08, 0.82, 0.78]
+        : [0.3, 0.62, 1];
+    const attachment = manager.attach(mesh, {
+      geometry: retainedGeometry,
+      smoothNormals: true,
+      thickness: 0.35,
+      color
+    });
+    attachment.highlight(0);
+    attachments.push(attachment);
+  }
+
+  const animations = container.animationGroups ?? [];
+  let activeAnimationIndex = Math.max(animations.findIndex((animation) => animation.name === "fanRunning"), 0);
+  activateAnimation(activeAnimationIndex);
+
+  let visible = true;
+  context.panel.button("toggle outlines", () => {
+    visible = !visible;
+    for (const attachment of attachments) {
+      if (visible) attachment.highlight(0);
+      else attachment.clear(0);
+    }
+    context.panel.set("outlines", visible ? "shown" : "hidden");
+    context.panel.set("highlighted", visible ? attachments.length : 0);
+  });
+  context.panel.button("next animation", () => {
+    if (animations.length === 0) return;
+    activeAnimationIndex = (activeAnimationIndex + 1) % animations.length;
+    activateAnimation(activeAnimationIndex);
+  });
+
+  context.panel.set("asset", "vintageFan_animated.gltf");
+  context.panel.set("source meshes", meshes.length);
+  context.panel.set("outlined meshes", attachments.length);
+  context.panel.set("skinned outlines", attachments.filter((attachment) => attachment.source.skeleton).length);
+  context.panel.set("skipped geometry", skipped);
+  context.panel.set("animations", animations.map((animation) => animation.name).join(", "));
+  context.panel.set("active animation", animations[activeAnimationIndex]?.name ?? "none");
+  context.panel.set("outlines", "shown");
+  context.panel.set("highlighted", attachments.length);
+
+  function activateAnimation(index: number): void {
+    animations.forEach((animation, animationIndex) => {
+      animation.loopAnimation = true;
+      animation.currentTime = 0;
+      if (animationIndex === index) playAnimation(animation);
+      else stopAnimation(animation);
+    });
+    context.panel.set("active animation", animations[index]?.name ?? "none");
+  }
 }
 
 await runExample(ctx);
