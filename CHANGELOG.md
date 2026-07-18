@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - 2026-07-18
+## 0.5.0 - 2026-07-18
 
 - Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
 - Show five Shader Ball GLB copies through one hierarchy `InstanceSet`, with synchronized outlines on every mesh part.
