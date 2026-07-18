@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.0 - 2026-07-18
+
+- Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
+- Show five Shader Ball GLB copies through one hierarchy `InstanceSet`, with synchronized outlines on every mesh part.
+- Add an eight-part Marble Tower glTF scenario to the outline examples gallery.
+- Show three resource-sharing Marble Towers with distinct outline palettes and slowly rotating wheels.
+- Add automatic live-skeleton deformation to outline attachments and an animated Vintage Desk Fan glTF example.
+- Update the example UI integration to `babylon-lite-explorer` 0.5.0.
+- Use retained native Lite glTF geometry directly so the outliner applies exactly one inverted-hull winding reversal.
+- Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
+
+### Added
+
+- Added the optional `@litools/instancer/outline` entry point with native Babylon Lite WGSL inverted-hull outlines, compact highlighted-instance pools, stable-`InstanceId` and standalone raw-index managers, per-instance colors/phases, smooth outline normals, and animated pulse, color-cycle, edge-flow, rim-flow, and sizzle effects.
+- Added the multi-scenario Thin Instance Outline Gallery for selection, box/sphere/cylinder/capsule/torus/torus-knot geometry, colors, normal smoothing, single meshes, effects, and standalone thin instances.
+- Diversified the effects gallery so pulse, color cycle, edge flow, rim flow, and sizzle run on distinct sphere, torus, capsule, torus-knot, and box silhouettes.
+
+## 0.3.2 - 2026-07-17
+
+### Changed
+
+- Coalesced VAT playback-parameter uploads during `VatInstanceSet.createMany()` and coordinated `VatCharacterSet.createMany()` calls, avoiding repeated full uploads while preserving per-instance playback data.
+
+### Fixed
+
+- Serve example-only public GLB assets during local development, so the Ready Player examples and GLB VAT Socket Configurator load `/fantasy_sword.glb` as a binary asset instead of Vite's HTML fallback.
+
+## 0.3.1 - 2026-07-17
+
+### Changed
+
+- Updated the Babylon Lite peer and development dependency to `^1.11.0`.
+
 ## 0.3.0 - 2026-07-16
 
 ### Added

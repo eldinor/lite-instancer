@@ -18,6 +18,12 @@ Then open the examples index at:
 http://localhost:5173/
 ```
 
+## Thin Instance Outline Gallery
+
+Path: `/examples/thin-instance-outlines/`
+
+Provides one query-driven page for stable-ID selection, primitive shapes, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, per-instance colors and phases, smooth-normal comparison, transformed single meshes, animated effects, and the standalone raw-index API. Use the scenario buttons or open a direct URL such as `?demo=fan` or `?demo=effects`.
+
 ## Basic Thin Instances
 
 Path: `/examples/basic-thin-instances/`

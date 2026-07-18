@@ -11,6 +11,8 @@ This guide explains how to use the main `@litools/instancer` APIs in an app. The
 | Repeat one skinned mesh with VAT animation | `createVatInstanceSet` |
 | Repeat a multi-part skinned character GLB with VAT | `createVatCharacterSet` |
 | Bind a rigid GLB attachment to a VAT socket | `createVatAttachmentBinding` |
+| Highlight stable IDs with silhouette outlines | `createInstanceOutliner` from `@litools/instancer/outline` |
+| Outline a normal mesh or raw thin-instance slot | `createThinInstanceOutliner` from `@litools/instancer/outline` |
 | Resolve rigid thin-instance picks | `createPickingRegistry` |
 | Pick animated or deformed visuals by logical centers | `pickScreenSpaceInstanceFromPointer` |
 
@@ -38,6 +40,31 @@ When you receive a slot from a picker or another slot-indexed system, map it bac
 ```ts
 const id = boxes.getIdForSlot(slot);
 ```
+
+## Outline Highlighting
+
+Outline support is isolated in `@litools/instancer/outline`. The stable-ID manager copies selected transforms into a compact outline pool, so source slots may move or grow without invalidating highlight identity.
+
+```ts
+import { createInstanceOutliner } from "@litools/instancer/outline";
+
+const manager = createInstanceOutliner(engine, scene);
+const outlines = manager.attach(boxes, {
+  geometry: boxData,
+  thickness: 0.04,
+  color: [0.35, 0.8, 1],
+  smoothNormals: true
+});
+
+outlines.highlight(id, { color: [1, 0.6, 0.15], phase: 0.25 });
+boxes.setPosition(id, [3, 0, 0]);
+outlines.refresh(id);
+outlines.clear(id);
+```
+
+Animated effects are selected at attach time. Their uniform-backed values can be changed with `setEffectParams`; enabling a new effect requires a new attachment. `createThinInstanceOutliner` provides the same lifecycle for ordinary meshes and raw thin-instance indices, but raw indices remain the caller's responsibility when source slots move. When the host has a live Babylon Lite skeleton, the outline automatically binds the same joint/weight streams and mirrors its current bone matrices before rendering, so skeletal silhouettes follow the source animation.
+
+Explicit `positions`, `normals`, and `Uint32Array` indices are the supported geometry input. Skinned outline geometry must preserve the source mesh's vertex order so its joint/weight streams remain aligned. The retained-geometry helper does this but is best-effort because it reads version-sensitive Babylon Lite CPU mirrors. Outlines formally support opaque hosts. Extrusion happens in object space, so non-uniform scaling changes apparent thickness, and negative-determinant transforms can reverse the expected hull winding.
 
 ## Creating Single-Mesh Instances
 

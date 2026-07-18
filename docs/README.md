@@ -37,6 +37,8 @@ Use `createVatCharacterSet` for a multi-part skinned character GLB, and `createV
 
 Use `PickingRegistry` for normal thin-instance picking, and `pickScreenSpaceInstanceFromPointer` when the visible mesh is deformed or animated and GPU picking does not line up with the final visual position.
 
+Use `createInstanceOutliner` from the optional `@litools/instancer/outline` subpath for compact stable-ID silhouette highlights. Pass explicit source geometry, call `refresh()` after highlighted transforms change, and use `createThinInstanceOutliner` for standalone meshes or raw thin-instance indices. The renderer uses native WGSL and one outline draw per attached host.
+
 For a practical walkthrough of the main functions and helpers, see `../User_Guide.md`.
 
 ## Stable IDs
@@ -196,6 +198,7 @@ Then open the root examples page. The most useful demos are:
 - Shark Clip Mixer: per-instance VAT clip assignment.
 - GLB VAT Socket Configurator: multi-part character sockets, full GLB attachments, JSON, and TypeScript export.
 - Unarmed VAT Arena Crowd: three independently baked VAT groups, nine selected source clips, and 300–3,000 visible fighters.
+- Thin Instance Outline Gallery: primitives, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, selection, normal smoothing, effects, and standalone raw-index outlines.
 
 ## API Reference
 
