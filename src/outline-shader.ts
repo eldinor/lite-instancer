@@ -15,6 +15,12 @@ export interface OutlineSkinning {
   hasEightInfluences: boolean;
 }
 
+/**
+ * Convert optional effect configurations into shader feature flags.
+ *
+ * @param options - Outline attachment options to inspect.
+ * @returns Flags indicating which effect shader branches must be generated.
+ */
 export function resolveOutlineEffects(options: OutlineAttachOptions): OutlineEffects {
   return {
     pulse: options.pulse !== undefined,
@@ -25,6 +31,14 @@ export function resolveOutlineEffects(options: OutlineAttachOptions): OutlineEff
   };
 }
 
+/**
+ * Create the Babylon Lite WGSL material used by an outline attachment.
+ *
+ * @param options - Thickness, animation effects, and their initial values.
+ * @param geometry - Prepared geometry used to derive effect uniforms.
+ * @param skinning - Skinning layout for an animated mesh, when applicable.
+ * @returns A configured shader material for the expanded back-face outline pass.
+ */
 export function createOutlineMaterial(
   options: OutlineAttachOptions,
   geometry: PreparedOutlineGeometry,
@@ -110,6 +124,13 @@ function axisVector(axis: "x" | "y" | "z"): readonly number[] {
   return axis === "x" ? [1, 0, 0] : axis === "y" ? [0, 1, 0] : [0, 0, 1];
 }
 
+/**
+ * Generate native WGSL vertex and fragment sources for a set of outline features.
+ *
+ * @param effects - Compile-time effect flags.
+ * @param skinning - Optional four- or eight-influence skinning layout.
+ * @returns Matching vertex and fragment shader source strings.
+ */
 export function buildOutlineShaderSources(
   effects: OutlineEffects,
   skinning?: OutlineSkinning

@@ -71,9 +71,7 @@
     "dist",
     "CHANGELOG.md",
     "LICENSE",
-    "docs/README.md",
-    "README.md",
-    "User_Guide.md"
+    "README.md"
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",

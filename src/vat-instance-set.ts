@@ -55,9 +55,13 @@ export interface VatPlaybackSample {
  * character's skinned mesh parts are managed.
  */
 export interface VatPlaybackSource {
+  /** Check whether an animated stable ID exists. */
   has(id: InstanceId): boolean;
+  /** Return whether an animated instance is visible. */
   getVisible(id: InstanceId): boolean;
+  /** Read an animated instance's current world matrix. */
   getMatrix(id: InstanceId, out?: Mat4): Mat4;
+  /** Return the VAT row selection currently used by an instance. */
   getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
 }
 
@@ -127,40 +131,75 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   entries(): IterableIterator<InstanceEntry<TMetadata>>;
   /** Run a callback for every live ID in current slot order. */
   forEach(callback: (id: InstanceId, slot: number) => void): void;
+  /** Replace the world matrix for an ID. Throws when the ID is unknown. */
   setMatrix(id: InstanceId, matrix: Mat4): void;
+  /** Replace the world matrix, returning false when the ID is unknown. */
   trySetMatrix(id: InstanceId, matrix: Mat4): boolean;
+  /** Read the current world matrix. Throws when the ID is unknown. */
   getMatrix(id: InstanceId, out?: Mat4): Mat4;
+  /** Read the current world matrix, or return undefined for an unknown ID. */
   getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined;
+  /** Compose and replace a transform. Throws when the ID is unknown. */
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
+  /** Compose and replace a transform, returning false for an unknown ID. */
   trySetTransform(id: InstanceId, transform: InstanceTransformInput): boolean;
+  /** Read the current translation. Throws when the ID is unknown. */
   getPosition(id: InstanceId, out?: Float32Array): Float32Array;
+  /** Read the current translation, or return undefined for an unknown ID. */
   getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined;
+  /** Replace the translation component. Throws when the ID is unknown. */
   setPosition(id: InstanceId, position: Vec3Like): void;
+  /** Replace translation, returning false when the ID is unknown. */
   trySetPosition(id: InstanceId, position: Vec3Like): boolean;
+  /** Add a translation delta. Throws when the ID is unknown. */
   translate(id: InstanceId, delta: Vec3Like): void;
+  /** Add a translation delta, returning false when the ID is unknown. */
   tryTranslate(id: InstanceId, delta: Vec3Like): boolean;
+  /** Replace scale while preserving translation and orientation. */
   setScale(id: InstanceId, scale: Vec3Like | number): void;
+  /** Replace scale, returning false when the ID is unknown. */
   trySetScale(id: InstanceId, scale: Vec3Like | number): boolean;
+  /** Replace many matrices in one batch. */
   setMatrices(items: Iterable<InstanceMatrixUpdate>): void;
+  /** Compose and replace many transforms in one batch. */
   setTransforms(items: Iterable<InstanceTransformUpdate>): void;
+  /** Return whether an ID is visible. Throws when the ID is unknown. */
   getVisible(id: InstanceId): boolean;
+  /** Return visibility, or undefined when the ID is unknown. */
   getVisibleOrUndefined(id: InstanceId): boolean | undefined;
+  /** Hide or show an ID. Throws when the ID is unknown. */
   setVisible(id: InstanceId, visible: boolean): void;
+  /** Hide or show an ID, returning false when it is unknown. */
   trySetVisible(id: InstanceId, visible: boolean): boolean;
+  /** Hide or show many IDs in one batch. */
   setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void;
+  /** Read app metadata associated with an ID. */
   getMetadata(id: InstanceId): TMetadata | undefined;
+  /** Associate app metadata with an ID. */
   setMetadata(id: InstanceId, metadata: TMetadata): void;
+  /** Associate metadata, returning false when the ID is unknown. */
   trySetMetadata(id: InstanceId, metadata: TMetadata): boolean;
+  /** Find the first ID whose metadata matches a predicate. */
   findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined;
+  /** Return every ID whose metadata matches a predicate. */
   filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[];
+  /** Update or delete metadata for an ID. */
   updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
+  /** Try to update metadata without throwing for an unknown ID. */
   tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined;
+  /** Delete app metadata associated with an ID. */
   deleteMetadata(id: InstanceId): boolean;
+  /** Replace the per-instance RGBA color. */
   setColor(id: InstanceId, color: InstanceColorInput): void;
+  /** Read the per-instance RGBA color. */
   getColor(id: InstanceId, out?: Float32Array): Float32Array;
+  /** Run many safe changes and flush buffers once. */
   batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void;
+  /** Edit backing arrays directly and mark changed slots for upload. */
   editRaw(callback: (raw: RawInstanceWriter) => void): void;
+  /** Ensure at least the requested number of slots is allocated. */
   reserve(capacity: number): void;
+  /** Release the instance set and VAT playback handle. */
   dispose(): void;
   /** Return the shared default clip data. */
   getActiveClip(): VatClip | undefined;

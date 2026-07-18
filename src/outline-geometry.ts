@@ -6,6 +6,17 @@ export interface PreparedOutlineGeometry extends OutlineGeometry {
   center: OutlineRgb;
 }
 
+/**
+ * Validate and copy source geometry into the form used by the outline renderer.
+ * Triangle winding is reversed for the expanded back-face pass, and coincident
+ * vertex normals can be averaged to avoid seams along authored hard edges.
+ *
+ * @param geometry - CPU-side positions, normals, and triangle indices.
+ * @param smoothNormals - Whether to average normals at coincident positions.
+ * @param epsilon - Maximum positional difference used to group coincident vertices.
+ * @returns Independent geometry buffers plus the local-space bounds center.
+ * @throws `InstancerError` when the geometry or smoothing epsilon is invalid.
+ */
 export function prepareOutlineGeometry(
   geometry: OutlineGeometry,
   smoothNormals = true,
@@ -28,6 +39,12 @@ export function prepareOutlineGeometry(
   };
 }
 
+/**
+ * Validate the shape and index range of CPU-side outline geometry.
+ *
+ * @param geometry - Geometry to validate.
+ * @throws `InstancerError` when buffers have invalid types or lengths, or an index is out of range.
+ */
 export function validateOutlineGeometry(geometry: OutlineGeometry): void {
   if (!(geometry.positions instanceof Float32Array) || geometry.positions.length === 0 || geometry.positions.length % 3 !== 0) {
     throw new InstancerError("outline positions must be a non-empty Float32Array with XYZ triplets");
@@ -46,6 +63,12 @@ export function validateOutlineGeometry(geometry: OutlineGeometry): void {
   }
 }
 
+/**
+ * Reverse every triangle from `(a, b, c)` to `(a, c, b)` without changing the input.
+ *
+ * @param indices - Triangle-list indices whose length is a multiple of three.
+ * @returns A new index buffer with reversed winding.
+ */
 export function reverseTriangleWinding(indices: Uint32Array): Uint32Array {
   const result = new Uint32Array(indices.length);
   for (let i = 0; i < indices.length; i += 3) {
@@ -66,6 +89,14 @@ interface NormalGroup {
   sumZ: number;
 }
 
+/**
+ * Average normals in place for vertices whose positions match within `epsilon`.
+ * This removes outline splits caused by duplicated vertices on hard geometry edges.
+ *
+ * @param positions - Packed XYZ vertex positions.
+ * @param normals - Packed XYZ normals to update in place.
+ * @param epsilon - Maximum per-axis positional difference for grouping vertices.
+ */
 export function smoothOutlineNormals(positions: Float32Array, normals: Float32Array, epsilon = 1e-5): void {
   const cells = new Map<string, NormalGroup[]>();
   const groups: NormalGroup[] = [];
@@ -123,6 +154,12 @@ export function smoothOutlineNormals(positions: Float32Array, normals: Float32Ar
   }
 }
 
+/**
+ * Compute the center of the axis-aligned local-space bounds.
+ *
+ * @param positions - Packed XYZ vertex positions.
+ * @returns The bounds center as an XYZ tuple.
+ */
 export function computeOutlineCenter(positions: Float32Array): OutlineRgb {
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -134,6 +171,13 @@ export function computeOutlineCenter(positions: Float32Array): OutlineRgb {
   return [(minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5];
 }
 
+/**
+ * Measure one local-space bounds axis for normalized edge-flow effects.
+ *
+ * @param positions - Packed XYZ vertex positions.
+ * @param axis - Axis to measure.
+ * @returns The minimum coordinate and reciprocal extent. `invLength` is zero for a degenerate extent.
+ */
 export function computeOutlineAxisExtent(positions: Float32Array, axis: "x" | "y" | "z"): { min: number; invLength: number } {
   const component = axis === "x" ? 0 : axis === "y" ? 1 : 2;
   let min = Infinity;
@@ -146,6 +190,12 @@ export function computeOutlineAxisExtent(positions: Float32Array, axis: "x" | "y
   return { min, invLength: length > 1e-6 ? 1 / length : 0 };
 }
 
+/**
+ * Read CPU geometry retained by a Babylon Lite mesh loader or mesh-data helper.
+ *
+ * @param mesh - Mesh whose retained position, normal, and index buffers should be inspected.
+ * @returns Outline-compatible geometry, or `null` when any required CPU buffer was not retained.
+ */
 export function tryGetRetainedOutlineGeometry(mesh: Mesh): OutlineGeometry | null {
   const retained = mesh as Mesh & {
     _cpuPositions?: Float32Array;

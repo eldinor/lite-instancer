@@ -108,13 +108,21 @@ export interface HierarchyInstanceSetOptions {
 
 /** Safe writer passed to `batch` so many app updates flush together. */
 export interface InstanceBatchWriter<TMetadata = unknown> {
+  /** Replace an instance matrix. */
   setMatrix(id: InstanceId, matrix: Mat4): void;
+  /** Compose and replace an instance transform. */
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
+  /** Replace an instance translation. */
   setPosition(id: InstanceId, position: Vec3Like): void;
+  /** Add a translation delta to an instance. */
   translate(id: InstanceId, delta: Vec3Like): void;
+  /** Replace instance scale while preserving translation and orientation. */
   setScale(id: InstanceId, scale: Vec3Like | number): void;
+  /** Change instance visibility. */
   setVisible(id: InstanceId, visible: boolean): void;
+  /** Associate app metadata with an instance. */
   setMetadata(id: InstanceId, metadata: TMetadata): void;
+  /** Replace instance color when the set supports colors. */
   setColor?(id: InstanceId, color: InstanceColorInput): void;
 }
 
@@ -126,9 +134,13 @@ export interface RawInstanceWriter {
   readonly colors?: Float32Array;
   /** Return the current slot for an ID, if the ID still exists. */
   getSlot(id: InstanceId): number | undefined;
+  /** Copy a matrix into the slot currently occupied by an ID. */
   writeMatrix(id: InstanceId, matrix: Mat4): void;
+  /** Copy a color into the slot currently occupied by an ID. */
   writeColor(id: InstanceId, color: InstanceColorInput): void;
+  /** Mark one matrix slot for upload after direct buffer edits. */
   markMatrixDirty(slot: number): void;
+  /** Mark one color slot for upload after direct buffer edits. */
   markColorDirty(slot: number): void;
 }
 

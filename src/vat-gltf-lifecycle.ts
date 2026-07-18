@@ -9,6 +9,7 @@ import {
 
 /** A resource with an idempotent release operation, such as a VAT character or attachment binding. */
 export interface VatDisposable {
+  /** Release the resource. Repeated calls must be safe. */
   dispose(): void;
 }
 

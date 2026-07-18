@@ -14,6 +14,7 @@ export interface ScreenViewportLike {
 
 /** Canvas-like object accepted by pointer-based screen-space picking. */
 export interface PointerViewportLike extends ScreenViewportLike {
+  /** Return the viewport bounds in client coordinates. */
   getBoundingClientRect(): DOMRect;
 }
 
@@ -39,6 +40,12 @@ export interface PointerScreenSpaceInstancePickOptions
   extends Omit<ScreenSpaceInstancePickOptions, "point" | "viewport"> {
   event: Pick<PointerEvent, "clientX" | "clientY">;
   canvas: PointerViewportLike;
+  /** Return the pick radius in CSS pixels for an ID. Defaults to 24. */
+  getScreenRadius?(id: InstanceId): number;
+  /** Optional visibility predicate. */
+  isVisible?(id: InstanceId): boolean;
+  /** Optional existence predicate, useful when keeping an external ID array. */
+  has?(id: InstanceId): boolean;
 }
 
 /** Logical screen-space pick result. */

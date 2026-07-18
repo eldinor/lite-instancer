@@ -353,6 +353,18 @@ class RawAttachment extends CompactOutlineAttachment<number> implements ThinInst
   protected isSourceVisible(): boolean { return true; }
 }
 
+/**
+ * Create an outline manager for stable-ID {@link InstanceSet} objects.
+ *
+ * Attach each set once, then highlight instances by `InstanceId`. The attachment
+ * resolves the current backing slot whenever it refreshes, so IDs remain valid
+ * after pool growth, removal, or slot compaction.
+ *
+ * @param engine - Babylon Lite engine context used to allocate outline resources.
+ * @param scene - Scene that owns outline meshes and drives animated effects.
+ * @returns A manager that attaches outlines to `InstanceSet` sources.
+ * @remarks Call `dispose()` on the manager when its outlines are no longer needed.
+ */
 export function createInstanceOutliner(engine: EngineContext, scene: SceneContext): InstanceOutliner {
   let disposed = false;
   let elapsed = 0;
@@ -389,6 +401,18 @@ export function createInstanceOutliner(engine: EngineContext, scene: SceneContex
   return manager;
 }
 
+/**
+ * Create an outline manager for ordinary meshes and raw Babylon Lite thin instances.
+ *
+ * Use thin-instance indices as highlight keys. For an ordinary, non-instanced mesh,
+ * index `0` represents the mesh itself. Imported animated GLB/GLTF meshes use this
+ * manager; compatible live skeleton buffers are mirrored automatically.
+ *
+ * @param engine - Babylon Lite engine context used to allocate outline resources.
+ * @param scene - Scene that owns outline meshes and drives animated effects.
+ * @returns A manager that attaches outlines directly to meshes.
+ * @remarks Raw indices are not stable when application code reorders thin-instance buffers.
+ */
 export function createThinInstanceOutliner(engine: EngineContext, scene: SceneContext): ThinInstanceOutliner {
   let disposed = false;
   let elapsed = 0;

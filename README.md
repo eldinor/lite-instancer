@@ -330,17 +330,18 @@ Then open the root examples page. Useful demos:
 - Unarmed VAT Arena Crowd: three independent VAT groups with nine selected clips and density modes from 300 to 3,000 characters.
 - Thin Instance Outline Gallery: primitives, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, stable-ID and raw-index selection, smoothing, and animated effects.
 
-See `About_Examples.md` for a fuller explanation of every example, and `About_Examples_Extended.md` for important code snippets from each one.
+See the [examples guide](https://github.com/eldinor/lite-instancer/blob/main/About_Examples.md) for a fuller explanation of every example, and [extended examples](https://github.com/eldinor/lite-instancer/blob/main/About_Examples_Extended.md) for important code snippets from each one.
 
 ## Docs
 
-The longer guide lives in `docs/README.md`.
+The npm package includes this main README and the changelog; additional documentation remains available in the repository:
 
-For a practical usage walkthrough, see `User_Guide.md`.
-
-For release notes, see `CHANGELOG.md`.
-
-For architecture and internal concepts, see `How_It_Works.md`.
+- [Full documentation](https://github.com/eldinor/lite-instancer/blob/main/docs/README.md)
+- [Practical user guide](https://github.com/eldinor/lite-instancer/blob/main/User_Guide.md)
+- [Examples guide](https://github.com/eldinor/lite-instancer/blob/main/About_Examples.md)
+- [Extended examples and code snippets](https://github.com/eldinor/lite-instancer/blob/main/About_Examples_Extended.md)
+- [Architecture and internal concepts](https://github.com/eldinor/lite-instancer/blob/main/How_It_Works.md)
+- [Changelog](https://github.com/eldinor/lite-instancer/blob/main/CHANGELOG.md)
 
 Generate TypeDoc API reference:
 

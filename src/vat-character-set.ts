@@ -48,24 +48,41 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   readonly capacity: number;
   readonly visibleCount: number;
 
+  /** Create one synchronized character instance across every mesh part. */
   create(options?: VatInstanceCreateOptions<TMetadata>): InstanceId;
+  /** Create many synchronized character instances and return their primary stable IDs. */
   createMany(items: Iterable<VatInstanceCreateOptions<TMetadata>>): InstanceId[];
+  /** Remove a synchronized character instance. */
   remove(id: InstanceId): boolean;
+  /** Remove every synchronized character instance. */
   clear(): void;
+  /** Check whether a primary character ID exists. */
   has(id: InstanceId): boolean;
+  /** Return whether a character instance is visible. */
   getVisible(id: InstanceId): boolean;
+  /** Change visibility across every mesh part. */
   setVisible(id: InstanceId, visible: boolean): void;
+  /** Replace the world matrix across every mesh part. */
   setMatrix(id: InstanceId, matrix: Mat4): void;
+  /** Compose and replace a transform across every mesh part. */
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
+  /** Read the primary mesh part's current world matrix. */
   getMatrix(id: InstanceId, out?: Mat4): Mat4;
+  /** Change the shared default clip across every mesh part. */
   play(clip: string): boolean;
+  /** Advance VAT playback across every mesh part. Call once per frame. */
   update(deltaSeconds: number): void;
+  /** Set or clear a character instance's clip override across every mesh part. */
   setClip(id: InstanceId, clip: string | undefined): boolean;
+  /** Set a character instance's playback offset in seconds. */
   setPhaseOffset(id: InstanceId, offset: number): void;
+  /** Set or clear a character instance's FPS override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Return the VAT row selection currently used by a character instance. */
   getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
   /** Re-upload synchronized secondary playback parameters after advanced primary-set changes. */
   syncInstances(): void;
+  /** Release VAT handles and all coordinated instance sets. */
   dispose(): void;
 }
 

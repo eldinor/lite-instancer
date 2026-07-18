@@ -8,8 +8,12 @@
   "excludePrivate": true,
   "excludeProtected": true,
   "categorizeByGroup": true,
+  "requiredToBeDocumented": ["Function"],
+  "validation": {
+    "notDocumented": true
+  },
   "navigationLinks": {
-    "Examples": "../../index.html",
-    "Plan": "../../PLAN.md"
+    "Examples": "https://instancer.babylonpress.org/",
+    "Guide": "https://github.com/eldinor/lite-instancer/blob/main/docs/README.md"
   }
 }

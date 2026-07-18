@@ -25,11 +25,17 @@ export interface VatAttachmentBinding<TAttachment = unknown> {
   readonly attachments: HierarchyInstanceSet<TAttachment>;
   readonly controller: VatAttachmentController;
   readonly gripOffset: Mat4;
+  /** Create a rigid attachment hierarchy instance. */
   create(transform?: InstanceTransformInput, metadata?: TAttachment): InstanceId;
+  /** Bind an attachment instance to a character instance. */
   bind(characterId: InstanceId, attachmentId: InstanceId): boolean;
+  /** Remove the binding for a character instance. */
   unbind(characterId: InstanceId): boolean;
+  /** Resample and apply every active socket binding. */
   update(): number;
+  /** Remove all bindings and attachment instances. */
   clear(): void;
+  /** Release the controller and hierarchy instance set. */
   dispose(): void;
 }
 

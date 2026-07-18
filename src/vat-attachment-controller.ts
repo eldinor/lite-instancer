@@ -21,10 +21,15 @@ export interface VatAttachmentControllerOptions<TCharacter = unknown, TAttachmen
 }
 
 export interface VatAttachmentController {
+  /** Bind an attachment ID to a character ID, replacing any existing character binding. */
   bind(characterId: InstanceId, attachmentId: InstanceId, options?: VatAttachmentBindingOptions): boolean;
+  /** Remove a character's attachment binding. */
   unbind(characterId: InstanceId): boolean;
+  /** Return the attachment ID currently bound to a character. */
   getAttachment(characterId: InstanceId): InstanceId | undefined;
+  /** Resample sockets and update all valid attachment transforms. */
   update(): number;
+  /** Remove every attachment binding. */
   clear(): void;
 }
 
