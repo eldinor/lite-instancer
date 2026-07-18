@@ -7,11 +7,14 @@ import {
   createSphereData,
   createTorusKnotData,
   loadGltf,
+  onBeforeRender,
   setThinInstances,
+  type Mat4,
   type Mesh
 } from "@babylonjs/lite";
-import { composeMat4, createInstanceSet, type InstanceId } from "../../../src/index.js";
+import { composeMat4, createHierarchyInstanceSet, createInstanceSet, type InstanceId } from "../../../src/index.js";
 import {
+  computeOutlineCenter,
   createInstanceOutliner,
   createThinInstanceOutliner,
   tryGetRetainedOutlineGeometry,
@@ -105,10 +108,37 @@ async function setupShaderBall(context: ExampleContext): Promise<void> {
   if (!root || !("children" in root) || !("scaling" in root)) {
     throw new Error("Shader Ball GLB did not provide a scene root");
   }
-  root.scaling.set(-4.5, 4.5, 4.5);
+  root.scaling.set(-2.1, 2.1, 2.1);
   addToScene(context.scene, container);
 
   const meshes = collectMeshes(root);
+  const sourceRootMatrix = new Float32Array(root.worldMatrix) as Mat4;
+  const shaderBalls = createHierarchyInstanceSet(root, {
+    capacity: 5,
+    engine: context.engine
+  });
+  const placements = [
+    makeMatrix(-5, 0, -2.4, 1, -0.35),
+    makeMatrix(0, 0, -2.4, 1, 0),
+    makeMatrix(5, 0, -2.4, 1, 0.35),
+    makeMatrix(-2.5, 0, 2.4, 1, 0.2),
+    makeMatrix(2.5, 0, 2.4, 1, -0.2)
+  ];
+  const ids = placements.map((placement) =>
+    shaderBalls.create(multiplyExampleMat4(composeMat4(placement), sourceRootMatrix))
+  );
+  const outlinedInstances: Array<{ slot: number; color: [number, number, number]; phase: number }> = [];
+  ids.forEach((id, index) => {
+    const slot = shaderBalls.getSlot(id);
+    if (slot !== undefined) {
+      outlinedInstances.push({
+        slot,
+        color: colorFromIndex(index + 2).slice(0, 3) as [number, number, number],
+        phase: index / ids.length
+      });
+    }
+  });
+
   const manager = createThinInstanceOutliner(context.engine, context.scene);
   const attachments: Array<ReturnType<typeof manager.attach>> = [];
   let skipped = 0;
@@ -126,7 +156,9 @@ async function setupShaderBall(context: ExampleContext): Promise<void> {
       color: [0.12, 0.82, 1],
       pulse: { speed: 2.2, amplitude: 0.22 }
     });
-    attachment.highlight(0);
+    outlinedInstances.forEach(({ slot, color, phase }) => {
+      attachment.highlight(slot, { color, phase });
+    });
     attachments.push(attachment);
   }
 
@@ -134,13 +166,17 @@ async function setupShaderBall(context: ExampleContext): Promise<void> {
   context.panel.button("toggle outline", () => {
     visible = !visible;
     for (const attachment of attachments) {
-      if (visible) attachment.highlight(0);
-      else attachment.clear(0);
+      for (const { slot, color, phase } of outlinedInstances) {
+        if (visible) attachment.highlight(slot, { color, phase });
+        else attachment.clear(slot);
+      }
     }
     context.panel.set("outline", visible ? "shown" : "hidden");
-    context.panel.set("highlighted", visible ? attachments.length : 0);
+    context.panel.set("highlighted", visible ? `${ids.length} balls across ${attachments.length} mesh parts` : 0);
   });
   context.panel.set("asset", "shaderBall.glb");
+  context.panel.set("instances", shaderBalls.count);
+  context.panel.set("instancer", "hierarchy instance set");
   context.panel.set("source meshes", meshes.length);
   context.panel.set("outlined meshes", attachments.length);
   context.panel.set("skipped geometry", skipped);
@@ -148,7 +184,7 @@ async function setupShaderBall(context: ExampleContext): Promise<void> {
   context.panel.set("loader", "native Babylon Lite loadGltf");
   context.panel.set("winding", "inverted hull from retained glTF geometry");
   context.panel.set("outline", "shown");
-  context.panel.set("highlighted", attachments.length);
+  context.panel.set("highlighted", `${ids.length} balls across ${attachments.length} mesh parts`);
 }
 
 async function setupMarbleTower(context: ExampleContext): Promise<void> {
@@ -165,6 +201,19 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
   addToScene(context.scene, container);
 
   const sourceMeshes = collectMeshes(root);
+  const wheel = sourceMeshes.find((source) => source.name.toLowerCase() === "wheel");
+  const wheelGeometry = wheel ? tryGetRetainedOutlineGeometry(wheel) : null;
+  if (!wheel || !wheelGeometry) {
+    throw new Error("Marble Tower glTF did not provide retained geometry for its wheel mesh");
+  }
+  const wheelPivot = computeOutlineCenter(wheelGeometry.positions);
+  const wheelBasePosition = [wheel.position.x, wheel.position.y, wheel.position.z] as const;
+  let wheelAngle = 0;
+  onBeforeRender(context.scene, (deltaMs) => {
+    wheelAngle = (wheelAngle + deltaMs * 0.0002) % (Math.PI * 2);
+    rotateMeshAroundLocalX(wheel, wheelPivot, wheelBasePosition, wheelAngle);
+  });
+
   const manager = createThinInstanceOutliner(context.engine, context.scene);
   const attachments: Array<ReturnType<typeof manager.attach>> = [];
   const partNames: string[] = [];
@@ -180,7 +229,7 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
       geometry: retainedGeometry,
       smoothNormals: true,
       thickness: 8,
-      color: [1, 0.55, 0.12]
+      color: source === wheel ? [0.08, 0.82, 0.78] : [1, 0.55, 0.12]
     });
     attachment.highlight(0);
     attachments.push(attachment);
@@ -203,6 +252,7 @@ async function setupMarbleTower(context: ExampleContext): Promise<void> {
   context.panel.set("outlined meshes", attachments.length);
   context.panel.set("skipped geometry", skipped);
   context.panel.set("loader", "native Babylon Lite loadGltf");
+  context.panel.set("wheel", "rotating at 0.2 rad/s with teal outline");
   context.panel.set("winding", "inverted hull from retained glTF geometry");
   context.panel.set("outline draws", `${attachments.length} (one per mesh part)`);
   context.panel.set("outlines", "shown");
@@ -500,6 +550,37 @@ function createTorusGalleryData(diameter: number, thickness: number, tessellatio
     }
   }
   return { positions, normals, uvs, indices };
+}
+
+function multiplyExampleMat4(a: Mat4, b: Mat4): Mat4 {
+  const out = new Float32Array(16);
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      out[column * 4 + row] =
+        (a[row] ?? 0) * (b[column * 4] ?? 0) +
+        (a[4 + row] ?? 0) * (b[column * 4 + 1] ?? 0) +
+        (a[8 + row] ?? 0) * (b[column * 4 + 2] ?? 0) +
+        (a[12 + row] ?? 0) * (b[column * 4 + 3] ?? 0);
+    }
+  }
+  return out as Mat4;
+}
+
+function rotateMeshAroundLocalX(
+  mesh: Mesh,
+  pivot: readonly [number, number, number],
+  basePosition: readonly [number, number, number],
+  angle: number
+): void {
+  const sine = Math.sin(angle);
+  const cosine = Math.cos(angle);
+  const halfAngle = angle * 0.5;
+  mesh.rotationQuaternion.set(Math.sin(halfAngle), 0, 0, Math.cos(halfAngle));
+  mesh.position.set(
+    basePosition[0],
+    basePosition[1] + pivot[1] - (cosine * pivot[1] - sine * pivot[2]),
+    basePosition[2] + pivot[2] - (sine * pivot[1] + cosine * pivot[2])
+  );
 }
 
 function addSelectionInstance(instances: ReturnType<typeof createInstanceSet>, index: number): InstanceId {

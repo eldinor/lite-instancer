@@ -3,9 +3,10 @@
 ## Unreleased
 
 - Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.
-- Rebuild the Shader Ball demo from retained GLB geometry as an opaque positive-determinant host, avoiding imported hierarchy and depth-cover differences.
+- Show five Shader Ball GLB copies through one hierarchy `InstanceSet`, with synchronized outlines on every mesh part.
 - Add an eight-part Marble Tower glTF scenario to the outline examples gallery.
-- Use native Lite-loaded glTF meshes and materials in the imported outline demos, compensating the outline winding for the loader's mirrored conversion root.
+- Slowly rotate the Marble Tower wheel around its local axle with a dedicated teal outline.
+- Use retained native Lite glTF geometry directly so the outliner applies exactly one inverted-hull winding reversal.
 - Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
 
 ### Added
