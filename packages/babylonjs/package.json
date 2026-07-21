@@ -1,0 +1,66 @@
+{
+  "name": "@litools/instancer-babylonjs",
+  "version": "0.1.0",
+  "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon.js thin instances.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js"
+    },
+    "./vat": {
+      "types": "./dist/vat.d.ts",
+      "import": "./dist/vat.js"
+    },
+    "./animation": {
+      "types": "./dist/animation.d.ts",
+      "import": "./dist/animation.js"
+    },
+    "./vat-sockets": {
+      "types": "./dist/vat-sockets.d.ts",
+      "import": "./dist/vat-sockets.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "dev": "vite --config vite.gallery.config.ts --host 0.0.0.0",
+    "dev:basic": "vite --config vite.examples.config.ts --host 0.0.0.0",
+    "dev:hierarchy": "vite --config vite.hierarchy.config.ts --host 0.0.0.0",
+    "dev:vat": "vite --config vite.vat.config.ts --host 0.0.0.0",
+    "dev:vat-character": "vite --config vite.vat-character.config.ts --host 0.0.0.0",
+    "dev:vat-attachments": "vite --config vite.vat-attachments.config.ts --host 0.0.0.0",
+    "build:examples": "npm run build && vite build --config vite.examples.config.ts",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "@babylonjs/core": "^9.17.0"
+  },
+  "devDependencies": {
+    "@babylonjs/core": "^9.17.0",
+    "@babylonjs/loaders": "^9.17.0",
+    "@types/node": "^26.1.1",
+    "@webgpu/types": "^0.1.71",
+    "playwright": "^1.58.2",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

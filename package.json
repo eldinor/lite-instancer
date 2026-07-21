@@ -25,6 +25,9 @@
     "3d"
   ],
   "type": "module",
+  "workspaces": [
+    "packages/babylonjs"
+  ],
   "license": "MIT",
   "author": {
     "name": "Andrei Stepanov",
@@ -75,12 +78,24 @@
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
+    "build:all": "npm run build && npm run build --workspace @litools/instancer-babylonjs",
+    "build:babylonjs": "npm run build --workspace @litools/instancer-babylonjs",
     "build:examples": "npm run build && vite build --config vite.examples.config.ts",
     "docs": "typedoc",
     "dev": "vite --host 0.0.0.0",
+    "dev:babylonjs": "npm run dev --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:basic": "npm run dev:basic --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:hierarchy": "npm run dev:hierarchy --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:vat": "npm run dev:vat --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:vat-character": "npm run dev:vat-character --workspace @litools/instancer-babylonjs",
     "preview:examples": "vite preview --host 0.0.0.0 --outDir examples-dist",
     "test": "vitest run",
+    "test:all": "npm test && npm test --workspace @litools/instancer-babylonjs",
+    "test:babylonjs": "npm test --workspace @litools/instancer-babylonjs",
+    "test:browser:babylonjs": "npm run test:browser --workspace @litools/instancer-babylonjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck --workspace @litools/instancer-babylonjs",
+    "pack:babylonjs": "npm pack --workspace @litools/instancer-babylonjs",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {

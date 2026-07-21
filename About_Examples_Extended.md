@@ -544,6 +544,35 @@ There are three independent groups: vanguard runners, a melee field, and a sentr
 
 Transforms are written in one batch per group and VAT playback advances once per group per frame. Stable deterministic seeds, phase offsets, and small FPS variation keep the crowd from marching in lockstep.
 
+## Massive Avatar Arena
+
+Different avatar rigs cannot share one VAT bake, even when they contain equivalent actions. The arena creates one coordinated VAT character set per crowd asset:
+
+```ts
+const characters = createVatCharacterSet(engine, root, selectedAnimations, {
+  capacity: spec.capacity,
+  engine,
+  visibleStrategy: "active-count"
+});
+```
+
+A semantic table translates shared actions into each file's authored names:
+
+```ts
+const clips = {
+  idle: "Idle02_game03",
+  run: "Run02_game03",
+  jump: "Jump_game03",
+  kick: "SoccerKick02_game03",
+  fall: "FallingIdle_game03",
+  land: "FallingToLanding_game03"
+};
+```
+
+The radial reaction computes a delay from each member's distance to the hero, then calls `setClip()` only when that member enters a new stage. Population controls use packed `active-count` visibility without reallocating or rebaking the pools, so hidden instances do not consume vertex-shader work.
+
+`avatar_5.glb` remains a normal animated hierarchy because it is the unique hero. `createThinInstanceOutliner` attaches to its retained mesh geometry, shares the live skeleton inputs, and produces the pulsing gold silhouette. Crowd selection deliberately uses `pickScreenSpaceInstanceFromPointer`, because VAT-deformed geometry is better selected through logical projected centers than rest-pose GPU geometry.
+
 ## What To Copy First
 
 For a normal app with one repeated mesh, start from `Basic Thin Instances`.
@@ -557,3 +586,5 @@ For animated skinned GLB instances, copy the VAT setup from `Shark School Shared
 For a multi-part character plus a full GLB weapon, start with `GLB VAT Socket Configurator`; its exported preset and TypeScript snippet are the direct handoff to an application.
 
 For a fixed-clip large crowd, start with `Unarmed VAT Arena Crowd` and keep clip selection out of the frame loop.
+
+For several avatar rigs that share semantic actions but not skeletons or exact clip names, start with `Massive Avatar Arena` and keep one VAT pool plus one clip-name map per rig.

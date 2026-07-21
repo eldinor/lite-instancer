@@ -24,6 +24,7 @@ const htmlInputs = {
   "samba-girl-vat-sword-sync": "examples/samba-girl-vat-sword-sync/index.html",
   "glb-vat-socket-configurator": "examples/glb-vat-socket-configurator/index.html",
   "unarmed-vat-arena": "examples/unarmed-vat-arena/index.html",
+  "massive-avatar-arena": "examples/massive-avatar-arena/index.html",
   "thin-instance-outlines": "examples/thin-instance-outlines/index.html"
 };
 

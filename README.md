@@ -6,6 +6,8 @@ Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylo
 
 Created by [BabylonPress](https://babylonpress.org/).
 
+This repository also contains the independently published `@litools/instancer-babylonjs` workspace for full Babylon.js. Its supported API surface and migration notes are tracked in [BABYLONJS_COMPATIBILITY.md](./BABYLONJS_COMPATIBILITY.md).
+
 ## Install
 
 ```sh
@@ -328,6 +330,7 @@ Then open the root examples page. Useful demos:
 - Ready Player VAT Sword Sync and Samba Girl VAT Sword Sync: attachment synchronization across single- and multi-part VAT characters.
 - GLB VAT Socket Configurator: select an animated socket, tune an attachment GLB, and export a JSON preset plus TypeScript setup.
 - Unarmed VAT Arena Crowd: three independent VAT groups with nine selected clips and density modes from 300 to 3,000 characters.
+- Massive Avatar Arena: three independently baked avatar populations, 2,500 total capacity, normalized cross-model actions, screen-space selection, and an outlined `avatar_5` hero.
 - Thin Instance Outline Gallery: primitives, imported GLB/glTF hierarchies, live skeletal outlines on the animated Vintage Desk Fan, stable-ID and raw-index selection, smoothing, and animated effects.
 
 See the [examples guide](https://github.com/eldinor/lite-instancer/blob/main/About_Examples.md) for a fuller explanation of every example, and [extended examples](https://github.com/eldinor/lite-instancer/blob/main/About_Examples_Extended.md) for important code snippets from each one.

@@ -147,6 +147,14 @@ Path: `/examples/unarmed-vat-arena/`
 
 Builds a 3,000-capacity local-GLB arena from three independently baked VAT groups of up to 1,000 fighters each. It deliberately bakes only nine named clips from `Unarmed.glb`, offers density modes from 300 through 3,000, and uses `scale-zero` visibility so instance/animation slots remain aligned.
 
+## Massive Avatar Arena
+
+Path: `/examples/massive-avatar-arena/`
+
+Combines three independently baked VAT populations from `avatar_2.glb`, `avatar_3.glb`, and `avatar_4.glb` with a full-quality, live-skeleton `avatar_5.glb` hero. The crowd has 2,500 allocated stable IDs, starts with 100 visible characters, and provides presets for 100, 500, or 2,500. It uses packed `active-count` visibility so hidden capacity is not submitted as zero-scale vertex work.
+
+Each asset uses different source clip names, so the demo maps them onto the same semantic idle, walk, run, jump, kick, fall, and landing actions. A radial reaction wave changes per-instance clips as it crosses the arena. The hero uses ordinary glTF animation and a live skeletal outline, while crowd selection uses logical screen-space picking.
+
 ## Shared Example Code
 
 Path: `/examples/shared/`

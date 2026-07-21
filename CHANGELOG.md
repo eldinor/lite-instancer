@@ -10,6 +10,7 @@
 - Update the example UI integration to `babylon-lite-explorer` 0.5.0.
 - Use retained native Lite glTF geometry directly so the outliner applies exactly one inverted-hull winding reversal.
 - Add an imported Babylon Shader Ball scenario to the thin-instance outline gallery.
+- Add the Massive Avatar Arena example with three independently baked VAT populations, 2,500-character capacity, normalized action waves, screen-space crowd selection, and an outlined animated `avatar_5` hero.
 
 ### Added
 
