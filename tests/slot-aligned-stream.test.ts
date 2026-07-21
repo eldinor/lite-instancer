@@ -27,7 +27,9 @@ describe("SlotAlignedFloatStream", () => {
       defaultValue: [1, 1],
       backend: {
         bind: vi.fn(),
-        upload: (_data, count, ranges) => uploads.push({ count, ranges })
+        upload: (_data, count, ranges) => {
+          uploads.push({ count, ranges });
+        }
       }
     });
 
@@ -59,5 +61,20 @@ describe("SlotAlignedFloatStream", () => {
     stream.setSlot(6, [6, 6, 6, 6]);
     stream.flush(8);
     expect(upload.mock.calls[0]?.[2]).toEqual([{ start: 1, end: 2 }, { start: 6, end: 6 }]);
+  });
+
+  it("records exact work reported by the renderer backend", () => {
+    const stream = new SlotAlignedFloatStream({
+      components: 4,
+      backend: {
+        bind: vi.fn(),
+        upload: () => ({ calls: 2, bytes: 64 })
+      }
+    });
+    stream.resize(2);
+    stream.setSlot(0, [1, 2, 3, 4]);
+    stream.flush(1);
+    expect(stream.stats.backendUploadCalls).toBe(2);
+    expect(stream.stats.backendBytesUploaded).toBe(64);
   });
 });

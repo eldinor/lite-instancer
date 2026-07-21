@@ -4,12 +4,23 @@ export interface SlotDirtyRange {
   readonly end: number;
 }
 
+/** Exact renderer work performed by one stream flush. */
+export interface SlotAlignedFloatStreamUploadResult {
+  readonly calls: number;
+  readonly bytes: number;
+}
+
 /** Renderer-specific operations for one engine-neutral float stream. */
 export interface SlotAlignedFloatStreamBackend {
   /** Bind or rebind storage after creation or capacity growth. */
   bind(data: Float32Array, capacity: number): void;
   /** Upload the current live prefix. Backends may ignore ranges when partial updates are unavailable. */
-  upload(data: Float32Array, count: number, ranges: readonly SlotDirtyRange[], force: boolean): void;
+  upload(
+    data: Float32Array,
+    count: number,
+    ranges: readonly SlotDirtyRange[],
+    force: boolean
+  ): SlotAlignedFloatStreamUploadResult | void;
   /** Release renderer resources owned by this stream. */
   dispose?(): void;
 }
@@ -28,6 +39,8 @@ export interface SlotAlignedFloatStreamStats {
   forcedFlushes: number;
   dirtySlotsFlushed: number;
   cpuBytesFlushed: number;
+  backendUploadCalls: number;
+  backendBytesUploaded: number;
 }
 
 /**
@@ -42,7 +55,9 @@ export class SlotAlignedFloatStream {
     flushes: 0,
     forcedFlushes: 0,
     dirtySlotsFlushed: 0,
-    cpuBytesFlushed: 0
+    cpuBytesFlushed: 0,
+    backendUploadCalls: 0,
+    backendBytesUploaded: 0
   };
 
   #backend: SlotAlignedFloatStreamBackend;
@@ -171,13 +186,25 @@ export class SlotAlignedFloatStream {
       throw new Error("Invalid SlotAlignedFloatStream flush count.");
     }
     if (!force && this.#dirty.size === 0) return;
-    const ranges = force && count > 0 ? [{ start: 0, end: count - 1 }] : this.dirtyRanges();
+    const ranges = force && count > 0
+      ? [{ start: 0, end: count - 1 }]
+      : this.dirtyRanges()
+          .filter((range) => range.start < count)
+          .map((range) => ({ start: range.start, end: Math.min(range.end, count - 1) }));
+    if (ranges.length === 0) {
+      this.#dirty.clear();
+      return;
+    }
     const dirtySlots = ranges.reduce((total, range) => total + range.end - range.start + 1, 0);
     this.stats.flushes++;
     if (force) this.stats.forcedFlushes++;
     this.stats.dirtySlotsFlushed += dirtySlots;
     this.stats.cpuBytesFlushed += dirtySlots * this.components * Float32Array.BYTES_PER_ELEMENT;
-    this.#backend.upload(this.view(count), count, ranges, force);
+    const upload = this.#backend.upload(this.view(count), count, ranges, force);
+    if (upload) {
+      this.stats.backendUploadCalls += upload.calls;
+      this.stats.backendBytesUploaded += upload.bytes;
+    }
     this.#dirty.clear();
   }
 

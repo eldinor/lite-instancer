@@ -90,6 +90,18 @@ export interface VatInstanceCreateOptions<TMetadata = unknown> {
   fps?: number;
 }
 
+/** Atomic changes to one instance's VAT playback overrides. Omitted fields are preserved. */
+export interface VatPlaybackUpdate {
+  readonly clip?: string | undefined;
+  readonly offset?: number;
+  readonly fps?: number | undefined;
+}
+
+/** Stable-ID playback update used by {@link VatInstanceSet.setPlaybackMany}. */
+export interface VatPlaybackUpdateEntry extends VatPlaybackUpdate {
+  readonly id: InstanceId;
+}
+
 /**
  * VAT-backed animated instance helper for one skinned mesh.
  *
@@ -234,6 +246,10 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   setPhaseOffset(id: InstanceId, offset: number): void;
   /** Set or clear a per-instance playback fps override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Atomically update clip, phase offset, and/or FPS with at most one slot write. */
+  setPlayback(id: InstanceId, update: VatPlaybackUpdate): boolean;
+  /** Apply many atomic playback updates and upload once. Returns the number accepted. */
+  setPlaybackMany(items: Iterable<VatPlaybackUpdateEntry>): number;
   /** Apply multiple playback edits and upload the resulting dirty slots once. */
   batchPlayback<TResult>(callback: () => TResult): TResult;
   /** Rebuild and upload per-slot VAT playback parameters. */
@@ -292,10 +308,11 @@ function createVatInstanceSetFromBake<TMetadata>(
   const initialClip = options.clip ?? Object.keys(baked.clips)[0];
   const handle = attachVatSafely(engine, mesh, baked, initialClip);
   const { clip: _clip, ...setOptions } = options;
+  const visibleStrategy = options.visibleStrategy ?? "scale-zero";
   const set = createInstanceSet<TMetadata>(mesh, {
     ...setOptions,
     gpuCulling: options.gpuCulling ?? false,
-    visibleStrategy: options.visibleStrategy ?? "scale-zero"
+    visibleStrategy
   });
 
   let activeClip = initialClip;
@@ -311,7 +328,9 @@ function createVatInstanceSetFromBake<TMetadata>(
         // Babylon Lite creates and grows its VAT instance texture from the live-count upload.
       },
       upload(data, count) {
-        if (activeClip && count > 0) handle.setInstances(data);
+        if (!activeClip || count === 0) return { calls: 0, bytes: 0 };
+        handle.setInstances(data);
+        return { calls: 1, bytes: data.byteLength };
       }
     }
   });
@@ -339,7 +358,8 @@ function createVatInstanceSetFromBake<TMetadata>(
   };
 
   const uploadPlaybackInstances = (force = false): void => {
-    playbackStream.flush(set.count, force);
+    const uploadCount = visibleStrategy === "active-count" ? set.visibleCount : set.count;
+    playbackStream.flush(uploadCount, force);
   };
 
   const syncPlaybackInstances = (): void => {
@@ -361,6 +381,20 @@ function createVatInstanceSetFromBake<TMetadata>(
         uploadPlaybackInstances();
       }
     }
+  };
+
+  const applyPlaybackUpdate = (id: InstanceId, update: VatPlaybackUpdate): boolean => {
+    if (!set.has(id)) return false;
+    const current = playback.get(id) ?? { offset: 0 };
+    const clip = Object.prototype.hasOwnProperty.call(update, "clip") ? update.clip : current.clip;
+    if (clip !== undefined && !handle.clips[clip]) return false;
+    const offset = update.offset ?? current.offset;
+    const fps = Object.prototype.hasOwnProperty.call(update, "fps") ? update.fps : current.fps;
+    if (clip === current.clip && Object.is(offset, current.offset) && fps === current.fps) return true;
+    playback.set(id, createPlayback({ clip, offset, fps }));
+    writePlaybackSlot(id);
+    syncPlaybackInstances();
+    return true;
   };
 
   const api: VatInstanceSet<TMetadata> = {
@@ -541,8 +575,10 @@ function createVatInstanceSetFromBake<TMetadata>(
       if (!handle.clips[clip]) {
         return false;
       }
+      const changed = activeClip !== clip;
       activeClip = clip;
       handle.play(clip);
+      if (!changed) return true;
       for (const id of set.ids()) {
         if (playback.get(id)?.clip === undefined) writePlaybackSlot(id);
       }
@@ -554,46 +590,25 @@ function createVatInstanceSetFromBake<TMetadata>(
       handle.update(deltaSeconds);
     },
     setClip(id, clip) {
-      if (!set.has(id) || (clip !== undefined && !handle.clips[clip])) {
-        return false;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(
-        id,
-        createPlayback({
-          clip,
-          offset: current.offset,
-          fps: current.fps
-        })
-      );
-      writePlaybackSlot(id);
-      syncPlaybackInstances();
-      return true;
+      return applyPlaybackUpdate(id, { clip });
     },
     setPhaseOffset(id, offset) {
-      if (!set.has(id)) {
-        return;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(id, { ...current, offset });
-      writePlaybackSlot(id);
-      syncPlaybackInstances();
+      applyPlaybackUpdate(id, { offset });
     },
     setFps(id, fps) {
-      if (!set.has(id)) {
-        return;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(
-        id,
-        createPlayback({
-          clip: current.clip,
-          offset: current.offset,
-          fps
-        })
-      );
-      writePlaybackSlot(id);
-      syncPlaybackInstances();
+      applyPlaybackUpdate(id, { fps });
+    },
+    setPlayback(id, update) {
+      return applyPlaybackUpdate(id, update);
+    },
+    setPlaybackMany(items) {
+      return batchPlaybackUpdates(() => {
+        let accepted = 0;
+        for (const { id, ...update } of items) {
+          if (applyPlaybackUpdate(id, update)) accepted++;
+        }
+        return accepted;
+      });
     },
     batchPlayback(callback) {
       return batchPlaybackUpdates(callback);

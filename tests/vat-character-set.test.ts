@@ -96,4 +96,31 @@ describe("VatCharacterSet", () => {
     expect(handles[0]!.setInstances).toHaveBeenCalledTimes(1);
     expect(handles[1]!.setInstances).toHaveBeenCalledTimes(1);
   });
+
+  it("bulk-updates visibility with one visible-prefix upload per mesh", async () => {
+    const { createVatCharacterSet } = await import("../src/vat-character-set.js");
+    const device = { queue: { submit: vi.fn(), onSubmittedWorkDone: vi.fn(() => Promise.resolve()) } };
+    const skeleton = { boneTexture: { destroy: vi.fn() } };
+    const root = { children: [{ skeleton, children: [] }, { skeleton, children: [] }] };
+    const character = createVatCharacterSet({ _device: device } as never, root as never, [{}] as never, {
+      capacity: 4,
+      visibleStrategy: "active-count"
+    });
+    const ids = character.createMany([{}, {}, {}, {}]);
+    for (const vatHandle of handles) vatHandle.setInstances.mockClear();
+
+    character.setVisibleMany(ids.slice(1), false);
+
+    expect(character.visibleCount).toBe(1);
+    expect(handles[0]!.setInstances).not.toHaveBeenCalled();
+    expect(handles[1]!.setInstances).not.toHaveBeenCalled();
+
+    character.setVisibleMany([ids[1]!], true);
+
+    expect(character.visibleCount).toBe(2);
+    expect(handles[0]!.setInstances).toHaveBeenCalledTimes(1);
+    expect(handles[1]!.setInstances).toHaveBeenCalledTimes(1);
+    expect(handles[0]!.setInstances.mock.lastCall?.[0]).toHaveLength(8);
+    expect(handles[1]!.setInstances.mock.lastCall?.[0]).toHaveLength(8);
+  });
 });

@@ -1,9 +1,12 @@
 export interface ArenaBenchmarkCounters {
   readonly flushes: number;
   readonly cpuDirtyBytes: number;
-  readonly estimatedGpuBytes: number;
+  readonly backendUploadCalls: number;
+  readonly backendBytesUploaded: number;
   readonly backingAllocations: number;
 }
+
+export type ArenaBenchmarkPopulation = 100 | 500 | 1000 | 1500 | 2500;
 
 export interface ArenaBenchmarkFrame {
   readonly frameMs: number;
@@ -30,7 +33,7 @@ export interface ArenaBenchmarkPhaseResult {
 }
 
 export interface ArenaPopulationBenchmarkResult {
-  readonly population: 100 | 500 | 2500;
+  readonly population: ArenaBenchmarkPopulation;
   readonly populationApplyMs: number;
   readonly visibleCount: number;
   readonly steady: ArenaBenchmarkPhaseResult;
@@ -81,7 +84,8 @@ function subtractCounters(after: ArenaBenchmarkCounters, before: ArenaBenchmarkC
   return {
     flushes: after.flushes - before.flushes,
     cpuDirtyBytes: after.cpuDirtyBytes - before.cpuDirtyBytes,
-    estimatedGpuBytes: after.estimatedGpuBytes - before.estimatedGpuBytes,
+    backendUploadCalls: after.backendUploadCalls - before.backendUploadCalls,
+    backendBytesUploaded: after.backendBytesUploaded - before.backendBytesUploaded,
     backingAllocations: after.backingAllocations - before.backingAllocations
   };
 }

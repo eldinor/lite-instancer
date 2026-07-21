@@ -108,6 +108,54 @@ describe("VatInstanceSet", () => {
     expect(handle.setInstances).toHaveBeenCalledTimes(1);
   });
 
+  it("updates playback atomically and skips identical payloads", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, { capacity: 3, clip: "Swim" });
+    const [a, b] = vat.createMany([{}, {}]);
+    handle.setInstances.mockClear();
+
+    expect(vat.setPlayback(a!, { clip: "Turn", offset: 0.5, fps: 15 })).toBe(true);
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+    const writes = vat.playbackStats.slotWrites;
+    expect(vat.setPlayback(a!, { clip: "Turn", offset: 0.5, fps: 15 })).toBe(true);
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+    expect(vat.playbackStats.slotWrites).toBe(writes);
+
+    expect(vat.setPlaybackMany([
+      { id: a!, offset: 1 },
+      { id: b!, clip: "Turn", fps: 12 }
+    ])).toBe(2);
+    expect(handle.setInstances).toHaveBeenCalledTimes(2);
+  });
+
+  it("uploads only the visible prefix and reports exact backend bytes", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, {
+      capacity: 4,
+      clip: "Swim",
+      visibleStrategy: "active-count"
+    });
+    const ids = vat.createMany([{}, {}, {}, {}]);
+    vat.setVisibleMany(ids.slice(1), false);
+    handle.setInstances.mockClear();
+    const callsBefore = vat.playbackStats.backendUploadCalls;
+    const bytesBefore = vat.playbackStats.backendBytesUploaded;
+
+    vat.setPhaseOffset(ids[0]!, 0.75);
+
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+    expect(handle.setInstances.mock.lastCall?.[0]).toHaveLength(4);
+    expect(vat.playbackStats.backendUploadCalls - callsBefore).toBe(1);
+    expect(vat.playbackStats.backendBytesUploaded - bytesBefore).toBe(4 * Float32Array.BYTES_PER_ELEMENT);
+
+    handle.setInstances.mockClear();
+    vat.setPhaseOffset(ids[1]!, 1.25);
+    expect(handle.setInstances).not.toHaveBeenCalled();
+    vat.setVisible(ids[1]!, true);
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+    expect(handle.setInstances.mock.lastCall?.[0]).toHaveLength(8);
+  });
+
   it("exposes common instance-set operations directly", async () => {
     const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
     const { toInstanceId } = await import("../src/types.js");
@@ -169,7 +217,8 @@ describe("VatInstanceSet", () => {
     expect(vat.removeMany([a!, c!])).toBe(2);
     expect(vat.has(a!)).toBe(false);
     expect(vat.has(c!)).toBe(false);
-    expect(handle.setInstances).toHaveBeenCalled();
+    expect(vat.visibleCount).toBe(0);
+    expect(handle.setInstances).not.toHaveBeenCalled();
   });
 
   it("does not resync playback for matrix-only batches", async () => {

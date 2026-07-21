@@ -173,7 +173,7 @@ boxes.batch((writer) => {
 });
 ```
 
-For VAT sets, matrix-only batches update transforms without touching playback parameters. Playback uses a persistent capacity buffer: clip, phase, FPS, visibility, removal, and growth operations rewrite only affected CPU slots. Babylon Lite currently still requires a complete live-count VAT upload whenever changed slots are flushed.
+For VAT sets, matrix-only batches update transforms without touching playback parameters. Playback uses a persistent capacity buffer: clip, phase, FPS, visibility, removal, and growth operations rewrite only affected CPU slots. Babylon Lite currently requires a complete submitted-prefix VAT upload whenever changed visible slots are flushed. With `"active-count"`, only the packed visible prefix is submitted; `"scale-zero"` continues to submit every live slot.
 
 Use `editRaw` only when you need direct access to the matrix/color arrays. When writing raw data, mark dirty slots yourself.
 
@@ -223,7 +223,7 @@ const picked = pickScreenSpaceInstanceFromPointer({
 
 Portable VAT tooling is exported from `@litools/instancer/vat`. `LiteVatAsset` uses a versioned `lite-matrix-rgba32float` payload, common clip/socket/bounds metadata, and deterministic JSON-manifest plus binary-payload codecs. `packLiteVatAsset` validates neutral sampled matrices against configurable allocation limits, while `createVatBakeWorkerPool` provides queueing, cancellation, timeouts, progress, and worker recovery. Loading an asset with `createVatInstanceSetFromAsset` requires an explicit `LiteVatAssetRuntime` until Babylon Lite publishes a public raw VAT-texture import API; the instancer does not access private GPU fields for this path.
 
-Use `play(clip)` to change the shared default clip. Use `setClip(id, clip)`, `setPhaseOffset(id, seconds)`, and `setFps(id, fps)` for per-instance variation. Wrap coordinated edits in `batchPlayback(() => { ... })` to rewrite every affected CPU slot while issuing only one full Babylon Lite VAT upload per mesh stream.
+Use `play(clip)` to change the shared default clip. Use `setClip(id, clip)`, `setPhaseOffset(id, seconds)`, and `setFps(id, fps)` for individual fields, or `setPlayback(id, { clip, offset, fps })` to change them with one slot write. `setPlaybackMany()` handles bulk changes and skips identical payloads. Wrap other coordinated edits in `batchPlayback(() => { ... })` to issue only one Babylon Lite VAT upload per mesh stream. Multi-part character sets also provide `setVisibleMany()` for coordinated population changes.
 
 ```ts
 const id = sharks.create({
@@ -233,8 +233,7 @@ const id = sharks.create({
   offset: 0.4
 });
 
-sharks.setClip(id, "Turn");
-sharks.setPhaseOffset(id, 1.2);
+sharks.setPlayback(id, { clip: "Turn", offset: 1.2 });
 sharks.setVisible(id, false);
 sharks.update(deltaSeconds);
 ```

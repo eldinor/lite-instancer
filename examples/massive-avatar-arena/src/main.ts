@@ -26,6 +26,7 @@ import {
   type ArenaBenchmarkCounters,
   type ArenaBenchmarkFrame,
   type ArenaBenchmarkPhaseResult,
+  type ArenaBenchmarkPopulation,
   type ArenaPopulationBenchmarkResult
 } from "./benchmark.js";
 
@@ -70,6 +71,7 @@ interface CrowdPool {
 }
 
 interface PopulationPreset {
+  readonly population: ArenaBenchmarkPopulation;
   readonly label: string;
   readonly counts: Readonly<Record<CrowdKind, number>>;
 }
@@ -162,9 +164,11 @@ const HERO_CLIPS: Readonly<Record<Action, string>> = {
 };
 
 const POPULATIONS: readonly PopulationPreset[] = [
-  { label: "100", counts: { citizens: 80, aliens: 14, robots: 6 } },
-  { label: "500", counts: { citizens: 400, aliens: 70, robots: 30 } },
-  { label: "2,500", counts: { citizens: 2000, aliens: 360, robots: 140 } }
+  { population: 100, label: "100", counts: { citizens: 80, aliens: 14, robots: 6 } },
+  { population: 500, label: "500", counts: { citizens: 400, aliens: 70, robots: 30 } },
+  { population: 1000, label: "1,000", counts: { citizens: 800, aliens: 140, robots: 60 } },
+  { population: 1500, label: "1,500", counts: { citizens: 1200, aliens: 210, robots: 90 } },
+  { population: 2500, label: "2,500", counts: { citizens: 2000, aliens: 360, robots: 140 } }
 ];
 
 const ctx = await createExample("Massive Avatar Arena");
@@ -186,8 +190,6 @@ let timeSeconds = 0;
 let selected: Selection | undefined;
 const frameSamples: number[] = [];
 const playbackMutationSamples: number[] = [];
-const lastFlushes = new WeakMap<object, number>();
-let estimatedVatUploadBytes = 0;
 let telemetryFrames = 0;
 let benchmarkRun: BenchmarkRun | undefined;
 
@@ -198,7 +200,7 @@ const populationButton = ctx.panel.button("population: 100", () => {
   populationButton.textContent = `population: ${POPULATIONS[populationIndex]!.label}`;
   applyPopulation();
 });
-const benchmarkButton = ctx.panel.button("benchmark 100 / 500 / 2,500", startArenaBenchmark);
+const benchmarkButton = ctx.panel.button("benchmark 100 / 500 / 1,000 / 1,500 / 2,500", startArenaBenchmark);
 ctx.panel.button("reaction wave", () => {
   if (!benchmarkRun) startReactionWave();
 });
@@ -238,7 +240,6 @@ onBeforeRender(ctx.scene, (deltaMs) => {
   }
   pushSample(frameSamples, deltaMs);
   const updateMs = performance.now() - updateStarted;
-  updateVatUploadEstimate();
   advanceArenaBenchmark(deltaMs, updateMs);
   publishBenchmark(updateMs);
   updateTelemetry();
@@ -394,10 +395,10 @@ function applyPopulation(): void {
   const preset = POPULATIONS[populationIndex] ?? POPULATIONS[0]!;
   for (const pool of pools) {
     const visibleCount = preset.counts[pool.spec.kind];
-    for (let index = 0; index < pool.members.length; index++) {
-      const member = pool.members[index];
-      if (member) pool.characters.setVisible(member.id, index < visibleCount);
-    }
+    pool.characters.batchPlayback(() => {
+      pool.characters.setVisibleMany(pool.members.slice(0, visibleCount).map((member) => member.id), true);
+      pool.characters.setVisibleMany(pool.members.slice(visibleCount).map((member) => member.id), false);
+    });
   }
   if (selected && !selected.pool.characters.getVisible(selected.member.id)) clearSelection();
 }
@@ -448,9 +449,13 @@ function setMemberStage(pool: CrowdPool, member: CrowdMember, stage: ReactionSta
   const started = performance.now();
   const action = stage === "base" ? member.baseAction : stage;
   const clipName = pool.spec.clips[action];
-  pool.characters.setClip(member.id, clipName);
   const clip = pool.characters.clips[clipName];
-  if (clip) pool.characters.setPhaseOffset(member.id, hash01(member.index * 53 + timeSeconds) * 0.08 * (clip.frameCount / clip.fps));
+  pool.characters.setPlayback(member.id, {
+    clip: clipName,
+    ...(clip
+      ? { offset: hash01(member.index * 53 + timeSeconds) * 0.08 * (clip.frameCount / clip.fps) }
+      : {})
+  });
   const mutationMs = performance.now() - started;
   pushSample(playbackMutationSamples, mutationMs);
   benchmarkRun?.capture?.mutations.push(mutationMs);
@@ -622,7 +627,7 @@ function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
   ctx.panel.set(
     `bench ${expectedPopulation.toLocaleString()}`,
     `steady ${steady.frameP95Ms.toFixed(2)}ms · wave ${reaction.frameP95Ms.toFixed(2)}ms · ` +
-      `${reaction.playbackMutationCount} edits · ${formatBytes(reaction.uploads.estimatedGpuBytes)}`
+      `${reaction.playbackMutationCount} edits · ${formatBytes(reaction.uploads.backendBytesUploaded)}`
   );
 
   const nextPreset = run.presetIndex + 1;
@@ -648,7 +653,7 @@ function finishBenchmarkCapture(capture: BenchmarkCapture, durationMs: number): 
 
 function finishArenaBenchmark(results: readonly ArenaPopulationBenchmarkResult[]): void {
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     timestamp: new Date().toISOString(),
     environment: {
       userAgent: navigator.userAgent,
@@ -669,7 +674,7 @@ function finishArenaBenchmark(results: readonly ArenaPopulationBenchmarkResult[]
     steadyP95Ms: result.steady.frameP95Ms.toFixed(2),
     reactionP95Ms: result.reaction.frameP95Ms.toFixed(2),
     mutationP95Ms: result.reaction.playbackMutationP95Ms.toFixed(3),
-    uploadMiB: (result.reaction.uploads.estimatedGpuBytes / 1024 / 1024).toFixed(2),
+    uploadMiB: (result.reaction.uploads.backendBytesUploaded / 1024 / 1024).toFixed(2),
     passed: result.passed
   })));
   ctx.panel.set("benchmark", results.every((result) => result.passed) ? "complete · report ready" : "complete · validation failed");
@@ -685,7 +690,8 @@ function getBenchmarkCounters(): ArenaBenchmarkCounters {
   return {
     flushes: stats.reduce((total, value) => total + value.flushes, 0),
     cpuDirtyBytes: stats.reduce((total, value) => total + value.cpuBytesFlushed, 0),
-    estimatedGpuBytes: estimatedVatUploadBytes,
+    backendUploadCalls: stats.reduce((total, value) => total + value.backendUploadCalls, 0),
+    backendBytesUploaded: stats.reduce((total, value) => total + value.backendBytesUploaded, 0),
     backingAllocations: stats.reduce((total, value) => total + value.allocations, 0)
   };
 }
@@ -694,8 +700,8 @@ function getHeapBytes(): number | undefined {
   return (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
 }
 
-function getBenchmarkPopulation(index: number): 100 | 500 | 2500 {
-  return ([100, 500, 2500] as const)[index] ?? 100;
+function getBenchmarkPopulation(index: number): ArenaBenchmarkPopulation {
+  return POPULATIONS[index]?.population ?? 100;
 }
 
 function formatBytes(bytes: number): string {
@@ -715,30 +721,19 @@ function updateTelemetry(): void {
   if (++telemetryFrames % 30 === 0) {
     ctx.panel.set("frame p50 / p95", `${percentile(frameSamples, 0.5).toFixed(2)} / ${percentile(frameSamples, 0.95).toFixed(2)} ms`);
     ctx.panel.set("playback p50 / p95", `${percentile(playbackMutationSamples, 0.5).toFixed(3)} / ${percentile(playbackMutationSamples, 0.95).toFixed(3)} ms`);
-    ctx.panel.set("VAT upload estimate", `${(estimatedVatUploadBytes / 1024 / 1024).toFixed(2)} MiB`);
+    const counters = getBenchmarkCounters();
+    ctx.panel.set("VAT uploaded", `${(counters.backendBytesUploaded / 1024 / 1024).toFixed(2)} MiB / ${counters.backendUploadCalls} calls`);
     ctx.panel.set("GPU / draws", `${ctx.engine.gpuFrameTimeMs.toFixed(2)} ms / ${ctx.engine.drawCallCount}`);
   }
   ctx.panel.set("selected", selected ? `${selected.pool.spec.kind} #${Number(selected.member.id)} · ${selected.member.stage}` : "-");
   ctx.panel.set("status", "running");
 }
 
-function updateVatUploadEstimate(): void {
-  for (const pool of pools) {
-    const stats = [pool.characters.primary.playbackStats, ...pool.characters.secondaryParts.map((part) => part.playbackStats)];
-    for (const streamStats of stats) {
-      const previous = lastFlushes.get(streamStats) ?? 0;
-      const added = streamStats.flushes - previous;
-      if (added > 0) estimatedVatUploadBytes += added * pool.characters.count * 4 * Float32Array.BYTES_PER_ELEMENT;
-      lastFlushes.set(streamStats, streamStats.flushes);
-    }
-  }
-}
-
 function publishBenchmark(updateMs: number): void {
   const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
   const stats = pools.flatMap((pool) => [pool.characters.primary.playbackStats, ...pool.characters.secondaryParts.map((part) => part.playbackStats)]);
   (globalThis as typeof globalThis & { __liteInstancerBenchmark?: unknown }).__liteInstancerBenchmark = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     timestamp: new Date().toISOString(),
     environment: {
       userAgent: navigator.userAgent,
@@ -757,7 +752,8 @@ function publishBenchmark(updateMs: number): void {
     uploads: {
       flushes: stats.reduce((total, value) => total + value.flushes, 0),
       cpuDirtyBytes: stats.reduce((total, value) => total + value.cpuBytesFlushed, 0),
-      estimatedGpuBytes: estimatedVatUploadBytes,
+      backendUploadCalls: stats.reduce((total, value) => total + value.backendUploadCalls, 0),
+      backendBytesUploaded: stats.reduce((total, value) => total + value.backendBytesUploaded, 0),
       backingAllocations: stats.reduce((total, value) => total + value.allocations, 0)
     },
     heapBytes: memory?.usedJSHeapSize

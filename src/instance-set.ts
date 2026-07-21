@@ -566,6 +566,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
           this.#requestBundleInvalidation();
         },
         upload: (data, count, ranges) => {
+          let uploadedSlots = 0;
           for (const range of ranges) {
             const end = Math.min(range.end, count - 1);
             for (let slot = range.start; slot <= end; slot++) {
@@ -578,9 +579,14 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
                 data[offset + 2] ?? 1,
                 data[offset + 3] ?? 1
               );
+              uploadedSlots++;
             }
           }
           if (ranges.length > 0) this.#requestBundleInvalidation();
+          return {
+            calls: uploadedSlots,
+            bytes: uploadedSlots * 4 * Float32Array.BYTES_PER_ELEMENT
+          };
         }
       }
     });

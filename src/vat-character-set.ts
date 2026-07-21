@@ -21,6 +21,8 @@ import {
   type VatInstanceCreateOptions,
   type VatInstanceSet,
   type VatInstanceSetOptions,
+  type VatPlaybackUpdate,
+  type VatPlaybackUpdateEntry,
   type VatPlaybackSample,
   type VatPlaybackSource
 } from "./vat-instance-set.js";
@@ -68,6 +70,8 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   getVisible(id: InstanceId): boolean;
   /** Change visibility across every mesh part. */
   setVisible(id: InstanceId, visible: boolean): void;
+  /** Change visibility for many characters with one coordinated playback upload per mesh. */
+  setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void;
   /** Replace the world matrix across every mesh part. */
   setMatrix(id: InstanceId, matrix: Mat4): void;
   /** Compose and replace a transform across every mesh part. */
@@ -84,6 +88,10 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   setPhaseOffset(id: InstanceId, offset: number): void;
   /** Set or clear a character instance's FPS override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Atomically update one character's clip, phase offset, and/or FPS. */
+  setPlayback(id: InstanceId, update: VatPlaybackUpdate): boolean;
+  /** Apply many atomic character playback updates and upload each mesh once. */
+  setPlaybackMany(items: Iterable<VatPlaybackUpdateEntry>): number;
   /** Apply multiple coordinated playback edits and upload each mesh stream once. */
   batchPlayback<TResult>(callback: () => TResult): TResult;
   /** Return the VAT row selection currently used by a character instance. */
@@ -121,6 +129,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
 
   const primary = createVatInstanceSet<TMetadata>(engine, primaryMesh, animationGroups, options);
   const { clip: _clip, ...instanceOptions } = options;
+  const visibleStrategy = options.visibleStrategy ?? "scale-zero";
   const secondary = skinnedMeshes.map<SecondaryPart>((mesh) => {
     const handle = attachVatSafely(engine, mesh, bakeVat(engine, mesh, animationGroups));
     const set = createInstanceSet(mesh, {
@@ -133,7 +142,9 @@ export function createVatCharacterSet<TMetadata = unknown>(
       backend: {
         bind() {},
         upload(data, count) {
-          if (count > 0) handle.setInstances(data);
+          if (count === 0) return { calls: 0, bytes: 0 };
+          handle.setInstances(data);
+          return { calls: 1, bytes: data.byteLength };
         }
       }
     });
@@ -176,7 +187,8 @@ export function createVatCharacterSet<TMetadata = unknown>(
       if (syncSharedClip && activeClip && part.handle.clips[activeClip]) part.handle.play(activeClip);
       const targetIds = ids ?? primary.ids();
       for (const id of targetIds) writeSecondaryPlayback(part, id);
-      part.playbackStream.flush(part.set.count, force);
+      const uploadCount = visibleStrategy === "active-count" ? part.set.visibleCount : part.set.count;
+      part.playbackStream.flush(uploadCount, force);
     }
   };
 
@@ -304,7 +316,19 @@ export function createVatCharacterSet<TMetadata = unknown>(
     setVisible(id, visible) {
       primary.setVisible(id, visible);
       mirrorVisibility(id, visible);
-      synchronizeSecondaryPlayback([]);
+      requestSecondaryPlayback([]);
+    },
+    setVisibleMany(ids, visible) {
+      const primaryIds = Array.from(ids);
+      primary.setVisibleMany(primaryIds, visible);
+      for (const part of secondary) {
+        const secondaryIds = primaryIds.flatMap((id) => {
+          const secondaryId = part.secondaryByPrimary.get(id);
+          return secondaryId === undefined ? [] : [secondaryId];
+        });
+        part.set.setVisibleMany(secondaryIds, visible);
+      }
+      requestSecondaryPlayback([]);
     },
     setMatrix(id, matrix) {
       primary.setMatrix(id, matrix);
@@ -325,17 +349,35 @@ export function createVatCharacterSet<TMetadata = unknown>(
       for (const part of secondary) part.handle.update(deltaSeconds);
     },
     setClip(id, clip) {
+      const writesBefore = primary.playbackStats.slotWrites;
       const changed = primary.setClip(id, clip);
-      if (changed) requestSecondaryPlayback([id]);
+      if (changed && primary.playbackStats.slotWrites !== writesBefore) requestSecondaryPlayback([id]);
       return changed;
     },
     setPhaseOffset(id, offset) {
+      const writesBefore = primary.playbackStats.slotWrites;
       primary.setPhaseOffset(id, offset);
-      requestSecondaryPlayback([id]);
+      if (primary.playbackStats.slotWrites !== writesBefore) requestSecondaryPlayback([id]);
     },
     setFps(id, fps) {
+      const writesBefore = primary.playbackStats.slotWrites;
       primary.setFps(id, fps);
-      requestSecondaryPlayback([id]);
+      if (primary.playbackStats.slotWrites !== writesBefore) requestSecondaryPlayback([id]);
+    },
+    setPlayback(id, update) {
+      const writesBefore = primary.playbackStats.slotWrites;
+      const accepted = primary.setPlayback(id, update);
+      if (accepted && primary.playbackStats.slotWrites !== writesBefore) requestSecondaryPlayback([id]);
+      return accepted;
+    },
+    setPlaybackMany(items) {
+      return api.batchPlayback(() => {
+        let accepted = 0;
+        for (const { id, ...update } of items) {
+          if (api.setPlayback(id, update)) accepted++;
+        }
+        return accepted;
+      });
     },
     batchPlayback(callback) {
       secondarySyncDepth++;

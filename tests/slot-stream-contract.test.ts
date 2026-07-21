@@ -15,7 +15,12 @@ defineSlotAlignedStreamContract("Babylon Lite", () => {
   registerSlotStreamHost(owner, 2);
   const stream = createHostSlotStream(owner, {
     components: 4,
-    backend: { bind() {}, upload: (_data, _count, ranges) => uploaded.push([...ranges]) }
+    backend: {
+      bind() {},
+      upload: (_data, _count, ranges) => {
+        uploaded.push([...ranges]);
+      }
+    }
   });
   return {
     stream,
