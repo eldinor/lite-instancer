@@ -21,6 +21,13 @@ import {
 } from "../../../src/index.js";
 import { createThinInstanceOutliner, tryGetRetainedOutlineGeometry } from "../../../src/outline.js";
 import { collectMeshes, createExample, runExample } from "../../shared/app.js";
+import {
+  summarizeArenaBenchmarkPhase,
+  type ArenaBenchmarkCounters,
+  type ArenaBenchmarkFrame,
+  type ArenaBenchmarkPhaseResult,
+  type ArenaPopulationBenchmarkResult
+} from "./benchmark.js";
 
 const RAW_ROOT = "https://raw.githubusercontent.com/eldinor/ForBJS/master";
 const ENVIRONMENT_URL = "https://assets.babylonjs.com/environments/environmentSpecular.env";
@@ -28,6 +35,9 @@ const BRDF_URL = "https://raw.githubusercontent.com/BabylonJS/Babylon-Lite/maste
 const GOLD: readonly [number, number, number] = [1, 0.64, 0.14];
 const TEAL: readonly [number, number, number] = [0.08, 0.9, 0.78];
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+const BENCHMARK_WARMUP_MS = 1500;
+const BENCHMARK_STEADY_MS = 3000;
+const BENCHMARK_REACTION_MS = 8500;
 
 type Action = "idle" | "walk" | "run" | "jump" | "kick" | "fall" | "land";
 type CrowdKind = "citizens" | "aliens" | "robots";
@@ -67,6 +77,24 @@ interface PopulationPreset {
 interface Selection {
   readonly pool: CrowdPool;
   readonly member: CrowdMember;
+}
+
+interface BenchmarkCapture {
+  elapsedMs: number;
+  readonly frames: ArenaBenchmarkFrame[];
+  readonly mutations: number[];
+  readonly countersBefore: ArenaBenchmarkCounters;
+  readonly heapBefore: number | undefined;
+}
+
+interface BenchmarkRun {
+  presetIndex: number;
+  phase: "warmup" | "steady" | "reaction";
+  elapsedMs: number;
+  populationApplyMs: number;
+  capture: BenchmarkCapture | undefined;
+  steady: ArenaBenchmarkPhaseResult | undefined;
+  readonly results: ArenaPopulationBenchmarkResult[];
 }
 
 const CROWD_SPECS: readonly CrowdSpec[] = [
@@ -156,21 +184,33 @@ let heroReturnAt: number | undefined;
 let reactionStartedAt: number | undefined;
 let timeSeconds = 0;
 let selected: Selection | undefined;
+const frameSamples: number[] = [];
+const playbackMutationSamples: number[] = [];
+const lastFlushes = new WeakMap<object, number>();
+let estimatedVatUploadBytes = 0;
+let telemetryFrames = 0;
+let benchmarkRun: BenchmarkRun | undefined;
 
 const selectionMarker = createSelectionMarker();
 const populationButton = ctx.panel.button("population: 100", () => {
+  if (benchmarkRun) return;
   populationIndex = (populationIndex + 1) % POPULATIONS.length;
   populationButton.textContent = `population: ${POPULATIONS[populationIndex]!.label}`;
   applyPopulation();
 });
-ctx.panel.button("reaction wave", startReactionWave);
+const benchmarkButton = ctx.panel.button("benchmark 100 / 500 / 2,500", startArenaBenchmark);
+ctx.panel.button("reaction wave", () => {
+  if (!benchmarkRun) startReactionWave();
+});
 ctx.panel.button("next hero action", () => {
+  if (benchmarkRun) return;
   const actions: readonly Action[] = ["idle", "walk", "run", "jump", "kick", "fall", "land"];
   const next = actions[(actions.indexOf(heroAction) + 1) % actions.length] ?? "idle";
   activateHero(next);
   heroReturnAt = undefined;
 });
 ctx.panel.button("pause animation", () => {
+  if (benchmarkRun) return;
   paused = !paused;
   hero.active.speedRatio = paused ? 0 : 1;
 });
@@ -185,6 +225,7 @@ focusCamera();
 ctx.canvas.addEventListener("pointerdown", selectFromPointer);
 
 onBeforeRender(ctx.scene, (deltaMs) => {
+  const updateStarted = performance.now();
   const deltaSeconds = deltaMs * 0.001;
   if (!paused) {
     timeSeconds += deltaSeconds;
@@ -195,6 +236,11 @@ onBeforeRender(ctx.scene, (deltaMs) => {
       activateHero("idle");
     }
   }
+  pushSample(frameSamples, deltaMs);
+  const updateMs = performance.now() - updateStarted;
+  updateVatUploadEstimate();
+  advanceArenaBenchmark(deltaMs, updateMs);
+  publishBenchmark(updateMs);
   updateTelemetry();
 });
 
@@ -371,25 +417,27 @@ function updateReactionWave(): void {
   let complete = true;
   for (const pool of pools) {
     const visibleCount = getVisibleCount(pool.spec.kind);
-    for (let index = 0; index < visibleCount; index++) {
-      const member = pool.members[index];
-      if (!member) continue;
-      const delay = Math.hypot(member.x, member.z) / 18;
-      const local = elapsed - delay;
-      const stage: ReactionStage = local < 0
-        ? "base"
-        : local < 0.75
-          ? "jump"
-          : local < 1.65
-            ? "kick"
-            : local < 2.35
-              ? "fall"
-              : local < 3.45
-                ? "land"
-                : "base";
-      if (local < 3.45) complete = false;
-      setMemberStage(pool, member, stage);
-    }
+    pool.characters.batchPlayback(() => {
+      for (let index = 0; index < visibleCount; index++) {
+        const member = pool.members[index];
+        if (!member) continue;
+        const delay = Math.hypot(member.x, member.z) / 18;
+        const local = elapsed - delay;
+        const stage: ReactionStage = local < 0
+          ? "base"
+          : local < 0.75
+            ? "jump"
+            : local < 1.65
+              ? "kick"
+              : local < 2.35
+                ? "fall"
+                : local < 3.45
+                  ? "land"
+                  : "base";
+        if (local < 3.45) complete = false;
+        setMemberStage(pool, member, stage);
+      }
+    });
   }
   if (complete) reactionStartedAt = undefined;
 }
@@ -397,11 +445,15 @@ function updateReactionWave(): void {
 function setMemberStage(pool: CrowdPool, member: CrowdMember, stage: ReactionStage): void {
   if (member.stage === stage) return;
   member.stage = stage;
+  const started = performance.now();
   const action = stage === "base" ? member.baseAction : stage;
   const clipName = pool.spec.clips[action];
   pool.characters.setClip(member.id, clipName);
   const clip = pool.characters.clips[clipName];
   if (clip) pool.characters.setPhaseOffset(member.id, hash01(member.index * 53 + timeSeconds) * 0.08 * (clip.frameCount / clip.fps));
+  const mutationMs = performance.now() - started;
+  pushSample(playbackMutationSamples, mutationMs);
+  benchmarkRun?.capture?.mutations.push(mutationMs);
 }
 
 function activateHero(action: Action): void {
@@ -466,6 +518,190 @@ function focusCamera(): void {
   camera.beta = heroView ? Math.PI / 2.2 : Math.PI / 3.1;
 }
 
+function startArenaBenchmark(): void {
+  if (benchmarkRun) return;
+  paused = false;
+  hero.active.speedRatio = 1;
+  heroView = false;
+  focusCamera();
+  clearSelection();
+  benchmarkButton.disabled = true;
+  benchmarkRun = {
+    presetIndex: 0,
+    phase: "warmup",
+    elapsedMs: 0,
+    populationApplyMs: 0,
+    capture: undefined,
+    steady: undefined,
+    results: []
+  };
+  beginBenchmarkPopulation(0);
+}
+
+function beginBenchmarkPopulation(presetIndex: number): void {
+  const run = benchmarkRun;
+  if (!run) return;
+  run.presetIndex = presetIndex;
+  run.phase = "warmup";
+  run.elapsedMs = 0;
+  run.capture = undefined;
+  run.steady = undefined;
+  reactionStartedAt = undefined;
+  for (const pool of pools) {
+    for (const member of pool.members) setMemberStage(pool, member, "base");
+  }
+  populationIndex = presetIndex;
+  populationButton.textContent = `population: ${POPULATIONS[presetIndex]!.label}`;
+  const started = performance.now();
+  applyPopulation();
+  run.populationApplyMs = performance.now() - started;
+  ctx.panel.set("benchmark", `${POPULATIONS[presetIndex]!.label}: warming up`);
+}
+
+function beginBenchmarkCapture(phase: "steady" | "reaction"): void {
+  const run = benchmarkRun;
+  if (!run) return;
+  run.phase = phase;
+  run.elapsedMs = 0;
+  run.capture = {
+    elapsedMs: 0,
+    frames: [],
+    mutations: [],
+    countersBefore: getBenchmarkCounters(),
+    heapBefore: getHeapBytes()
+  };
+  ctx.panel.set("benchmark", `${POPULATIONS[run.presetIndex]!.label}: ${phase}`);
+}
+
+function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
+  const run = benchmarkRun;
+  if (!run) return;
+  run.elapsedMs += deltaMs;
+  if (run.phase === "warmup") {
+    if (run.elapsedMs >= BENCHMARK_WARMUP_MS) beginBenchmarkCapture("steady");
+    return;
+  }
+
+  const capture = run.capture;
+  if (!capture) return;
+  capture.elapsedMs += deltaMs;
+  capture.frames.push({
+    frameMs: deltaMs,
+    updateMs,
+    gpuMs: ctx.engine.gpuFrameTimeMs,
+    drawCalls: ctx.engine.drawCallCount
+  });
+
+  if (run.phase === "steady" && capture.elapsedMs >= BENCHMARK_STEADY_MS) {
+    run.steady = finishBenchmarkCapture(capture, BENCHMARK_STEADY_MS);
+    beginBenchmarkCapture("reaction");
+    startReactionWave();
+    return;
+  }
+  if (run.phase !== "reaction" || capture.elapsedMs < BENCHMARK_REACTION_MS) return;
+
+  const reaction = finishBenchmarkCapture(capture, BENCHMARK_REACTION_MS);
+  const steady = run.steady;
+  if (!steady) throw new Error("Avatar Arena benchmark reaction completed without a steady sample.");
+  const expectedPopulation = getBenchmarkPopulation(run.presetIndex);
+  const visibleCount = pools.reduce((total, pool) => total + pool.characters.visibleCount, 0);
+  const result: ArenaPopulationBenchmarkResult = {
+    population: expectedPopulation,
+    populationApplyMs: run.populationApplyMs,
+    visibleCount,
+    steady,
+    reaction,
+    passed:
+      visibleCount === expectedPopulation &&
+      steady.frames > 0 &&
+      reaction.frames > 0 &&
+      Number.isFinite(steady.frameP95Ms) &&
+      Number.isFinite(reaction.frameP95Ms)
+  };
+  run.results.push(result);
+  ctx.panel.set(
+    `bench ${expectedPopulation.toLocaleString()}`,
+    `steady ${steady.frameP95Ms.toFixed(2)}ms · wave ${reaction.frameP95Ms.toFixed(2)}ms · ` +
+      `${reaction.playbackMutationCount} edits · ${formatBytes(reaction.uploads.estimatedGpuBytes)}`
+  );
+
+  const nextPreset = run.presetIndex + 1;
+  if (nextPreset < POPULATIONS.length) {
+    beginBenchmarkPopulation(nextPreset);
+    return;
+  }
+  finishArenaBenchmark(run.results);
+}
+
+function finishBenchmarkCapture(capture: BenchmarkCapture, durationMs: number): ArenaBenchmarkPhaseResult {
+  const heapAfter = getHeapBytes();
+  return summarizeArenaBenchmarkPhase({
+    durationMs,
+    frames: capture.frames,
+    playbackMutations: capture.mutations,
+    countersBefore: capture.countersBefore,
+    countersAfter: getBenchmarkCounters(),
+    ...(capture.heapBefore === undefined ? {} : { heapBefore: capture.heapBefore }),
+    ...(heapAfter === undefined ? {} : { heapAfter })
+  });
+}
+
+function finishArenaBenchmark(results: readonly ArenaPopulationBenchmarkResult[]): void {
+  const report = {
+    schemaVersion: 1,
+    timestamp: new Date().toISOString(),
+    environment: {
+      userAgent: navigator.userAgent,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      renderingBackend: "webgpu"
+    },
+    settings: {
+      warmupMs: BENCHMARK_WARMUP_MS,
+      steadyMs: BENCHMARK_STEADY_MS,
+      reactionMs: BENCHMARK_REACTION_MS
+    },
+    results
+  };
+  (globalThis as typeof globalThis & { __liteInstancerArenaBenchmark?: unknown }).__liteInstancerArenaBenchmark = report;
+  console.table(results.map((result) => ({
+    population: result.population,
+    applyMs: result.populationApplyMs.toFixed(2),
+    steadyP95Ms: result.steady.frameP95Ms.toFixed(2),
+    reactionP95Ms: result.reaction.frameP95Ms.toFixed(2),
+    mutationP95Ms: result.reaction.playbackMutationP95Ms.toFixed(3),
+    uploadMiB: (result.reaction.uploads.estimatedGpuBytes / 1024 / 1024).toFixed(2),
+    passed: result.passed
+  })));
+  ctx.panel.set("benchmark", results.every((result) => result.passed) ? "complete · report ready" : "complete · validation failed");
+  benchmarkRun = undefined;
+  benchmarkButton.disabled = false;
+}
+
+function getBenchmarkCounters(): ArenaBenchmarkCounters {
+  const stats = pools.flatMap((pool) => [
+    pool.characters.primary.playbackStats,
+    ...pool.characters.secondaryParts.map((part) => part.playbackStats)
+  ]);
+  return {
+    flushes: stats.reduce((total, value) => total + value.flushes, 0),
+    cpuDirtyBytes: stats.reduce((total, value) => total + value.cpuBytesFlushed, 0),
+    estimatedGpuBytes: estimatedVatUploadBytes,
+    backingAllocations: stats.reduce((total, value) => total + value.allocations, 0)
+  };
+}
+
+function getHeapBytes(): number | undefined {
+  return (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
+}
+
+function getBenchmarkPopulation(index: number): 100 | 500 | 2500 {
+  return ([100, 500, 2500] as const)[index] ?? 100;
+}
+
+function formatBytes(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+}
+
 function updateTelemetry(): void {
   const preset = POPULATIONS[populationIndex] ?? POPULATIONS[0]!;
   const visible = pools.reduce((total, pool) => total + pool.characters.visibleCount, 0);
@@ -476,8 +712,67 @@ function updateTelemetry(): void {
   ctx.panel.set("event", reactionStartedAt === undefined ? "ready" : "radial reaction wave");
   ctx.panel.set("camera", heroView ? "hero" : "arena manual");
   ctx.panel.set("animation", paused ? "paused" : "playing with varied phases/fps");
+  if (++telemetryFrames % 30 === 0) {
+    ctx.panel.set("frame p50 / p95", `${percentile(frameSamples, 0.5).toFixed(2)} / ${percentile(frameSamples, 0.95).toFixed(2)} ms`);
+    ctx.panel.set("playback p50 / p95", `${percentile(playbackMutationSamples, 0.5).toFixed(3)} / ${percentile(playbackMutationSamples, 0.95).toFixed(3)} ms`);
+    ctx.panel.set("VAT upload estimate", `${(estimatedVatUploadBytes / 1024 / 1024).toFixed(2)} MiB`);
+    ctx.panel.set("GPU / draws", `${ctx.engine.gpuFrameTimeMs.toFixed(2)} ms / ${ctx.engine.drawCallCount}`);
+  }
   ctx.panel.set("selected", selected ? `${selected.pool.spec.kind} #${Number(selected.member.id)} · ${selected.member.stage}` : "-");
   ctx.panel.set("status", "running");
+}
+
+function updateVatUploadEstimate(): void {
+  for (const pool of pools) {
+    const stats = [pool.characters.primary.playbackStats, ...pool.characters.secondaryParts.map((part) => part.playbackStats)];
+    for (const streamStats of stats) {
+      const previous = lastFlushes.get(streamStats) ?? 0;
+      const added = streamStats.flushes - previous;
+      if (added > 0) estimatedVatUploadBytes += added * pool.characters.count * 4 * Float32Array.BYTES_PER_ELEMENT;
+      lastFlushes.set(streamStats, streamStats.flushes);
+    }
+  }
+}
+
+function publishBenchmark(updateMs: number): void {
+  const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
+  const stats = pools.flatMap((pool) => [pool.characters.primary.playbackStats, ...pool.characters.secondaryParts.map((part) => part.playbackStats)]);
+  (globalThis as typeof globalThis & { __liteInstancerBenchmark?: unknown }).__liteInstancerBenchmark = {
+    schemaVersion: 1,
+    timestamp: new Date().toISOString(),
+    environment: {
+      userAgent: navigator.userAgent,
+      renderingBackend: "webgpu",
+      gpuFrameTimeMs: ctx.engine.gpuFrameTimeMs,
+      drawCalls: ctx.engine.drawCallCount
+    },
+    scene: { capacity: 2500, visible: pools.reduce((total, pool) => total + pool.characters.visibleCount, 0) },
+    timing: {
+      latestUpdateMs: updateMs,
+      frameP50Ms: percentile(frameSamples, 0.5),
+      frameP95Ms: percentile(frameSamples, 0.95),
+      playbackMutationP50Ms: percentile(playbackMutationSamples, 0.5),
+      playbackMutationP95Ms: percentile(playbackMutationSamples, 0.95)
+    },
+    uploads: {
+      flushes: stats.reduce((total, value) => total + value.flushes, 0),
+      cpuDirtyBytes: stats.reduce((total, value) => total + value.cpuBytesFlushed, 0),
+      estimatedGpuBytes: estimatedVatUploadBytes,
+      backingAllocations: stats.reduce((total, value) => total + value.allocations, 0)
+    },
+    heapBytes: memory?.usedJSHeapSize
+  };
+}
+
+function pushSample(samples: number[], value: number): void {
+  samples.push(value);
+  if (samples.length > 600) samples.shift();
+}
+
+function percentile(samples: readonly number[], fraction: number): number {
+  if (samples.length === 0) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))] ?? 0;
 }
 
 function getVisibleCount(kind: CrowdKind): number {

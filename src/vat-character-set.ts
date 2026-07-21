@@ -12,6 +12,11 @@ import { createInstanceSet, type ColoredInstanceSet } from "./instance-set.js";
 import type { InstanceId, InstanceTransformInput } from "./types.js";
 import { attachVatSafely } from "./vat-attach.js";
 import {
+  createHostSlotStream,
+  type SlotAlignedFloatStream,
+  type SlotAlignedFloatStreamStats
+} from "./slot-aligned-stream.js";
+import {
   createVatInstanceSet,
   type VatInstanceCreateOptions,
   type VatInstanceSet,
@@ -26,6 +31,7 @@ export interface VatCharacterSetOptions extends VatInstanceSetOptions {}
 /** Read-only description of one additional skinned mesh managed by a character set. */
 export interface VatCharacterMeshPart {
   readonly mesh: Mesh;
+  readonly playbackStats: Readonly<SlotAlignedFloatStreamStats>;
 }
 
 /**
@@ -78,6 +84,8 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   setPhaseOffset(id: InstanceId, offset: number): void;
   /** Set or clear a character instance's FPS override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Apply multiple coordinated playback edits and upload each mesh stream once. */
+  batchPlayback<TResult>(callback: () => TResult): TResult;
   /** Return the VAT row selection currently used by a character instance. */
   getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
   /** Re-upload synchronized secondary playback parameters after advanced primary-set changes. */
@@ -90,6 +98,7 @@ interface SecondaryPart {
   readonly mesh: Mesh;
   readonly handle: VatHandle;
   readonly set: ColoredInstanceSet;
+  readonly playbackStream: SlotAlignedFloatStream;
   readonly primaryBySecondary: Map<InstanceId, InstanceId>;
   readonly secondaryByPrimary: Map<InstanceId, InstanceId>;
 }
@@ -112,17 +121,24 @@ export function createVatCharacterSet<TMetadata = unknown>(
 
   const primary = createVatInstanceSet<TMetadata>(engine, primaryMesh, animationGroups, options);
   const { clip: _clip, ...instanceOptions } = options;
-  const secondary = skinnedMeshes.map<SecondaryPart>((mesh) => ({
-    mesh,
-    handle: attachVatSafely(engine, mesh, bakeVat(engine, mesh, animationGroups)),
-    set: createInstanceSet(mesh, {
+  const secondary = skinnedMeshes.map<SecondaryPart>((mesh) => {
+    const handle = attachVatSafely(engine, mesh, bakeVat(engine, mesh, animationGroups));
+    const set = createInstanceSet(mesh, {
       ...instanceOptions,
       gpuCulling: options.gpuCulling ?? false,
       visibleStrategy: options.visibleStrategy ?? "scale-zero"
-    }),
-    primaryBySecondary: new Map(),
-    secondaryByPrimary: new Map()
-  }));
+    });
+    const playbackStream = createHostSlotStream(set, {
+      components: 4,
+      backend: {
+        bind() {},
+        upload(data, count) {
+          if (count > 0) handle.setInstances(data);
+        }
+      }
+    });
+    return { mesh, handle, set, playbackStream, primaryBySecondary: new Map(), secondaryByPrimary: new Map() };
+  });
 
   for (const part of secondary) {
     for (const clipName of Object.keys(primary.clips)) {
@@ -132,27 +148,74 @@ export function createVatCharacterSet<TMetadata = unknown>(
     }
   }
 
-  const synchronizeSecondaryPlayback = (): void => {
+  const secondaryValues = new Float32Array(4);
+  const writeSecondaryPlayback = (part: SecondaryPart, primaryId: InstanceId): void => {
+    const secondaryId = part.secondaryByPrimary.get(primaryId);
+    const slot = secondaryId === undefined ? undefined : part.set.getSlot(secondaryId);
+    const sample = primary.getPlaybackSample(primaryId);
+    const clip = sample ? part.handle.clips[sample.clip] : undefined;
+    if (slot === undefined) return;
+    if (!sample || !clip) {
+      secondaryValues.fill(0);
+    } else {
+      secondaryValues[0] = clip.fromRow;
+      secondaryValues[1] = clip.fromRow + clip.frameCount - 1;
+      secondaryValues[2] = sample.offsetSeconds * sample.fps;
+      secondaryValues[3] = sample.fps;
+    }
+    part.playbackStream.setSlot(slot, secondaryValues);
+  };
+
+  const synchronizeSecondaryPlayback = (
+    ids?: Iterable<InstanceId>,
+    force = false,
+    syncSharedClip = false
+  ): void => {
     const activeClip = primary.activeClip;
     for (const part of secondary) {
-      if (activeClip && part.handle.clips[activeClip]) {
-        part.handle.play(activeClip);
-      }
-      const params = new Float32Array(part.set.count * 4);
-      for (let slot = 0; slot < part.set.count; slot++) {
-        const secondaryId = part.set.getIdForSlot(slot);
-        const primaryId = secondaryId === undefined ? undefined : part.primaryBySecondary.get(secondaryId);
-        const sample = primaryId === undefined ? undefined : primary.getPlaybackSample(primaryId);
-        const clip = sample ? part.handle.clips[sample.clip] : undefined;
-        if (!sample || !clip) continue;
-        const offset = slot * 4;
-        params[offset] = clip.fromRow;
-        params[offset + 1] = clip.fromRow + clip.frameCount - 1;
-        params[offset + 2] = sample.offsetSeconds * sample.fps;
-        params[offset + 3] = sample.fps;
-      }
-      part.handle.setInstances(params);
+      if (syncSharedClip && activeClip && part.handle.clips[activeClip]) part.handle.play(activeClip);
+      const targetIds = ids ?? primary.ids();
+      for (const id of targetIds) writeSecondaryPlayback(part, id);
+      part.playbackStream.flush(part.set.count, force);
     }
+  };
+
+  let secondarySyncDepth = 0;
+  let secondarySyncAll = false;
+  let secondarySyncForce = false;
+  let secondarySyncSharedClip = false;
+  const pendingSecondaryIds = new Set<InstanceId>();
+
+  const requestSecondaryPlayback = (
+    ids?: Iterable<InstanceId>,
+    force = false,
+    syncSharedClip = false
+  ): void => {
+    if (secondarySyncDepth === 0) {
+      synchronizeSecondaryPlayback(ids, force, syncSharedClip);
+      return;
+    }
+    if (ids === undefined) {
+      secondarySyncAll = true;
+      pendingSecondaryIds.clear();
+    } else if (!secondarySyncAll) {
+      for (const id of ids) pendingSecondaryIds.add(id);
+    }
+    secondarySyncForce ||= force;
+    secondarySyncSharedClip ||= syncSharedClip;
+  };
+
+  const flushRequestedSecondaryPlayback = (): void => {
+    if (!secondarySyncAll && pendingSecondaryIds.size === 0 && !secondarySyncForce && !secondarySyncSharedClip) return;
+    synchronizeSecondaryPlayback(
+      secondarySyncAll ? undefined : pendingSecondaryIds,
+      secondarySyncForce,
+      secondarySyncSharedClip
+    );
+    secondarySyncAll = false;
+    secondarySyncForce = false;
+    secondarySyncSharedClip = false;
+    pendingSecondaryIds.clear();
   };
 
   const mirrorMatrix = (id: InstanceId, matrix: Mat4): void => {
@@ -172,7 +235,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
   const api: VatCharacterSet<TMetadata> = {
     root,
     primary,
-    secondaryParts: secondary.map((part) => ({ mesh: part.mesh })),
+    secondaryParts: secondary.map((part) => ({ mesh: part.mesh, playbackStats: part.playbackStream.stats })),
     clips: primary.clips,
     get activeClip() {
       return primary.activeClip;
@@ -196,7 +259,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
         part.primaryBySecondary.set(secondaryId, id);
         part.secondaryByPrimary.set(id, secondaryId);
       }
-      synchronizeSecondaryPlayback();
+      synchronizeSecondaryPlayback([id]);
       return id;
     },
     createMany(items) {
@@ -211,7 +274,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
           part.secondaryByPrimary.set(id, secondaryId);
         }
       }
-      synchronizeSecondaryPlayback();
+      synchronizeSecondaryPlayback(ids);
       return ids;
     },
     remove(id) {
@@ -224,7 +287,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
           part.secondaryByPrimary.delete(id);
         }
       }
-      synchronizeSecondaryPlayback();
+      synchronizeSecondaryPlayback([]);
       return true;
     },
     clear() {
@@ -233,7 +296,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
         part.set.clear();
         part.primaryBySecondary.clear();
         part.secondaryByPrimary.clear();
-        part.handle.setInstances(new Float32Array());
+        part.playbackStream.flush(0, true);
       }
     },
     has: (id) => primary.has(id),
@@ -241,7 +304,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
     setVisible(id, visible) {
       primary.setVisible(id, visible);
       mirrorVisibility(id, visible);
-      synchronizeSecondaryPlayback();
+      synchronizeSecondaryPlayback([]);
     },
     setMatrix(id, matrix) {
       primary.setMatrix(id, matrix);
@@ -254,7 +317,7 @@ export function createVatCharacterSet<TMetadata = unknown>(
     getMatrix: (id, out) => primary.getMatrix(id, out),
     play(clip) {
       const changed = primary.play(clip);
-      if (changed) synchronizeSecondaryPlayback();
+      if (changed) requestSecondaryPlayback(undefined, false, true);
       return changed;
     },
     update(deltaSeconds) {
@@ -263,21 +326,30 @@ export function createVatCharacterSet<TMetadata = unknown>(
     },
     setClip(id, clip) {
       const changed = primary.setClip(id, clip);
-      if (changed) synchronizeSecondaryPlayback();
+      if (changed) requestSecondaryPlayback([id]);
       return changed;
     },
     setPhaseOffset(id, offset) {
       primary.setPhaseOffset(id, offset);
-      synchronizeSecondaryPlayback();
+      requestSecondaryPlayback([id]);
     },
     setFps(id, fps) {
       primary.setFps(id, fps);
-      synchronizeSecondaryPlayback();
+      requestSecondaryPlayback([id]);
+    },
+    batchPlayback(callback) {
+      secondarySyncDepth++;
+      try {
+        return primary.batchPlayback(callback);
+      } finally {
+        secondarySyncDepth--;
+        if (secondarySyncDepth === 0) flushRequestedSecondaryPlayback();
+      }
     },
     getPlaybackSample: (id, out) => primary.getPlaybackSample(id, out),
     syncInstances() {
       primary.syncInstances();
-      synchronizeSecondaryPlayback();
+      synchronizeSecondaryPlayback(undefined, true, true);
     },
     dispose() {
       primary.dispose();

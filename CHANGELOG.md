@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add engine-neutral slot-aligned float streams with dirty-range diagnostics and reusable cross-engine contracts.
+- Add versioned Lite VAT asset validation, JSON/binary codecs, sampled-matrix preprocessing limits, a reusable worker-pool protocol, animated bounds metadata, controls, and capability reporting.
+- Add reproducible Massive Avatar Arena frame, playback, allocation, and upload telemetry plus an automatic 100/500/2,500-population steady/reaction benchmark.
+
+### Changed
+
+- Keep persistent VAT playback buffers for single- and multi-mesh sets, updating only slots affected by playback or lifecycle changes before Babylon Lite's required full upload.
+- Add nested-safe `batchPlayback()` transactions for single- and multi-mesh VAT sets, and use them to collapse Avatar Arena reaction-wave edits into one upload per affected mesh stream per frame.
+- Store instance colors through the same slot lifecycle abstraction while preserving the existing color API.
+
 ## 0.5.0 - 2026-07-18
 
 - Fix inverted-hull ordering so opaque hosts write depth before their outline meshes.

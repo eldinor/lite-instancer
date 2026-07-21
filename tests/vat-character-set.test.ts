@@ -74,4 +74,26 @@ describe("VatCharacterSet", () => {
     expect(handles[0]!.setInstances).toHaveBeenCalledTimes(1);
     expect(handles[1]!.setInstances).toHaveBeenCalledTimes(1);
   });
+
+  it("coalesces bulk playback edits into one upload per mesh part", async () => {
+    const { createVatCharacterSet } = await import("../src/vat-character-set.js");
+    const device = { queue: { submit: vi.fn(), onSubmittedWorkDone: vi.fn(() => Promise.resolve()) } };
+    const skeleton = { boneTexture: { destroy: vi.fn() } };
+    const root = { children: [{ skeleton, children: [] }, { skeleton, children: [] }] };
+    const character = createVatCharacterSet({ _device: device } as never, root as never, [{}] as never, { capacity: 4 });
+    const ids = character.createMany([{}, {}, {}]);
+    for (const vatHandle of handles) vatHandle.setInstances.mockClear();
+
+    character.batchPlayback(() => {
+      character.batchPlayback(() => {
+        for (const id of ids) {
+          character.setClip(id, "Run");
+          character.setPhaseOffset(id, 0.25);
+        }
+      });
+    });
+
+    expect(handles[0]!.setInstances).toHaveBeenCalledTimes(1);
+    expect(handles[1]!.setInstances).toHaveBeenCalledTimes(1);
+  });
 });

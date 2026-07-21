@@ -93,10 +93,11 @@
     "test:all": "npm test && npm test --workspace @litools/instancer-babylonjs",
     "test:babylonjs": "npm test --workspace @litools/instancer-babylonjs",
     "test:browser:babylonjs": "npm run test:browser --workspace @litools/instancer-babylonjs",
+    "pack:check": "npm pack --dry-run --ignore-scripts",
     "typecheck": "tsc --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck --workspace @litools/instancer-babylonjs",
     "pack:babylonjs": "npm pack --workspace @litools/instancer-babylonjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run pack:check"
   },
   "peerDependencies": {
     "@babylonjs/lite": "^1.11.0"

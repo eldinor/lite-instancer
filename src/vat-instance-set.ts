@@ -4,11 +4,22 @@ import {
   type EngineContext,
   type Mat4,
   type Mesh,
+  type VatBakeResult,
   type VatClip,
   type VatHandle
 } from "@babylonjs/lite";
 import { createInstanceSet, type ColoredInstanceSet } from "./instance-set.js";
+import { InstancerError } from "./errors.js";
 import { attachVatSafely } from "./vat-attach.js";
+import {
+  createHostSlotStream,
+  type SlotAlignedFloatStreamStats
+} from "./slot-aligned-stream.js";
+import {
+  validateLiteVatAsset,
+  type LiteVatAsset,
+  type VatAssetAnimatedBounds
+} from "./vat-asset.js";
 import type {
   InstanceBatchWriter,
   InstanceColorInput,
@@ -94,6 +105,10 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   readonly handle: VatHandle;
   /** Baked VAT clips keyed by animation group name. */
   readonly clips: Record<string, VatClip>;
+  /** Portable source asset when this set was created from an artifact. */
+  readonly asset: LiteVatAsset | undefined;
+  /** Conservative whole-animation and per-clip bounds supplied by a portable asset. */
+  readonly animatedBounds: VatAssetAnimatedBounds | undefined;
   /** Shared default clip used by instances without a per-instance clip override. */
   readonly activeClip: string | undefined;
   /** Elapsed VAT playback time in seconds. */
@@ -104,6 +119,8 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   readonly capacity: number;
   /** Number of currently visible animated IDs. */
   readonly visibleCount: number;
+  /** Allocation, dirty-slot, and flush counters for playback synchronization. */
+  readonly playbackStats: Readonly<SlotAlignedFloatStreamStats>;
 
   /** Create an animated instance and return its stable ID. */
   create(options?: VatInstanceCreateOptions<TMetadata>): InstanceId;
@@ -217,6 +234,8 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   setPhaseOffset(id: InstanceId, offset: number): void;
   /** Set or clear a per-instance playback fps override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Apply multiple playback edits and upload the resulting dirty slots once. */
+  batchPlayback<TResult>(callback: () => TResult): TResult;
   /** Rebuild and upload per-slot VAT playback parameters. */
   syncInstances(): void;
 }
@@ -227,6 +246,11 @@ interface VatInstancePlayback {
   fps?: number;
 }
 
+/** Public Babylon Lite boundary needed to turn portable float data into a VAT texture. */
+export interface LiteVatAssetRuntime {
+  createBakeResult(engine: EngineContext, asset: LiteVatAsset): VatBakeResult;
+}
+
 /** Create a VAT-backed animated instance set for one skinned mesh. */
 export function createVatInstanceSet<TMetadata = unknown>(
   engine: EngineContext,
@@ -235,6 +259,36 @@ export function createVatInstanceSet<TMetadata = unknown>(
   options: VatInstanceSetOptions = {}
 ): VatInstanceSet<TMetadata> {
   const baked = bakeVat(engine, mesh, animationGroups);
+  return createVatInstanceSetFromBake(engine, mesh, baked, options);
+}
+
+/**
+ * Create a VAT instance set from a portable asset. The runtime argument remains explicit until
+ * Babylon Lite publishes a raw matrix-VAT texture import API.
+ */
+export function createVatInstanceSetFromAsset<TMetadata = unknown>(
+  engine: EngineContext,
+  mesh: Mesh,
+  asset: LiteVatAsset,
+  options: VatInstanceSetOptions = {},
+  runtime?: LiteVatAssetRuntime
+): VatInstanceSet<TMetadata> {
+  validateLiteVatAsset(asset);
+  if (!runtime) {
+    throw new InstancerError(
+      "Portable VAT loading requires a public Babylon Lite VAT asset runtime; private GPU fields are not used."
+    );
+  }
+  return createVatInstanceSetFromBake(engine, mesh, runtime.createBakeResult(engine, asset), options, asset);
+}
+
+function createVatInstanceSetFromBake<TMetadata>(
+  engine: EngineContext,
+  mesh: Mesh,
+  baked: VatBakeResult,
+  options: VatInstanceSetOptions,
+  sourceAsset?: LiteVatAsset
+): VatInstanceSet<TMetadata> {
   const initialClip = options.clip ?? Object.keys(baked.clips)[0];
   const handle = attachVatSafely(engine, mesh, baked, initialClip);
   const { clip: _clip, ...setOptions } = options;
@@ -250,25 +304,42 @@ export function createVatInstanceSet<TMetadata = unknown>(
   let playbackSyncDepth = 0;
   let playbackSyncPending = false;
 
-  const uploadPlaybackInstances = (): void => {
-    if (!activeClip || set.count === 0) {
-      return;
-    }
-    const params = new Float32Array(set.count * 4);
-    for (let slot = 0; slot < set.count; slot++) {
-      const id = set.getIdForSlot(slot);
-      const item = id === undefined ? undefined : playback.get(id);
-      const clip = getClip(handle.clips, item?.clip ?? activeClip);
-      if (!clip) {
-        continue;
+  const playbackStream = createHostSlotStream(set, {
+    components: 4,
+    backend: {
+      bind() {
+        // Babylon Lite creates and grows its VAT instance texture from the live-count upload.
+      },
+      upload(data, count) {
+        if (activeClip && count > 0) handle.setInstances(data);
       }
-      params[slot * 4] = clip.fromRow;
-      params[slot * 4 + 1] = clip.fromRow + clip.frameCount - 1;
-      const fps = item?.fps ?? clip.fps;
-      params[slot * 4 + 2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
-      params[slot * 4 + 3] = fps;
     }
-    handle.setInstances(params);
+  });
+  const playbackValues = new Float32Array(4);
+
+  const writePlaybackSlot = (id: InstanceId): void => {
+    const slot = set.getSlot(id);
+    if (slot === undefined) return;
+    const item = playback.get(id);
+    const clip = getClip(handle.clips, item?.clip ?? activeClip);
+    if (!clip) {
+      playbackValues.fill(0);
+    } else {
+      const fps = item?.fps ?? clip.fps;
+      playbackValues[0] = clip.fromRow;
+      playbackValues[1] = clip.fromRow + clip.frameCount - 1;
+      playbackValues[2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
+      playbackValues[3] = fps;
+    }
+    playbackStream.setSlot(slot, playbackValues);
+  };
+
+  const rebuildPlaybackSlots = (): void => {
+    for (const id of set.ids()) writePlaybackSlot(id);
+  };
+
+  const uploadPlaybackInstances = (force = false): void => {
+    playbackStream.flush(set.count, force);
   };
 
   const syncPlaybackInstances = (): void => {
@@ -297,6 +368,12 @@ export function createVatInstanceSet<TMetadata = unknown>(
     mesh,
     handle,
     clips: handle.clips,
+    get asset() {
+      return sourceAsset;
+    },
+    get animatedBounds() {
+      return sourceAsset?.bounds;
+    },
     get activeClip() {
       return activeClip;
     },
@@ -312,6 +389,9 @@ export function createVatInstanceSet<TMetadata = unknown>(
     get visibleCount() {
       return set.visibleCount;
     },
+    get playbackStats() {
+      return playbackStream.stats;
+    },
     create(createOptions = {}) {
       const id = set.create(createOptions.transform, createOptions.metadata);
       const clipName = createOptions.clip && handle.clips[createOptions.clip] ? createOptions.clip : undefined;
@@ -324,7 +404,8 @@ export function createVatInstanceSet<TMetadata = unknown>(
           fps: createOptions.fps
         })
       );
-      api.syncInstances();
+      writePlaybackSlot(id);
+      syncPlaybackInstances();
       return id;
     },
     createMany(items) {
@@ -334,7 +415,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
       const removed = set.remove(id);
       if (removed) {
         playback.delete(id);
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return removed;
     },
@@ -347,14 +428,14 @@ export function createVatInstanceSet<TMetadata = unknown>(
         }
       }
       if (removed > 0) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return removed;
     },
     clear() {
       set.clear();
       playback.clear();
-      api.syncInstances();
+      playbackStream.flush(0, true);
     },
     has: (id) => set.has(id),
     getSlot: (id) => set.getSlot(id),
@@ -384,18 +465,18 @@ export function createVatInstanceSet<TMetadata = unknown>(
     getVisibleOrUndefined: (id) => set.getVisibleOrUndefined(id),
     setVisible(id, visible) {
       set.setVisible(id, visible);
-      api.syncInstances();
+      syncPlaybackInstances();
     },
     trySetVisible(id, visible) {
       const updated = set.trySetVisible(id, visible);
       if (updated) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return updated;
     },
     setVisibleMany(ids, visible) {
       set.setVisibleMany(ids, visible);
-      api.syncInstances();
+      syncPlaybackInstances();
     },
     getMetadata: (id) => set.getMetadata(id),
     setMetadata: (id, metadata) => set.setMetadata(id, metadata),
@@ -419,7 +500,7 @@ export function createVatInstanceSet<TMetadata = unknown>(
         });
       });
       if (needsPlaybackSync) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
     },
     editRaw: (callback) => set.editRaw(callback),
@@ -427,7 +508,6 @@ export function createVatInstanceSet<TMetadata = unknown>(
     dispose() {
       set.dispose();
       playback.clear();
-      api.syncInstances();
     },
     getActiveClip() {
       return activeClip ? handle.clips[activeClip] : undefined;
@@ -463,7 +543,10 @@ export function createVatInstanceSet<TMetadata = unknown>(
       }
       activeClip = clip;
       handle.play(clip);
-      api.syncInstances();
+      for (const id of set.ids()) {
+        if (playback.get(id)?.clip === undefined) writePlaybackSlot(id);
+      }
+      syncPlaybackInstances();
       return true;
     },
     update(deltaSeconds) {
@@ -483,7 +566,8 @@ export function createVatInstanceSet<TMetadata = unknown>(
           fps: current.fps
         })
       );
-      api.syncInstances();
+      writePlaybackSlot(id);
+      syncPlaybackInstances();
       return true;
     },
     setPhaseOffset(id, offset) {
@@ -492,7 +576,8 @@ export function createVatInstanceSet<TMetadata = unknown>(
       }
       const current = playback.get(id) ?? { offset: 0 };
       playback.set(id, { ...current, offset });
-      api.syncInstances();
+      writePlaybackSlot(id);
+      syncPlaybackInstances();
     },
     setFps(id, fps) {
       if (!set.has(id)) {
@@ -507,10 +592,19 @@ export function createVatInstanceSet<TMetadata = unknown>(
           fps
         })
       );
-      api.syncInstances();
+      writePlaybackSlot(id);
+      syncPlaybackInstances();
+    },
+    batchPlayback(callback) {
+      return batchPlaybackUpdates(callback);
     },
     syncInstances() {
-      syncPlaybackInstances();
+      rebuildPlaybackSlots();
+      if (playbackSyncDepth > 0) {
+        playbackSyncPending = true;
+      } else {
+        uploadPlaybackInstances(true);
+      }
     }
   };
 

@@ -90,6 +90,24 @@ describe("VatInstanceSet", () => {
     ]);
   });
 
+  it("coalesces multiple playback edits into one upload", async () => {
+    const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
+    const vat = createVatInstanceSet({} as never, {} as never, [] as never, { capacity: 4, clip: "Swim" });
+    const [a, b] = vat.createMany([{}, {}]);
+    handle.setInstances.mockClear();
+
+    vat.batchPlayback(() => {
+      vat.setClip(a!, "Turn");
+      vat.setPhaseOffset(a!, 0.5);
+      vat.batchPlayback(() => {
+        vat.setClip(b!, "Turn");
+        vat.setFps(b!, 15);
+      });
+    });
+
+    expect(handle.setInstances).toHaveBeenCalledTimes(1);
+  });
+
   it("exposes common instance-set operations directly", async () => {
     const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
     const { toInstanceId } = await import("../src/types.js");
@@ -167,7 +185,7 @@ describe("VatInstanceSet", () => {
     expect(handle.setInstances).not.toHaveBeenCalled();
   });
 
-  it("resyncs playback when batch visibility can change slots", async () => {
+  it("avoids playback upload when batch visibility does not move a slot", async () => {
     const { createVatInstanceSet } = await import("../src/vat-instance-set.js");
     const vat = createVatInstanceSet({} as never, {} as never, [] as never, {
       capacity: 2,
@@ -180,7 +198,7 @@ describe("VatInstanceSet", () => {
       writer.setVisible(id, false);
     });
 
-    expect(handle.setInstances).toHaveBeenCalled();
+    expect(handle.setInstances).not.toHaveBeenCalled();
   });
 
   it("exposes the same frame selection used by VAT playback", async () => {
@@ -193,5 +211,26 @@ describe("VatInstanceSet", () => {
 
     expect(sample).toMatchObject({ clip: "Swim", timeSeconds: 0.25, offsetSeconds: 0.5, fps: 20, frame: 5 });
     expect(sample?.nextFrame).toBe(6);
+  });
+
+  it("loads a validated portable asset through an explicit public runtime boundary", async () => {
+    const { createVatInstanceSetFromAsset } = await import("../src/vat-instance-set.js");
+    const frameData = new Float32Array(16);
+    const asset = {
+      version: 1 as const,
+      encoding: "lite-matrix-rgba32float" as const,
+      basis: "gltf-rh-model-world" as const,
+      boneCount: 1,
+      frameCount: 1,
+      texture: { width: 4, height: 1, format: "rgba32float" as const },
+      clips: { Swim: { fromRow: 0, frameCount: 1, fps: 20 } },
+      frameData
+    };
+    expect(() => createVatInstanceSetFromAsset({} as never, {} as never, asset)).toThrow(/public Babylon Lite/i);
+    const runtime = { createBakeResult: vi.fn(() => ({ clips: asset.clips })) };
+    const vat = createVatInstanceSetFromAsset({} as never, {} as never, asset, { capacity: 1 }, runtime as never);
+    expect(vat.create()).toBeDefined();
+    expect(vat.asset).toBe(asset);
+    expect(runtime.createBakeResult).toHaveBeenCalled();
   });
 });

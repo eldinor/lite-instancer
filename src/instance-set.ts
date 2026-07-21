@@ -14,6 +14,17 @@ import {
 import { assertValidCapacity, InstancerError } from "./errors.js";
 import { InstanceSlotStore } from "./slot-store.js";
 import {
+  createHostSlotStream,
+  disposeSlotStreamHost,
+  notifySlotCapacity,
+  notifySlotCreated,
+  notifySlotsCleared,
+  notifySlotsSwapped,
+  notifySlotsTruncated,
+  registerSlotStreamHost,
+  type SlotAlignedFloatStream
+} from "./slot-aligned-stream.js";
+import {
   composeMat4,
   copyMat4,
   getMat4Position,
@@ -75,6 +86,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   #slots = new InstanceSlotStore<TMetadata>("instance");
   #matrices: Float32Array;
   #colors: Float32Array | undefined;
+  #colorStream: SlotAlignedFloatStream | undefined;
   #hiddenMatrices = new Map<InstanceId, Mat4>();
   #visibleStrategy: "active-count" | "scale-zero";
   #grow: "none" | "double" | "exact";
@@ -90,13 +102,11 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#engine = options.engine;
     this.#visibleStrategy = options.visibleStrategy ?? "active-count";
     this.#matrices = new Float32Array(this.#capacity * 16);
+    registerSlotStreamHost(this, this.#capacity);
     setThinInstances(this.mesh, this.#matrices, this.#capacity);
     setThinInstanceCount(this.mesh, 0);
 
-    if (options.colors) {
-      this.#colors = new Float32Array(this.#capacity * 4);
-      setThinInstanceColors(this.mesh, this.#colors);
-    }
+    if (options.colors) this.#ensureColorStream();
 
     if (options.gpuCulling) {
       enableThinInstanceGpuCulling(this.mesh, true);
@@ -122,6 +132,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#ensureCapacity(this.#slots.count + 1);
     const matrix = composeMat4(transform);
     const { id, slot } = this.#slots.create(metadata);
+    notifySlotCreated(this, slot);
     this.#writeMatrixAt(slot, matrix);
 
     this.setVisible(id, true);
@@ -144,6 +155,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       return false;
     }
     this.#hiddenMatrices.delete(id);
+    notifySlotsTruncated(this, this.#slots.count);
     this.#syncDrawCount();
     return true;
   }
@@ -161,6 +173,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   clear(): void {
     this.#slots.clear();
     this.#hiddenMatrices.clear();
+    notifySlotsCleared(this);
     this.#syncDrawCount();
   }
 
@@ -397,16 +410,11 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   setColor(id: InstanceId, color: InstanceColorInput): void {
-    if (!this.#colors) {
-      this.#colors = new Float32Array(this.#capacity * 4);
-      setThinInstanceColors(this.mesh, this.#colors);
-      this.#requestBundleInvalidation();
-    }
     const slot = this.#slots.requireSlot(id);
-    this.#writeColorAt(slot, color);
+    const stream = this.#ensureColorStream();
+    stream.setSlot(slot, color);
     if (this.#batchDepth === 0) {
-      setThinInstanceColor(this.mesh, slot, color[0], color[1], color[2], color[3]);
-      this.#requestBundleInvalidation();
+      stream.flush(this.#slots.count);
     } else {
       this.#needsBundleInvalidation = this.#engine ? true : this.#needsBundleInvalidation;
     }
@@ -438,6 +446,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     } finally {
       this.#batchDepth--;
       if (this.#batchDepth === 0) {
+        this.#colorStream?.flush(this.#slots.count);
         flushThinInstances(this.mesh);
         this.#flushBundleInvalidation();
       }
@@ -464,6 +473,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       callback(raw);
     } finally {
       this.#batchDepth--;
+      this.#colorStream?.flush(this.#slots.count);
       flushThinInstances(this.mesh);
       if (this.#batchDepth === 0) {
         this.#flushBundleInvalidation();
@@ -481,6 +491,7 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   dispose(): void {
     this.clear();
+    disposeSlotStreamHost(this);
     this.mesh.thinInstances = null;
   }
 
@@ -500,16 +511,9 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     nextMatrices.set(this.#matrices.subarray(0, this.#slots.count * 16));
     this.#matrices = nextMatrices;
     this.#capacity = capacity;
+    notifySlotCapacity(this, capacity);
     setThinInstances(this.mesh, this.#matrices, this.#capacity);
     this.#requestBundleInvalidation();
-
-    if (this.#colors) {
-      const nextColors = new Float32Array(capacity * 4);
-      nextColors.set(this.#colors.subarray(0, this.#slots.count * 4));
-      this.#colors = nextColors;
-      setThinInstanceColors(this.mesh, this.#colors);
-      this.#requestBundleInvalidation();
-    }
 
     this.#syncDrawCount();
   }
@@ -520,23 +524,11 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   #swapSlotBuffers(a: number, b: number): void {
     this.#swapMatrix(a, b);
-    if (this.#colors) {
-      this.#swapColor(a, b);
-    }
+    notifySlotsSwapped(this, a, b);
   }
 
   #writeMatrixAt(slot: number, matrix: Mat4): void {
     this.#matrices.set(matrix, slot * 16);
-  }
-
-  #writeColorAt(slot: number, color: InstanceColorInput): void {
-    if (!this.#colors) {
-      return;
-    }
-    this.#colors[slot * 4] = color[0];
-    this.#colors[slot * 4 + 1] = color[1];
-    this.#colors[slot * 4 + 2] = color[2];
-    this.#colors[slot * 4 + 3] = color[3];
   }
 
   #swapMatrix(a: number, b: number): void {
@@ -549,19 +541,6 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#markMatrixDirty(b);
   }
 
-  #swapColor(a: number, b: number): void {
-    if (!this.#colors) {
-      return;
-    }
-    const aStart = a * 4;
-    const bStart = b * 4;
-    const tmp = this.#colors.slice(aStart, aStart + 4);
-    this.#colors.copyWithin(aStart, bStart, bStart + 4);
-    this.#colors.set(tmp, bStart);
-    this.#markColorDirty(a);
-    this.#markColorDirty(b);
-  }
-
   #markMatrixDirty(slot: number): void {
     if (slot < this.#slots.visibleCount || this.#visibleStrategy === "scale-zero") {
       setThinInstanceMatrix(this.mesh, slot, this.#matrices.subarray(slot * 16, slot * 16 + 16) as Mat4);
@@ -570,22 +549,47 @@ class LiteInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   #markColorDirty(slot: number): void {
-    if (!this.#colors) {
-      return;
-    }
-    const offset = slot * 4;
-    setThinInstanceColor(
-      this.mesh,
-      slot,
-      this.#colors[offset] ?? 1,
-      this.#colors[offset + 1] ?? 1,
-      this.#colors[offset + 2] ?? 1,
-      this.#colors[offset + 3] ?? 1
-    );
-    this.#requestBundleInvalidation();
+    if (!this.#colorStream) return;
+    this.#colorStream.markDirty(slot);
+    if (this.#batchDepth === 0) this.#colorStream.flush(this.#slots.count);
+  }
+
+  #ensureColorStream(): SlotAlignedFloatStream {
+    if (this.#colorStream) return this.#colorStream;
+    const stream = createHostSlotStream(this, {
+      components: 4,
+      defaultValue: [1, 1, 1, 1],
+      backend: {
+        bind: (data) => {
+          this.#colors = data;
+          setThinInstanceColors(this.mesh, data);
+          this.#requestBundleInvalidation();
+        },
+        upload: (data, count, ranges) => {
+          for (const range of ranges) {
+            const end = Math.min(range.end, count - 1);
+            for (let slot = range.start; slot <= end; slot++) {
+              const offset = slot * 4;
+              setThinInstanceColor(
+                this.mesh,
+                slot,
+                data[offset] ?? 1,
+                data[offset + 1] ?? 1,
+                data[offset + 2] ?? 1,
+                data[offset + 3] ?? 1
+              );
+            }
+          }
+          if (ranges.length > 0) this.#requestBundleInvalidation();
+        }
+      }
+    });
+    this.#colorStream = stream;
+    return stream;
   }
 
   #syncDrawCount(): void {
+    if (this.#batchDepth === 0) this.#colorStream?.flush(this.#slots.count);
     const drawCount = this.#visibleStrategy === "active-count" ? this.#slots.visibleCount : this.#slots.count;
     setThinInstanceCount(this.mesh, drawCount);
     this.#requestBundleInvalidation();

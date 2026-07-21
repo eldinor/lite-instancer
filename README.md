@@ -173,7 +173,7 @@ boxes.batch((writer) => {
 });
 ```
 
-For VAT sets, matrix-only batches update transforms without rebuilding playback parameters. Batched visibility changes resync playback because visibility strategies can move backing slots.
+For VAT sets, matrix-only batches update transforms without touching playback parameters. Playback uses a persistent capacity buffer: clip, phase, FPS, visibility, removal, and growth operations rewrite only affected CPU slots. Babylon Lite currently still requires a complete live-count VAT upload whenever changed slots are flushed.
 
 Use `editRaw` only when you need direct access to the matrix/color arrays. When writing raw data, mark dirty slots yourself.
 
@@ -221,7 +221,9 @@ const picked = pickScreenSpaceInstanceFromPointer({
 
 `createVatInstanceSet` bakes Babylon Lite animation groups into a VAT-backed instance set. It defaults to `gpuCulling: false` and `visibleStrategy: "scale-zero"` because animated vertices can move outside rest bounds and playback parameters are slot-based.
 
-Use `play(clip)` to change the shared default clip. Use `setClip(id, clip)`, `setPhaseOffset(id, seconds)`, and `setFps(id, fps)` for per-instance variation.
+Portable VAT tooling is exported from `@litools/instancer/vat`. `LiteVatAsset` uses a versioned `lite-matrix-rgba32float` payload, common clip/socket/bounds metadata, and deterministic JSON-manifest plus binary-payload codecs. `packLiteVatAsset` validates neutral sampled matrices against configurable allocation limits, while `createVatBakeWorkerPool` provides queueing, cancellation, timeouts, progress, and worker recovery. Loading an asset with `createVatInstanceSetFromAsset` requires an explicit `LiteVatAssetRuntime` until Babylon Lite publishes a public raw VAT-texture import API; the instancer does not access private GPU fields for this path.
+
+Use `play(clip)` to change the shared default clip. Use `setClip(id, clip)`, `setPhaseOffset(id, seconds)`, and `setFps(id, fps)` for per-instance variation. Wrap coordinated edits in `batchPlayback(() => { ... })` to rewrite every affected CPU slot while issuing only one full Babylon Lite VAT upload per mesh stream.
 
 ```ts
 const id = sharks.create({
