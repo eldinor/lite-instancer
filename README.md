@@ -1,5 +1,7 @@
 # @litools/instancer
 
+Documentation for the Babylon Lite `0.6.x` release line.
+
 Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon Lite instances.
 
 `@litools/instancer` helps Babylon Lite apps treat thin instances and hierarchy instances as app-level objects with stable numeric IDs. Use it when you need many repeated meshes, picking, hide/show, metadata, or fast transform updates without manually tracking thin instance slots.

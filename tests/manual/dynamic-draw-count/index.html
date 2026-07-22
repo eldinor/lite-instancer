@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Instancer 0.6 Dynamic Draw-Count Smoke Test</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="viewport"></canvas>
+    <header>
+      <div>
+        <p class="eyebrow">@litools/instancer 0.6 · manual release check</p>
+        <h1>Dynamic draw-count smoke test</h1>
+        <p id="phase">Initializing WebGPU…</p>
+      </div>
+      <button id="rerun" type="button" disabled>Run again</button>
+    </header>
+    <aside>
+      <div class="legend"><span class="dot dynamic"></span>Dynamic draw count</div>
+      <div class="legend"><span class="dot legacy"></span>Legacy count setter</div>
+      <dl id="metrics"></dl>
+      <ol id="checks"></ol>
+      <p class="visual-note">
+        Final visual check: both rows should remain steady, colored, and complete. Any disappearing,
+        stale-position, uncolored, or flashing box is a failure.
+      </p>
+    </aside>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

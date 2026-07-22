@@ -1,5 +1,7 @@
 # User Guide
 
+Applies to `@litools/instancer` `0.6.x` for Babylon Lite.
+
 This guide explains how to use the main `@litools/instancer` APIs in an app. The library is built around one idea: your app keeps stable `InstanceId` values, while the library manages the lower-level Babylon Lite slots that may move over time.
 
 ## Choosing the Right API
