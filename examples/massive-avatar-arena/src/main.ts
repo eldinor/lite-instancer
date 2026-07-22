@@ -594,9 +594,13 @@ function selectFromPointer(event: PointerEvent): void {
       ids: pool.characters.primary.set.ids(),
       has: (id) => pool.characters.has(id),
       isVisible: (id) => pool.characters.getVisible(id),
-      getWorldPosition: (id) => {
+      getWorldPosition: (id, out) => {
         const member = pool.characters.primary.set.getMetadata(id);
-        return member ? [member.x, 0.9, member.z] : undefined;
+        if (!member || !out) return undefined;
+        out[0] = member.x;
+        out[1] = 0.9;
+        out[2] = member.z;
+        return out;
       },
       getScreenRadius: () => 18
     });

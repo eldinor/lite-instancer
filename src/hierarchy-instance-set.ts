@@ -11,16 +11,17 @@ import {
   type SceneNode
 } from "@babylonjs/lite";
 import { assertValidCapacity, InstancerError } from "./errors.js";
-import { InstanceSlotStore } from "./slot-store.js";
 import {
-  composeMat4,
-  copyMat4,
-  getMat4Position,
-  translateMat4,
-  withMat4Position,
-  withMat4Scale,
-  writeZeroScale
-} from "./transforms.js";
+  copyMatrix16,
+  readMatrixPosition,
+  swapMatrix16,
+  translateMatrixPosition,
+  writeMatrixPosition,
+  writeMatrixScale,
+  writeZeroMatrixScale
+} from "./matrix-buffer.js";
+import { InstanceSlotStore } from "./slot-store.js";
+import { composeMat4 } from "./transforms.js";
 import {
   type BaseInstanceSet,
   type InstanceCreateInput,
@@ -45,7 +46,7 @@ import {
  * Slot order can change for removal and active-count visibility, but IDs remain stable.
  */
 export interface HierarchyInstanceSet<TMetadata = unknown> extends BaseInstanceSet<TMetadata> {
-  /** Source root used to create the hierarchy pool. */
+  /** Source root used to create the hierarchy pool. The caller retains ownership of its nodes and resources. */
   readonly root: SceneNode;
   /** Current Babylon Lite hierarchy pool. May be replaced when `grow: "rebuild"` is used. */
   readonly pool: HierarchyInstancePool;
@@ -66,6 +67,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   #capacity: number;
   #slots = new InstanceSlotStore<TMetadata>("hierarchy instance");
   #matrices: Float32Array;
+  #matrixScratch = new Float32Array(16);
   #hiddenMatrices = new Map<InstanceId, Mat4>();
   #visibleStrategy: "active-count" | "scale-zero";
   #grow: "none" | "rebuild";
@@ -75,6 +77,8 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   #needsBundleInvalidation = false;
   #dirtySlots = new Set<number>();
   #needsCountSync = false;
+  #ownedThinInstances = new Map<Mesh, Mesh["thinInstances"]>();
+  #disposed = false;
 
   constructor(root: SceneNode, options: HierarchyInstanceSetOptions) {
     this.root = root;
@@ -86,23 +90,28 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     this.#gpuCulling = options.gpuCulling ?? false;
     this.#matrices = new Float32Array(this.#capacity * 16);
     this.#pool = createHierarchyInstancePool(this.root, this.#capacity);
+    this.#captureOwnedThinInstances();
     this.#applyGpuCulling();
     setHierarchyInstanceCount(this.#pool, 0);
   }
 
   get pool(): HierarchyInstancePool {
+    this.#assertUsable();
     return this.#pool;
   }
 
   get count(): number {
+    this.#assertUsable();
     return this.#slots.count;
   }
 
   get capacity(): number {
+    this.#assertUsable();
     return this.#capacity;
   }
 
   get visibleCount(): number {
+    this.#assertUsable();
     if (this.#visibleStrategy === "scale-zero") {
       return this.#slots.count - this.#hiddenMatrices.size;
     }
@@ -110,6 +119,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   create(transform?: InstanceTransformInput, metadata?: TMetadata): InstanceId {
+    this.#assertUsable();
     this.#ensureCapacity(this.#slots.count + 1);
     const matrix = composeMat4(transform);
     const { id, slot } = this.#slots.create(metadata);
@@ -122,12 +132,20 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   createMany(items: Iterable<InstanceCreateInput<TMetadata>>): InstanceId[] {
+    this.#assertUsable();
     const inputs = Array.from(items);
     this.reserve(this.#slots.count + inputs.length);
-    return inputs.map((item) => this.create(item.transform, item.metadata));
+    const ids: InstanceId[] = [];
+    this.batch(() => {
+      for (const item of inputs) {
+        ids.push(this.create(item.transform, item.metadata));
+      }
+    });
+    return ids;
   }
 
   remove(id: InstanceId): boolean {
+    this.#assertUsable();
     const removed = this.#slots.remove(id, (a, b) => this.#swapSlotBuffers(a, b));
     if (!removed) {
       return false;
@@ -140,56 +158,69 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
 
   removeMany(ids: Iterable<InstanceId>): number {
     let removed = 0;
-    for (const id of ids) {
-      if (this.remove(id)) {
-        removed++;
+    this.batch(() => {
+      for (const id of ids) {
+        if (this.remove(id)) {
+          removed++;
+        }
       }
-    }
+    });
     return removed;
   }
 
   clear(): void {
+    this.#assertUsable();
     this.#slots.clear();
     this.#hiddenMatrices.clear();
     this.#syncVisiblePool();
   }
 
   has(id: InstanceId): boolean {
+    this.#assertUsable();
     return this.#slots.has(id);
   }
 
   getSlot(id: InstanceId): number | undefined {
+    this.#assertUsable();
     return this.#slots.getSlot(id);
   }
 
   getIdForSlot(slot: number): InstanceId | undefined {
+    this.#assertUsable();
     return this.#slots.getIdForSlot(slot);
   }
 
   *ids(): IterableIterator<InstanceId> {
+    this.#assertUsable();
     yield* this.#slots.ids();
   }
 
   *visibleIds(): IterableIterator<InstanceId> {
+    this.#assertUsable();
     yield* this.#slots.visibleIds((id) => this.getVisible(id));
   }
 
   *slots(): IterableIterator<InstanceSlotEntry> {
+    this.#assertUsable();
     yield* this.#slots.slots();
   }
 
   *entries(): IterableIterator<InstanceEntry<TMetadata>> {
+    this.#assertUsable();
     yield* this.#slots.entries();
   }
 
   forEach(callback: (id: InstanceId, slot: number) => void): void {
+    this.#assertUsable();
     this.#slots.forEach(callback);
   }
 
   setMatrix(id: InstanceId, matrix: Mat4): void {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
-    if (this.#visibleStrategy === "scale-zero" && !this.getVisible(id)) {
-      this.#hiddenMatrices.set(id, copyMat4(matrix));
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      (hidden as Float32Array).set(matrix);
       return;
     }
     this.#writeMatrixAt(slot, matrix);
@@ -205,15 +236,17 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     return true;
   }
 
-  getMatrix(id: InstanceId, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
+  getMatrix(id: InstanceId, out?: Mat4): Mat4 {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
+    const target = out ?? new Float32Array(16) as Mat4;
     const hidden = this.#hiddenMatrices.get(id);
     if (hidden) {
-      (out as Float32Array).set(hidden);
-      return out;
+      (target as Float32Array).set(hidden);
+      return target;
     }
-    (out as Float32Array).set(this.#matrices.subarray(slot * 16, slot * 16 + 16));
-    return out;
+    (target as Float32Array).set(this.#matrices.subarray(slot * 16, slot * 16 + 16));
+    return target;
   }
 
   getMatrixOrUndefined(id: InstanceId, out?: Mat4): Mat4 | undefined {
@@ -224,6 +257,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   setTransform(id: InstanceId, transform: InstanceTransformInput): void {
+    this.#assertUsable();
     this.setMatrix(id, composeMat4(transform));
   }
 
@@ -236,16 +270,31 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   getPosition(id: InstanceId, out?: Float32Array): Float32Array {
-    return getMat4Position(this.getMatrix(id), out);
+    this.#assertUsable();
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    const buffer = hidden ? hidden as Float32Array : this.#matrices;
+    return readMatrixPosition(buffer, hidden ? 0 : slot * 16, out);
   }
 
   getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined {
-    const matrix = this.getMatrixOrUndefined(id);
-    return matrix ? getMat4Position(matrix, out) : undefined;
+    if (!this.has(id)) {
+      return undefined;
+    }
+    return this.getPosition(id, out);
   }
 
   setPosition(id: InstanceId, position: Vec3Like): void {
-    this.setMatrix(id, withMat4Position(this.getMatrix(id), position));
+    this.#assertUsable();
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      writeMatrixPosition(hidden as Float32Array, 0, position);
+      return;
+    }
+    writeMatrixPosition(this.#matrices, slot * 16, position);
+    this.#markSlotDirty(slot);
+    this.#flushDirtyIfReady();
   }
 
   trySetPosition(id: InstanceId, position: Vec3Like): boolean {
@@ -257,7 +306,16 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   translate(id: InstanceId, delta: Vec3Like): void {
-    this.setMatrix(id, translateMat4(this.getMatrix(id), delta));
+    this.#assertUsable();
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      translateMatrixPosition(hidden as Float32Array, 0, delta);
+      return;
+    }
+    translateMatrixPosition(this.#matrices, slot * 16, delta);
+    this.#markSlotDirty(slot);
+    this.#flushDirtyIfReady();
   }
 
   tryTranslate(id: InstanceId, delta: Vec3Like): boolean {
@@ -269,7 +327,16 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   setScale(id: InstanceId, scale: Vec3Like | number): void {
-    this.setMatrix(id, withMat4Scale(this.getMatrix(id), scale));
+    this.#assertUsable();
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      writeMatrixScale(hidden as Float32Array, 0, scale);
+      return;
+    }
+    writeMatrixScale(this.#matrices, slot * 16, scale);
+    this.#markSlotDirty(slot);
+    this.#flushDirtyIfReady();
   }
 
   trySetScale(id: InstanceId, scale: Vec3Like | number): boolean {
@@ -297,6 +364,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   getVisible(id: InstanceId): boolean {
+    this.#assertUsable();
     if (this.#visibleStrategy === "active-count") {
       return this.#slots.getActiveCountVisible(id);
     }
@@ -311,6 +379,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   setVisible(id: InstanceId, visible: boolean): void {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
 
     if (this.#visibleStrategy === "active-count") {
@@ -336,9 +405,10 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     }
 
     if (!this.#hiddenMatrices.has(id)) {
-      const original = this.getMatrix(id);
+      const original = new Float32Array(16) as Mat4;
+      copyMatrix16(this.#matrices, slot * 16, original as Float32Array);
       this.#hiddenMatrices.set(id, original);
-      this.#writeMatrixAt(slot, writeZeroScale(original));
+      writeZeroMatrixScale(this.#matrices, slot * 16);
       this.#markCountDirty();
       this.#markSlotDirty(slot);
       this.#flushDirtyIfReady();
@@ -362,38 +432,47 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   getMetadata(id: InstanceId): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.getMetadata(id);
   }
 
   setMetadata(id: InstanceId, metadata: TMetadata): void {
+    this.#assertUsable();
     this.#slots.setMetadata(id, metadata);
   }
 
   trySetMetadata(id: InstanceId, metadata: TMetadata): boolean {
+    this.#assertUsable();
     return this.#slots.trySetMetadata(id, metadata);
   }
 
   findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined {
+    this.#assertUsable();
     return this.#slots.findByMetadata(predicate);
   }
 
   filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[] {
+    this.#assertUsable();
     return this.#slots.filterByMetadata(predicate);
   }
 
   updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.updateMetadata(id, updater);
   }
 
   tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.tryUpdateMetadata(id, updater);
   }
 
   deleteMetadata(id: InstanceId): boolean {
+    this.#assertUsable();
     return this.#slots.deleteMetadata(id);
   }
 
   batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void {
+    this.#assertUsable();
     this.#batchDepth++;
     try {
       callback({
@@ -415,6 +494,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   editRaw(callback: (raw: RawInstanceWriter) => void): void {
+    this.#assertUsable();
     this.#batchDepth++;
     try {
       callback({
@@ -437,6 +517,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   reserve(capacity: number): void {
+    this.#assertUsable();
     assertValidCapacity(capacity);
     if (capacity <= this.#capacity) {
       return;
@@ -445,8 +526,15 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   }
 
   dispose(): void {
-    this.clear();
-    clearThinInstances(this.root);
+    if (this.#disposed) {
+      return;
+    }
+    this.#slots.clear();
+    this.#hiddenMatrices.clear();
+    this.#dirtySlots.clear();
+    this.#needsCountSync = false;
+    this.#detachOwnedThinInstances();
+    this.#disposed = true;
   }
 
   #ensureCapacity(required: number): void {
@@ -464,8 +552,9 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     nextMatrices.set(this.#matrices.subarray(0, this.#slots.count * 16));
     this.#matrices = nextMatrices;
     this.#capacity = capacity;
-    clearThinInstances(this.root);
+    this.#detachOwnedThinInstances();
     this.#pool = createHierarchyInstancePool(this.root, this.#capacity);
+    this.#captureOwnedThinInstances();
     this.#applyGpuCulling();
     this.#syncVisiblePool();
     this.#requestBundleInvalidation();
@@ -474,9 +563,7 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   #swapSlotBuffers(a: number, b: number): void {
     const aStart = a * 16;
     const bStart = b * 16;
-    const tmp = this.#matrices.slice(aStart, aStart + 16);
-    this.#matrices.copyWithin(aStart, bStart, bStart + 16);
-    this.#matrices.set(tmp, bStart);
+    swapMatrix16(this.#matrices, aStart, bStart, this.#matrixScratch);
     this.#markSlotDirty(a);
     this.#markSlotDirty(b);
   }
@@ -490,8 +577,8 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     if (slot >= drawCount) {
       return;
     }
-    setHierarchyInstanceMatrix(this.#pool, slot, this.#matrices.subarray(slot * 16, slot * 16 + 16) as Mat4);
-    this.#requestBundleInvalidation();
+    copyMatrix16(this.#matrices, slot * 16, this.#matrixScratch);
+    setHierarchyInstanceMatrix(this.#pool, slot, this.#matrixScratch as Mat4);
   }
 
   #markSlotDirty(slot: number): void {
@@ -522,7 +609,6 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
   #syncHierarchyCount(): void {
     const drawCount = this.#visibleStrategy === "active-count" ? this.#slots.visibleCount : this.#slots.count;
     setHierarchyInstanceCount(this.#pool, drawCount);
-    this.#requestBundleInvalidation();
   }
 
   #syncVisiblePool(): void {
@@ -564,11 +650,27 @@ class LiteHierarchyInstanceSet<TMetadata> implements HierarchyInstanceSet<TMetad
     this.#needsBundleInvalidation = false;
     invalidateRenderBundles(this.#engine);
   }
-}
 
-function clearThinInstances(root: SceneNode): void {
-  for (const mesh of collectMeshes(root)) {
-    mesh.thinInstances = null;
+  #captureOwnedThinInstances(): void {
+    this.#ownedThinInstances.clear();
+    for (const mesh of collectMeshes(this.root)) {
+      this.#ownedThinInstances.set(mesh, mesh.thinInstances);
+    }
+  }
+
+  #detachOwnedThinInstances(): void {
+    for (const [mesh, owned] of this.#ownedThinInstances) {
+      if (mesh.thinInstances === owned) {
+        mesh.thinInstances = null;
+      }
+    }
+    this.#ownedThinInstances.clear();
+  }
+
+  #assertUsable(): void {
+    if (this.#disposed) {
+      throw new InstancerError("HierarchyInstanceSet has been disposed");
+    }
   }
 }
 

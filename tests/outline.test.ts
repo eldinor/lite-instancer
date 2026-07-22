@@ -29,6 +29,8 @@ vi.mock("@babylonjs/lite", () => ({
     mesh.thinInstances = { matrices, count };
   }),
   setThinInstanceCount: vi.fn((mesh, count) => { mesh.thinInstances.count = count; }),
+  setThinInstanceDrawCount: vi.fn((mesh, count) => { mesh.thinInstances.count = count; }),
+  enableThinInstanceDynamicDrawCount: vi.fn(),
   setThinInstanceMatrix: vi.fn((mesh, index, matrix) => mesh.thinInstances.matrices.set(matrix, index * 16)),
   setThinInstanceColors: vi.fn((mesh, colors) => { mesh.thinInstances.colors = colors; }),
   setThinInstanceColor: vi.fn((mesh, index, r, g, b, a) => {
@@ -65,7 +67,10 @@ const geometry = {
 };
 
 describe("outline managers", () => {
-  beforeEach(() => beforeRenderCallbacks.length = 0);
+  beforeEach(() => {
+    beforeRenderCallbacks.length = 0;
+    vi.clearAllMocks();
+  });
 
   it("tracks stable IDs through slot moves, growth, visibility, and removal", async () => {
     const { createInstanceSet } = await import("../src/instance-set.js");
@@ -163,6 +168,25 @@ describe("outline managers", () => {
     expect((attachment.material as never as { _uniforms: Map<string, number> })._uniforms.get("time")).toBeCloseTo(0.016);
   });
 
+  it("skips animated-effect uniforms while an attachment has no highlights", async () => {
+    const lite = await import("@babylonjs/lite");
+    const { createThinInstanceOutliner } = await import("../src/outline.js");
+    const manager = createThinInstanceOutliner({} as never, { meshes: [] } as never);
+    const attachment = manager.attach(createNode("idle-effect") as never, {
+      geometry,
+      pulse: { speed: 2, amplitude: 0.5 }
+    });
+    const setUniform = vi.mocked(lite.setShaderUniform);
+    setUniform.mockClear();
+
+    beforeRenderCallbacks[0]?.(16);
+    expect(setUniform).not.toHaveBeenCalled();
+
+    attachment.highlight(0);
+    beforeRenderCallbacks[0]?.(16);
+    expect(setUniform).toHaveBeenCalledWith(attachment.material, "time", expect.any(Number));
+  });
+
   it("shares live skeleton inputs and updates outline bone matrices", async () => {
     const lite = await import("@babylonjs/lite");
     const { createThinInstanceOutliner } = await import("../src/outline.js");
@@ -181,8 +205,19 @@ describe("outline managers", () => {
     expect(attachment.outlineMesh.skeleton).toBe(skeleton);
     expect((skeleton as { _refCount?: number })._refCount).toBe(2);
     expect(attachment.material.attributes).toContain("joints");
+    const updateBones = vi.mocked(lite.updateStorageBuffer);
+    updateBones.mockClear();
     beforeRenderCallbacks[0]?.(16);
-    expect(lite.updateStorageBuffer).toHaveBeenCalledWith(expect.anything(), expect.anything(), skeleton.boneMatrices);
+    expect(updateBones).not.toHaveBeenCalled();
+
+    attachment.highlight(0);
+    beforeRenderCallbacks[0]?.(16);
+    expect(updateBones).toHaveBeenCalledWith(expect.anything(), expect.anything(), skeleton.boneMatrices);
+
+    attachment.clear(0);
+    updateBones.mockClear();
+    beforeRenderCallbacks[0]?.(16);
+    expect(updateBones).not.toHaveBeenCalled();
     attachment.dispose();
     expect(lite.disposeStorageBuffer).toHaveBeenCalled();
   });

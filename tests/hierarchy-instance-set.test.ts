@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@babylonjs/lite", () => ({
-  createHierarchyInstancePool: vi.fn((root, capacity) => ({ root, capacity, count: 0 })),
+  createHierarchyInstancePool: vi.fn((root, capacity) => {
+    const meshes = [];
+    const stack = [root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if ("_gpu" in node && "material" in node) {
+        node.thinInstances = { matrices: new Float32Array(capacity * 16), count: 0 };
+        meshes.push(node);
+      }
+      stack.push(...node.children);
+    }
+    return { root, capacity, count: 0, meshes };
+  }),
   setHierarchyInstanceCount: vi.fn((pool, count) => {
     pool.count = count;
   }),
@@ -208,5 +220,36 @@ describe("HierarchyInstanceSet", () => {
     expect(set.updateMetadata(c!, () => undefined)).toBeUndefined();
     expect(set.getMetadata(c!)).toBeUndefined();
     expect(set.tryUpdateMetadata(missing, () => ({ kind: "case", active: false }))).toBeUndefined();
+  });
+
+  it("disposes idempotently, guards later use, and preserves replacement bindings", async () => {
+    const { createHierarchyInstanceSet } = await import("../src/hierarchy-instance-set.js");
+    const mesh = {
+      _gpu: {},
+      material: {},
+      children: [],
+      worldMatrix: new Float32Array(16),
+      worldMatrixVersion: 0,
+      thinInstances: null as { matrices: Float32Array; count: number } | null
+    };
+    const root = {
+      children: [mesh],
+      worldMatrix: new Float32Array(16),
+      worldMatrixVersion: 0
+    } as never;
+    const set = createHierarchyInstanceSet(root, { capacity: 2 });
+    const id = set.create();
+    const replacement = { matrices: new Float32Array(16), count: 1 };
+    mesh.thinInstances = replacement;
+
+    set.dispose();
+
+    expect(mesh.thinInstances).toBe(replacement);
+    expect(() => set.dispose()).not.toThrow();
+    expect(() => set.count).toThrow(/disposed/);
+    expect(() => set.has(id)).toThrow(/disposed/);
+    expect(() => set.trySetMatrix(id, new Float32Array(16) as never)).toThrow(/disposed/);
+    expect(() => set.batch(() => undefined)).toThrow(/disposed/);
+    expect(() => Array.from(set.ids())).toThrow(/disposed/);
   });
 });

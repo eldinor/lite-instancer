@@ -47,4 +47,38 @@ describe("screen-space picking", () => {
 
     expect(picked?.id).toBe(visible);
   });
+
+  it("reuses one position scratch across candidates", async () => {
+    const { pickScreenSpaceInstance } = await import("../src/screen-space-picking.js");
+    const ids = [toInstanceId(1), toInstanceId(2), toInstanceId(3)];
+    const outputs: Array<Float32Array | undefined> = [];
+
+    const picked = pickScreenSpaceInstance({
+      ids,
+      camera: {} as never,
+      viewport: { width: 100, height: 100 },
+      point: { x: 50, y: 50 },
+      getWorldPosition: (id, out) => {
+        outputs.push(out);
+        out!.set([Number(id) * 0.01, 0, 0]);
+        return out;
+      }
+    });
+
+    expect(picked?.id).toBe(ids[0]);
+    expect(outputs).toHaveLength(3);
+    expect(outputs.every((out) => out === outputs[0])).toBe(true);
+  });
+
+  it("rejects projections behind the camera", async () => {
+    const { projectWorldToScreen } = await import("../src/screen-space-picking.js");
+    const behind = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, -1
+    ]);
+
+    expect(projectWorldToScreen([0, 0, 0], behind as never, { width: 100, height: 100 })).toBeUndefined();
+  });
 });

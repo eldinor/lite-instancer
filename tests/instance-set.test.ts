@@ -7,6 +7,10 @@ vi.mock("@babylonjs/lite", () => ({
   setThinInstanceCount: vi.fn((mesh, count) => {
     mesh.thinInstances.count = count;
   }),
+  setThinInstanceDrawCount: vi.fn((mesh, count) => {
+    mesh.thinInstances.count = count;
+  }),
+  enableThinInstanceDynamicDrawCount: vi.fn(),
   setThinInstanceMatrix: vi.fn((mesh, index, matrix) => {
     mesh.thinInstances.matrices.set(matrix, index * 16);
   }),
@@ -215,5 +219,53 @@ describe("InstanceSet", () => {
     expect(instances.updateMetadata(c!, () => undefined)).toBeUndefined();
     expect(instances.getMetadata(c!)).toBeUndefined();
     expect(instances.tryUpdateMetadata(missing, () => ({ team: "red", selected: false }))).toBeUndefined();
+  });
+
+  it("validates color ids before lazily creating color storage", async () => {
+    const { createInstanceSet } = await import("../src/instance-set.js");
+    const { toInstanceId } = await import("../src/types.js");
+    const instances = createInstanceSet({} as never, { capacity: 2 });
+
+    expect(() => instances.getColor(toInstanceId(999))).toThrow(/Unknown instance id 999/);
+  });
+
+  it("allows the dynamic draw-count fast path to be disabled", async () => {
+    const { createInstanceSet } = await import("../src/instance-set.js");
+    const {
+      enableThinInstanceDynamicDrawCount,
+      setThinInstanceCount,
+      setThinInstanceDrawCount
+    } = await import("@babylonjs/lite");
+    const enableDynamic = vi.mocked(enableThinInstanceDynamicDrawCount);
+    const syncCount = vi.mocked(setThinInstanceCount);
+    const syncDrawCount = vi.mocked(setThinInstanceDrawCount);
+    vi.clearAllMocks();
+    const instances = createInstanceSet({} as never, { capacity: 2, dynamicDrawCount: false });
+
+    expect(enableDynamic).not.toHaveBeenCalled();
+    vi.clearAllMocks();
+    instances.create();
+
+    expect(syncDrawCount).not.toHaveBeenCalled();
+    expect(syncCount).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes idempotently, guards later use, and preserves replacement bindings", async () => {
+    const { createInstanceSet } = await import("../src/instance-set.js");
+    const mesh = {} as { thinInstances: { matrices: Float32Array; count: number } | null };
+    const instances = createInstanceSet(mesh as never, { capacity: 2 });
+    const id = instances.create();
+    const replacement = { matrices: new Float32Array(16), count: 1 };
+    mesh.thinInstances = replacement;
+
+    instances.dispose();
+
+    expect(mesh.thinInstances).toBe(replacement);
+    expect(() => instances.dispose()).not.toThrow();
+    expect(() => instances.count).toThrow(/disposed/);
+    expect(() => instances.has(id)).toThrow(/disposed/);
+    expect(() => instances.trySetMatrix(id, new Float32Array(16) as never)).toThrow(/disposed/);
+    expect(() => instances.batch(() => undefined)).toThrow(/disposed/);
+    expect(() => Array.from(instances.ids())).toThrow(/disposed/);
   });
 });

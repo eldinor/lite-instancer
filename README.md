@@ -161,6 +161,8 @@ const position = boxes.getPosition(id);
 
 `"scale-zero"` keeps slots more stable by writing a zero-scale matrix for hidden instances. It is useful when another slot-indexed system must stay aligned, such as VAT playback parameters.
 
+Single-mesh sets enable Babylon Lite's dynamic draw-count path by default. After the initial GPU synchronization, count-only changes update indirect draw arguments without dirtying the full matrix prefix; newly exposed slots are then marked as exact matrix/color ranges. Warm-up, resize, and already-pending uploads fall back to `setThinInstanceCount()` safely. Set `dynamicDrawCount: false` to force the legacy path. Hierarchy pools continue using Lite's hierarchy count API because no draw-count-only hierarchy setter is currently public.
+
 ## Batch Updates
 
 Use `batch` for ordinary app updates. The package flushes once after the callback.
@@ -212,7 +214,7 @@ const picked = pickScreenSpaceInstanceFromPointer({
   ids,
   has: (id) => sharks.has(id),
   isVisible: (id) => sharks.getVisible(id),
-  getWorldPosition: (id) => getCurrentCenter(id),
+  getWorldPosition: (id, out) => sharks.getPosition(id, out),
   getScreenRadius: () => 32
 });
 ```
@@ -309,6 +311,8 @@ Dispose an instance set when it is no longer needed:
 ```ts
 boxes.dispose();
 ```
+
+Disposal is idempotent. An instance set owns only the thin-instance bindings it creates; the mesh or hierarchy root, child nodes, geometry, and materials remain caller-owned. If another system has replaced a binding since the set was created, disposing the old set leaves that replacement intact. Instance-state reads and mutation methods after disposal throw an `InstancerError`.
 
 ## Examples
 

@@ -11,6 +11,11 @@
 
 ### Changed
 
+- Batch ordinary and hierarchy bulk creation/removal into one count sync, preserve bounded per-slot matrix dirtiness in normal batches, and reserve render-bundle invalidation for structural buffer or pool changes.
+- Remove steady-state matrix swap, convenience-transform, and renderer-upload view allocations by editing backing matrices in place and reusing per-set scratch storage.
+- Make ordinary and hierarchy instance-set disposal idempotent and ownership-aware, consistently reject post-disposal use, and validate unknown IDs before returning default colors.
+- Remove per-candidate projected-point allocations from screen-space picking, support reusable position outputs, reject behind-camera projections, and suspend outline effect uniforms and bone uploads while no highlights are active.
+- Enable Babylon Lite's public dynamic draw-count fast path for single-mesh sets, order newly exposed slot uploads after count changes, batch exact matrix/color dirtiness, and fall back safely before GPU synchronization or while uploads are pending. Add `dynamicDrawCount: false` as an escape hatch.
 - Keep persistent VAT playback buffers for single- and multi-mesh sets, updating only slots affected by playback or lifecycle changes before Babylon Lite's required full upload.
 - Add nested-safe `batchPlayback()` transactions for single- and multi-mesh VAT sets, and use them to collapse Avatar Arena reaction-wave edits into one upload per affected mesh stream per frame.
 - Add atomic `setPlayback()`/`setPlaybackMany()` updates, coordinated character `setVisibleMany()`, no-op detection, and visible-prefix VAT uploads for packed active-count sets.

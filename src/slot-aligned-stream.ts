@@ -94,6 +94,12 @@ export class SlotAlignedFloatStream {
     return this.#dirty.size;
   }
 
+  /** Return whether one slot is already pending upload. */
+  isDirty(slot: number): boolean {
+    this.#assertSlot(slot);
+    return this.#dirty.has(slot);
+  }
+
   resize(capacity: number, liveCount = 0): void {
     this.#assertUsable();
     if (!Number.isInteger(capacity) || capacity < this.#capacity || liveCount < 0 || liveCount > capacity) {

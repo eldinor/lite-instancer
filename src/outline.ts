@@ -23,7 +23,7 @@ import { createInstanceSet, type ColoredInstanceSet, type InstanceSet } from "./
 import { createIdentityMat4 } from "./transforms.js";
 import type { InstanceId } from "./types.js";
 import { prepareOutlineGeometry, tryGetRetainedOutlineGeometry } from "./outline-geometry.js";
-import { createOutlineMaterial, resolveOutlineEffects, type OutlineEffects } from "./outline-shader.js";
+import { createOutlineMaterial, hasOutlineEffects, resolveOutlineEffects, type OutlineEffects } from "./outline-shader.js";
 import type {
   EffectParamUpdates,
   InstanceOutlineAttachment,
@@ -63,6 +63,7 @@ abstract class CompactOutlineAttachment<TKey> {
 
   readonly #outlineInstances: ColoredInstanceSet<never>;
   readonly #effects: OutlineEffects;
+  readonly #hasAnimatedEffects: boolean;
   readonly #defaultColor: OutlineRgb;
   readonly #detach: () => void;
   readonly #boneMatrices: Float32Array | null;
@@ -129,6 +130,7 @@ abstract class CompactOutlineAttachment<TKey> {
     setParent(this.outlineMesh, host);
     resetLocalTransform(this.outlineMesh);
     this.#effects = resolveOutlineEffects(options);
+    this.#hasAnimatedEffects = hasOutlineEffects(this.#effects);
     this.#defaultColor = cloneColor(options.color ?? DEFAULT_COLOR);
     this.#detach = detach;
   }
@@ -197,7 +199,7 @@ abstract class CompactOutlineAttachment<TKey> {
       if (record) this.refreshRecord(key, record);
       return;
     }
-    for (const [current, record] of Array.from(this.records)) {
+    for (const [current, record] of this.records) {
       if (!this.isValidSourceKey(current)) this.removeRecord(current);
       else this.refreshRecord(current, record);
     }
@@ -240,10 +242,13 @@ abstract class CompactOutlineAttachment<TKey> {
   }
 
   updateTime(seconds: number): void {
-    if (!this.disposed && this.#boneStorage && this.#boneMatrices) {
+    if (this.disposed || this.records.size === 0) {
+      return;
+    }
+    if (this.#boneStorage && this.#boneMatrices) {
       updateStorageBuffer(this.engine, this.#boneStorage, this.#boneMatrices);
     }
-    if (!this.disposed && Object.values(this.#effects).some(Boolean)) {
+    if (this.#hasAnimatedEffects) {
       setShaderUniform(this.material, "time", seconds);
     }
   }

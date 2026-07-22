@@ -84,6 +84,11 @@ export interface InstanceSetOptions {
   grow?: GrowStrategy;
   /** Babylon Lite engine context used to invalidate render bundles after buffer changes. */
   engine?: EngineContext;
+  /**
+   * Use Babylon Lite's indirect draw-count fast path after initial GPU synchronization.
+   * Falls back safely during warm-up or pending buffer uploads. Defaults to `true`.
+   */
+  dynamicDrawCount?: boolean;
   /** Enable Babylon Lite thin instance GPU culling for the backing mesh. */
   gpuCulling?: boolean;
   /** Allocate and upload a per-instance color buffer. Created lazily if omitted and `setColor` is used. */
@@ -249,7 +254,10 @@ export interface BaseInstanceSet<TMetadata = unknown> {
 
   /** Ensure at least this many slots are allocated. */
   reserve(capacity: number): void;
-  /** Clear the set and detach thin instance data from backing objects. */
+  /**
+   * Clear the set and detach thin-instance bindings still owned by it.
+   * Idempotent; does not dispose caller-owned meshes, nodes, geometry, or materials.
+   */
   dispose(): void;
 }
 

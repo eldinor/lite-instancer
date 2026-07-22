@@ -16,6 +16,8 @@ vi.mock("@babylonjs/lite", () => ({
   }),
   setThinInstances: vi.fn((mesh, matrices, count) => { mesh.thinInstances = { matrices, count }; }),
   setThinInstanceCount: vi.fn((mesh, count) => { mesh.thinInstances.count = count; }),
+  setThinInstanceDrawCount: vi.fn((mesh, count) => { mesh.thinInstances.count = count; }),
+  enableThinInstanceDynamicDrawCount: vi.fn(),
   setThinInstanceMatrix: vi.fn((mesh, index, matrix) => { mesh.thinInstances.matrices.set(matrix, index * 16); }),
   setThinInstanceColors: vi.fn(),
   setThinInstanceColor: vi.fn(),

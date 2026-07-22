@@ -8,6 +8,7 @@ export interface InstancerCapabilities {
   readonly vatAssetCodecs: true;
   readonly vatAssetRuntime: boolean;
   readonly partialVatUploads: false;
+  readonly dynamicDrawCount: true;
   readonly supportedVatEncodings: readonly ["lite-matrix-rgba32float"];
   readonly warnings: readonly string[];
 }
@@ -38,6 +39,7 @@ export function inspectInstancerCapabilities(
     vatAssetCodecs: true,
     vatAssetRuntime,
     partialVatUploads: false,
+    dynamicDrawCount: true,
     supportedVatEncodings: ["lite-matrix-rgba32float"],
     warnings
   };

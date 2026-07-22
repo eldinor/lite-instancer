@@ -25,8 +25,8 @@ export interface ScreenSpaceInstancePickOptions {
   camera: Camera;
   viewport: ScreenViewportLike;
   point: ScreenPointLike;
-  /** Return the current world-space logical center for an ID. */
-  getWorldPosition(id: InstanceId): Vec3Like | undefined;
+  /** Return the current world-space logical center for an ID. Fill `out` when possible to avoid per-candidate allocation. */
+  getWorldPosition(id: InstanceId, out?: Float32Array): Vec3Like | undefined;
   /** Return the pick radius in CSS pixels for an ID. Defaults to 24. */
   getScreenRadius?(id: InstanceId): number;
   /** Optional visibility predicate. */
@@ -64,7 +64,12 @@ export interface ScreenSpaceInstancePick {
  */
 export function pickScreenSpaceInstance(options: ScreenSpaceInstancePickOptions): ScreenSpaceInstancePick | undefined {
   const matrix = getViewProjectionMatrix(options.camera, options.viewport.width / options.viewport.height);
-  let nearest: ScreenSpaceInstancePick | undefined;
+  const positionScratch = new Float32Array(3);
+  let nearestId: InstanceId | undefined;
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY;
+  let nearestX = 0;
+  let nearestY = 0;
+  let nearestRadius = 0;
 
   for (const id of options.ids) {
     if (options.has && !options.has(id)) {
@@ -74,29 +79,48 @@ export function pickScreenSpaceInstance(options: ScreenSpaceInstancePickOptions)
       continue;
     }
 
-    const position = options.getWorldPosition(id);
+    const position = options.getWorldPosition(id, positionScratch);
     if (!position) {
       continue;
     }
 
-    const screen = projectWorldToScreen(position, matrix, options.viewport);
-    if (!screen) {
+    const x = position[0];
+    const y = position[1];
+    const z = position[2];
+    const clipX = matrixAt(matrix, 0) * x + matrixAt(matrix, 4) * y + matrixAt(matrix, 8) * z + matrixAt(matrix, 12);
+    const clipY = matrixAt(matrix, 1) * x + matrixAt(matrix, 5) * y + matrixAt(matrix, 9) * z + matrixAt(matrix, 13);
+    const clipW = matrixAt(matrix, 3) * x + matrixAt(matrix, 7) * y + matrixAt(matrix, 11) * z + matrixAt(matrix, 15);
+    if (clipW <= 1e-6) {
       continue;
     }
+    const ndcX = clipX / clipW;
+    const ndcY = clipY / clipW;
+    if (ndcX < -1.1 || ndcX > 1.1 || ndcY < -1.1 || ndcY > 1.1) continue;
+    const screenX = ((ndcX + 1) * 0.5) * options.viewport.width;
+    const screenY = ((1 - ndcY) * 0.5) * options.viewport.height;
 
     const radius = options.getScreenRadius?.(id) ?? 24;
-    const dx = options.point.x - screen.x;
-    const dy = options.point.y - screen.y;
+    const dx = options.point.x - screenX;
+    const dy = options.point.y - screenY;
     const distanceSquared = dx * dx + dy * dy;
     if (distanceSquared > radius * radius) {
       continue;
     }
-    if (!nearest || distanceSquared < nearest.distanceSquared) {
-      nearest = { id, distanceSquared, screen, radius };
+    if (distanceSquared < nearestDistanceSquared) {
+      nearestId = id;
+      nearestDistanceSquared = distanceSquared;
+      nearestX = screenX;
+      nearestY = screenY;
+      nearestRadius = radius;
     }
   }
 
-  return nearest;
+  return nearestId === undefined ? undefined : {
+    id: nearestId,
+    distanceSquared: nearestDistanceSquared,
+    screen: { x: nearestX, y: nearestY },
+    radius: nearestRadius
+  };
 }
 
 /** Convert a pointer event into canvas-local coordinates and run `pickScreenSpaceInstance`. */
@@ -130,7 +154,7 @@ export function projectWorldToScreen(
   const clipY = matrixAt(matrix, 1) * x + matrixAt(matrix, 5) * y + matrixAt(matrix, 9) * z + matrixAt(matrix, 13);
   const clipW = matrixAt(matrix, 3) * x + matrixAt(matrix, 7) * y + matrixAt(matrix, 11) * z + matrixAt(matrix, 15);
 
-  if (Math.abs(clipW) < 1e-6) {
+  if (clipW <= 1e-6) {
     return undefined;
   }
 

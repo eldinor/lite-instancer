@@ -31,6 +31,11 @@ export function resolveOutlineEffects(options: OutlineAttachOptions): OutlineEff
   };
 }
 
+/** Return whether any animated outline effect is enabled without allocating an intermediate array. */
+export function hasOutlineEffects(effects: OutlineEffects): boolean {
+  return effects.pulse || effects.colorCycle || effects.edgeFlow || effects.rimFlow || effects.sizzle;
+}
+
 /**
  * Create the Babylon Lite WGSL material used by an outline attachment.
  *
@@ -45,7 +50,7 @@ export function createOutlineMaterial(
   skinning?: OutlineSkinning
 ): ShaderMaterial {
   const effects = resolveOutlineEffects(options);
-  const hasEffects = Object.values(effects).some(Boolean);
+  const hasEffects = hasOutlineEffects(effects);
   const uniforms: ShaderUniformOption[] = [
     "world",
     "view",
@@ -135,7 +140,7 @@ export function buildOutlineShaderSources(
   effects: OutlineEffects,
   skinning?: OutlineSkinning
 ): { vertex: string; fragment: string } {
-  const hasEffects = Object.values(effects).some(Boolean);
+  const hasEffects = hasOutlineEffects(effects);
   const fields = ["@builtin(position) position: vec4<f32>", "@location(0) outlineColor: vec3<f32>"];
   let location = 1;
   if (hasEffects) fields.push(`@location(${location++}) phase: f32`);

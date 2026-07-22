@@ -62,7 +62,7 @@ outlines.refresh(id);
 outlines.clear(id);
 ```
 
-Animated effects are selected at attach time. Their uniform-backed values can be changed with `setEffectParams`; enabling a new effect requires a new attachment. `createThinInstanceOutliner` provides the same lifecycle for ordinary meshes and raw thin-instance indices, but raw indices remain the caller's responsibility when source slots move. When the host has a live Babylon Lite skeleton, the outline automatically binds the same joint/weight streams and mirrors its current bone matrices before rendering, so skeletal silhouettes follow the source animation.
+Animated effects are selected at attach time. Their uniform-backed values can be changed with `setEffectParams`; enabling a new effect requires a new attachment. `createThinInstanceOutliner` provides the same lifecycle for ordinary meshes and raw thin-instance indices, but raw indices remain the caller's responsibility when source slots move. When the host has a live Babylon Lite skeleton, the outline automatically binds the same joint/weight streams and mirrors its current bone matrices before rendering, so skeletal silhouettes follow the source animation. Effect time and bone-buffer uploads pause automatically while an attachment has no active highlights.
 
 Explicit `positions`, `normals`, and `Uint32Array` indices are the supported geometry input. Skinned outline geometry must preserve the source mesh's vertex order so its joint/weight streams remain aligned. The retained-geometry helper does this but is best-effort because it reads version-sensitive Babylon Lite CPU mirrors. Outlines formally support opaque hosts. Extrusion happens in object space, so non-uniform scaling changes apparent thickness, and negative-determinant transforms can reverse the expected hull winding.
 
@@ -241,6 +241,8 @@ const boxes = createInstanceSet(mesh, {
   visibleStrategy: "active-count"
 });
 ```
+
+Ordinary single-mesh sets default to `dynamicDrawCount: true`. Once Babylon Lite has synchronized the fixed-capacity GPU buffers, count-only changes use stable indirect draw arguments and do not mark the matrix prefix dirty. Newly visible slots still upload their exact matrix/color ranges. The instancer automatically falls back during warm-up, resize, or other pending uploads. Use `dynamicDrawCount: false` only when an integration requires the legacy count setter. Hierarchy sets do not use this option because Babylon Lite does not yet expose a hierarchy draw-count-only API.
 
 `"scale-zero"` keeps IDs in the drawn range and hides instances by writing a zero-scale matrix. This keeps slot-indexed systems more stable, which is useful for VAT playback parameters and some external buffers.
 
@@ -486,12 +488,12 @@ const picked = pickScreenSpaceInstanceFromPointer({
   ids: sharks.visibleIds(),
   has: (id) => sharks.has(id),
   isVisible: (id) => sharks.getVisible(id),
-  getWorldPosition: (id) => sharkCenters.get(id),
+  getWorldPosition: (id, out) => sharks.getPosition(id, out),
   getScreenRadius: () => 32
 });
 ```
 
-This returns the nearest candidate inside its screen-space radius.
+This returns the nearest candidate inside its screen-space radius. The picker reuses the optional `out` array across candidates, so filling it avoids per-candidate position allocations.
 
 ## VAT Animation
 
@@ -654,6 +656,8 @@ Use `dispose` when the set is done and backing instance data should be detached:
 ```ts
 boxes.dispose();
 ```
+
+`dispose()` is safe to call more than once. It detaches only thin-instance bindings still owned by the set; it does not dispose the source mesh, hierarchy nodes, geometry, or materials. A binding replaced by another system is left untouched. Treat the set as unusable afterward: later reads and writes throw `InstancerError`.
 
 ## Recommended Patterns
 
