@@ -6,13 +6,15 @@
 
 - Add engine-neutral slot-aligned float streams with dirty-range diagnostics and reusable cross-engine contracts.
 - Add versioned Lite VAT asset validation, JSON/binary codecs, sampled-matrix preprocessing limits, a reusable worker-pool protocol, animated bounds metadata, controls, and capability reporting.
-- Add reproducible Massive Avatar Arena frame, playback, allocation, and exact backend-upload telemetry plus an automatic 100/500/1,000/1,500/2,500-population steady/reaction benchmark.
+- Add reproducible Massive Avatar Arena frame, playback, allocation, exact backend-upload, GPU timestamp, and rendered-geometry telemetry with a separate copyable report panel.
+- Finalize the Avatar Arena benchmark with a thermal-safe single-pass 100/500/1,000/1,500 quick mode, adaptive 100-avatar recovery, immediate recovery-failure aborts and partial reports, automatic return to 100, locked camera controls, a top-center phase status, and a clearly labeled optional two-pass stress mode. Schema-v6 reports distinguish unverified single samples from drift-checked medians.
 
 ### Changed
 
 - Keep persistent VAT playback buffers for single- and multi-mesh sets, updating only slots affected by playback or lifecycle changes before Babylon Lite's required full upload.
 - Add nested-safe `batchPlayback()` transactions for single- and multi-mesh VAT sets, and use them to collapse Avatar Arena reaction-wave edits into one upload per affected mesh stream per frame.
 - Add atomic `setPlayback()`/`setPlaybackMany()` updates, coordinated character `setVisibleMany()`, no-op detection, and visible-prefix VAT uploads for packed active-count sets.
+- Raise the Babylon Lite peer baseline to 1.13 for public retained-geometry inspection; native Lite LOD remains intentionally unconfigured.
 - Store instance colors through the same slot lifecycle abstraction while preserving the existing color API.
 
 ## 0.5.0 - 2026-07-18

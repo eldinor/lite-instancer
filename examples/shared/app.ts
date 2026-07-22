@@ -30,6 +30,7 @@ export interface ExampleContext {
   picker: GpuPicker;
   registry: PickingRegistry;
   panel: DebugPanel;
+  setCameraControlsEnabled(enabled: boolean): void;
 }
 
 export interface DebugPanel {
@@ -58,12 +59,15 @@ export async function createExample(title: string, options: CreateExampleOptions
   const engine = await createEngine(canvas);
   const scene = createSceneContext(engine);
   scene.clearColor = { r: 0.025, g: 0.028, b: 0.034, a: 1 };
+  let controlledCamera: ReturnType<typeof createArcRotateCamera> | undefined;
+  let detachCameraControl: (() => void) | undefined;
 
   if (options.createDefaultCamera ?? true) {
     const camera = createArcRotateCamera(-Math.PI / 4, Math.PI / 3.2, 34, vec3(0, 0, 0));
+    controlledCamera = camera;
     scene.camera = camera;
     addToScene(scene, camera);
-    attachControl(camera, canvas, scene);
+    detachCameraControl = attachControl(camera, canvas, scene);
   }
   addToScene(scene, createHemisphericLight([0, 1, 0], 1.1));
 
@@ -73,7 +77,18 @@ export async function createExample(title: string, options: CreateExampleOptions
   panel.set("status", "initializing");
   panel.set("selected", "-");
 
-  return { canvas, engine, scene, picker, registry, panel };
+  const setCameraControlsEnabled = (enabled: boolean): void => {
+    if (!enabled) {
+      detachCameraControl?.();
+      detachCameraControl = undefined;
+      return;
+    }
+    if (!detachCameraControl && controlledCamera) {
+      detachCameraControl = attachControl(controlledCamera, canvas, scene);
+    }
+  };
+
+  return { canvas, engine, scene, picker, registry, panel, setCameraControlsEnabled };
 }
 
 export async function runExample(ctx: ExampleContext): Promise<void> {

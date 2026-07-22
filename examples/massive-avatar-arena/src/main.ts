@@ -3,10 +3,13 @@ import {
   createCylinder,
   createGround,
   createPbrMaterial,
+  getMeshGeometry,
+  isGpuTimingSupported,
   loadEnvironment,
   loadGltf,
   onBeforeRender,
   playAnimation,
+  setGpuTimingEnabled,
   stopAnimation,
   type AnimationGroup,
   type ArcRotateCamera,
@@ -15,18 +18,26 @@ import {
 import {
   composeMat4,
   createVatCharacterSet,
+  findSkinnedMeshes,
   pickScreenSpaceInstanceFromPointer,
   type InstanceId,
   type VatCharacterSet
 } from "../../../src/index.js";
 import { createThinInstanceOutliner, tryGetRetainedOutlineGeometry } from "../../../src/outline.js";
-import { collectMeshes, createExample, runExample } from "../../shared/app.js";
+import { collectMeshes, createExample, createPanel, runExample } from "../../shared/app.js";
 import {
+  serializeArenaBenchmarkReport,
   summarizeArenaBenchmarkPhase,
+  aggregateArenaPopulationResults,
+  ARENA_BENCHMARK_RELIABILITY_DRIFT_PERCENT,
+  type ArenaBenchmarkReport,
   type ArenaBenchmarkCounters,
   type ArenaBenchmarkFrame,
   type ArenaBenchmarkPhaseResult,
+  type ArenaBenchmarkPassResult,
   type ArenaBenchmarkPopulation,
+  type ArenaBenchmarkRecoveryResult,
+  type ArenaGeometryWorkload,
   type ArenaPopulationBenchmarkResult
 } from "./benchmark.js";
 
@@ -36,9 +47,16 @@ const BRDF_URL = "https://raw.githubusercontent.com/BabylonJS/Babylon-Lite/maste
 const GOLD: readonly [number, number, number] = [1, 0.64, 0.14];
 const TEAL: readonly [number, number, number] = [0.08, 0.9, 0.78];
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-const BENCHMARK_WARMUP_MS = 1500;
-const BENCHMARK_STEADY_MS = 3000;
-const BENCHMARK_REACTION_MS = 8500;
+const BENCHMARK_WARMUP_MS = 500;
+const BENCHMARK_STEADY_MS = 1000;
+const BENCHMARK_REACTION_MS = 3000;
+const BENCHMARK_REACTION_TIME_SCALE = 3;
+const BENCHMARK_POPULATION_COOLDOWN_MS = 750;
+const BENCHMARK_BASELINE_MS = 1500;
+const BENCHMARK_RECOVERY_SETTLE_MS = 1000;
+const BENCHMARK_RECOVERY_WINDOW_MS = 1000;
+const BENCHMARK_RECOVERY_MAX_MS = 15000;
+const BENCHMARK_RECOVERY_TOLERANCE_PERCENT = 10;
 
 type Action = "idle" | "walk" | "run" | "jump" | "kick" | "fall" | "land";
 type CrowdKind = "citizens" | "aliens" | "robots";
@@ -68,6 +86,13 @@ interface CrowdPool {
   readonly spec: CrowdSpec;
   readonly characters: VatCharacterSet<CrowdMember>;
   readonly members: CrowdMember[];
+  readonly geometry: CrowdGeometryStats;
+}
+
+interface CrowdGeometryStats {
+  readonly meshParts: number;
+  readonly verticesPerCharacter: number;
+  readonly trianglesPerCharacter: number;
 }
 
 interface PopulationPreset {
@@ -89,14 +114,35 @@ interface BenchmarkCapture {
   readonly heapBefore: number | undefined;
 }
 
+type BenchmarkMode = "quick" | "stress";
+
+interface BenchmarkOrder {
+  readonly direction: "ascending" | "descending";
+  readonly indices: readonly number[];
+}
+
 interface BenchmarkRun {
+  readonly mode: BenchmarkMode;
+  readonly orders: readonly BenchmarkOrder[];
   presetIndex: number;
-  phase: "warmup" | "steady" | "reaction";
+  passIndex: number;
+  positionIndex: number;
+  phase: "baseline-cooldown" | "baseline" | "population-cooldown" | "recovery" | "warmup" | "steady" | "reaction";
   elapsedMs: number;
   populationApplyMs: number;
   capture: BenchmarkCapture | undefined;
   steady: ArenaBenchmarkPhaseResult | undefined;
-  readonly results: ArenaPopulationBenchmarkResult[];
+  readonly passes: ArenaBenchmarkPassResult[];
+  readonly passResults: ArenaPopulationBenchmarkResult[];
+  readonly baselineFrames: ArenaBenchmarkFrame[];
+  baselineFrameP95Ms: number;
+  baselineGpuP95Ms: number;
+  readonly recoveryGpuSamples: number[];
+  recoveryLastCheckMs: number;
+  latestRecoveryGpuP95Ms: number;
+  recoveryAfterPopulation: ArenaBenchmarkPopulation | undefined;
+  recoveryAfterPassIteration: number;
+  readonly recoveries: ArenaBenchmarkRecoveryResult[];
 }
 
 const CROWD_SPECS: readonly CrowdSpec[] = [
@@ -168,10 +214,18 @@ const POPULATIONS: readonly PopulationPreset[] = [
   { population: 500, label: "500", counts: { citizens: 400, aliens: 70, robots: 30 } },
   { population: 1000, label: "1,000", counts: { citizens: 800, aliens: 140, robots: 60 } },
   { population: 1500, label: "1,500", counts: { citizens: 1200, aliens: 210, robots: 90 } },
+  { population: 2000, label: "2,000", counts: { citizens: 1600, aliens: 280, robots: 120 } },
   { population: 2500, label: "2,500", counts: { citizens: 2000, aliens: 360, robots: 140 } }
 ];
+const BENCHMARK_POPULATION_INDICES = POPULATIONS.slice(0, -2).map((_, index) => index);
+const BENCHMARK_ORDERS: readonly BenchmarkOrder[] = [
+  { direction: "ascending" as const, indices: BENCHMARK_POPULATION_INDICES },
+  { direction: "descending" as const, indices: [...BENCHMARK_POPULATION_INDICES].reverse() }
+] as const;
 
 const ctx = await createExample("Massive Avatar Arena");
+const gpuTimingSupported = isGpuTimingSupported(ctx.engine);
+if (gpuTimingSupported) setGpuTimingEnabled(ctx.engine, true);
 ctx.panel.set("status", "loading four animated avatars");
 await loadEnvironment(ctx.scene, ENVIRONMENT_URL, { brdfUrl: BRDF_URL });
 createArena();
@@ -186,21 +240,53 @@ let heroView = false;
 let heroAction: Action = "idle";
 let heroReturnAt: number | undefined;
 let reactionStartedAt: number | undefined;
+let reactionTimeScale = 1;
 let timeSeconds = 0;
 let selected: Selection | undefined;
 const frameSamples: number[] = [];
 const playbackMutationSamples: number[] = [];
 let telemetryFrames = 0;
 let benchmarkRun: BenchmarkRun | undefined;
+let latestBenchmarkReport: ArenaBenchmarkReport | undefined;
 
 const selectionMarker = createSelectionMarker();
+const benchmarkPanel = createPanel("Benchmark");
+benchmarkPanel.root.classList.add("benchmark-panel");
+benchmarkPanel.root.querySelector(".panel-home")?.remove();
+document.body.append(benchmarkPanel.root);
+const benchmarkStatus = document.createElement("div");
+benchmarkStatus.className = "benchmark-status";
+benchmarkStatus.setAttribute("role", "status");
+benchmarkStatus.setAttribute("aria-live", "polite");
+benchmarkStatus.hidden = true;
+document.body.append(benchmarkStatus);
+benchmarkPanel.set("status", "ready");
+benchmarkPanel.set("GPU timing", gpuTimingSupported ? "enabled · awaiting samples" : "unsupported by adapter/device");
+benchmarkPanel.set("format", "quick: one pass to 1,500 · optional 2-pass stress · stop available");
+const fullGeometryWorkload = getGeometryWorkload(POPULATIONS.length - 1);
+benchmarkPanel.set(
+  "full crowd geometry",
+  `${fullGeometryWorkload.sourceMeshParts} source parts · ${formatCount(fullGeometryWorkload.renderedVertices)} vertices · ` +
+    `${formatCount(fullGeometryWorkload.renderedTriangles)} triangles/frame`
+);
 const populationButton = ctx.panel.button("population: 100", () => {
   if (benchmarkRun) return;
   populationIndex = (populationIndex + 1) % POPULATIONS.length;
   populationButton.textContent = `population: ${POPULATIONS[populationIndex]!.label}`;
   applyPopulation();
 });
-const benchmarkButton = ctx.panel.button("benchmark 100 / 500 / 1,000 / 1,500 / 2,500", startArenaBenchmark);
+const benchmarkButtonLabel = "quick benchmark: 100 / 500 / 1,000 / 1,500";
+const benchmarkButton = benchmarkPanel.button(benchmarkButtonLabel, () => {
+  if (benchmarkRun) stopArenaBenchmark();
+  else startArenaBenchmark("quick");
+});
+const stressBenchmarkButton = benchmarkPanel.button("stress benchmark: 2 passes after cool-down", () => {
+  startArenaBenchmark("stress");
+});
+const copyBenchmarkButton = benchmarkPanel.button("copy report", () => {
+  void copyBenchmarkReport();
+});
+copyBenchmarkButton.disabled = true;
 ctx.panel.button("reaction wave", () => {
   if (!benchmarkRun) startReactionWave();
 });
@@ -294,6 +380,7 @@ async function createCrowdPool(spec: CrowdSpec): Promise<CrowdPool> {
   const container = await loadGltf(ctx.engine, spec.asset);
   const root = container.entities[0];
   if (!isSceneNode(root)) throw new Error(`${spec.label} did not provide a scene-node root`);
+  const geometry = measureCrowdGeometry(root);
   const byName = new Map((container.animationGroups ?? []).map((animation) => [animation.name, animation]));
   const animations = Object.values(spec.clips).map((name) => {
     const animation = byName.get(name);
@@ -335,7 +422,21 @@ async function createCrowdPool(spec: CrowdSpec): Promise<CrowdPool> {
     });
     members.push(member);
   }
-  return { spec, characters, members };
+  return { spec, characters, members, geometry };
+}
+
+function measureCrowdGeometry(root: SceneNode): CrowdGeometryStats {
+  let meshParts = 0;
+  let verticesPerCharacter = 0;
+  let trianglesPerCharacter = 0;
+  for (const mesh of findSkinnedMeshes(root)) {
+    const geometry = getMeshGeometry(mesh);
+    if (!geometry) continue;
+    meshParts++;
+    verticesPerCharacter += geometry.positions.length / 3;
+    trianglesPerCharacter += geometry.indices.length / 3;
+  }
+  return { meshParts, verticesPerCharacter, trianglesPerCharacter };
 }
 
 function createArena(): void {
@@ -403,8 +504,9 @@ function applyPopulation(): void {
   if (selected && !selected.pool.characters.getVisible(selected.member.id)) clearSelection();
 }
 
-function startReactionWave(): void {
+function startReactionWave(timeScale = 1): void {
   reactionStartedAt = timeSeconds;
+  reactionTimeScale = timeScale;
   heroReturnAt = timeSeconds + 1.5;
   activateHero("kick");
   for (const pool of pools) {
@@ -414,7 +516,7 @@ function startReactionWave(): void {
 
 function updateReactionWave(): void {
   if (reactionStartedAt === undefined) return;
-  const elapsed = timeSeconds - reactionStartedAt;
+  const elapsed = (timeSeconds - reactionStartedAt) * reactionTimeScale;
   let complete = true;
   for (const pool of pools) {
     const visibleCount = getVisibleCount(pool.spec.kind);
@@ -440,7 +542,10 @@ function updateReactionWave(): void {
       }
     });
   }
-  if (complete) reactionStartedAt = undefined;
+  if (complete) {
+    reactionStartedAt = undefined;
+    reactionTimeScale = 1;
+  }
 }
 
 function setMemberStage(pool: CrowdPool, member: CrowdMember, stage: ReactionStage): void {
@@ -523,35 +628,87 @@ function focusCamera(): void {
   camera.beta = heroView ? Math.PI / 2.2 : Math.PI / 3.1;
 }
 
-function startArenaBenchmark(): void {
+function startArenaBenchmark(mode: BenchmarkMode): void {
   if (benchmarkRun) return;
   paused = false;
   hero.active.speedRatio = 1;
   heroView = false;
   focusCamera();
+  ctx.setCameraControlsEnabled(false);
   clearSelection();
-  benchmarkButton.disabled = true;
+  benchmarkButton.textContent = "stop benchmark";
+  stressBenchmarkButton.disabled = true;
+  copyBenchmarkButton.disabled = true;
+  setBenchmarkStatus(mode === "quick" ? "starting quick benchmark" : "starting optional stress benchmark");
   benchmarkRun = {
+    mode,
+    orders: mode === "quick" ? BENCHMARK_ORDERS.slice(0, 1) : BENCHMARK_ORDERS,
     presetIndex: 0,
-    phase: "warmup",
+    passIndex: 0,
+    positionIndex: 0,
+    phase: "baseline-cooldown",
     elapsedMs: 0,
     populationApplyMs: 0,
     capture: undefined,
     steady: undefined,
-    results: []
+    passes: [],
+    passResults: [],
+    baselineFrames: [],
+    baselineFrameP95Ms: 0,
+    baselineGpuP95Ms: 0,
+    recoveryGpuSamples: [],
+    recoveryLastCheckMs: 0,
+    latestRecoveryGpuP95Ms: 0,
+    recoveryAfterPopulation: undefined,
+    recoveryAfterPassIteration: 0,
+    recoveries: []
   };
-  beginBenchmarkPopulation(0);
+  beginBenchmarkBaseline();
+}
+
+function stopArenaBenchmark(): void {
+  if (!benchmarkRun) return;
+  benchmarkRun = undefined;
+  reactionStartedAt = undefined;
+  reactionTimeScale = 1;
+  populationIndex = 0;
+  populationButton.textContent = `population: ${POPULATIONS[0]!.label}`;
+  applyPopulation();
+  ctx.setCameraControlsEnabled(true);
+  benchmarkButton.textContent = benchmarkButtonLabel;
+  stressBenchmarkButton.disabled = false;
+  copyBenchmarkButton.disabled = latestBenchmarkReport === undefined;
+  setBenchmarkStatus("stopped · returned to 100 avatars", false);
+}
+
+function setBenchmarkStatus(message: string, visible = true): void {
+  benchmarkPanel.set("status", message);
+  benchmarkStatus.textContent = `BENCHMARK · ${message}`;
+  benchmarkStatus.hidden = !visible;
+}
+
+function beginBenchmarkBaseline(): void {
+  const run = benchmarkRun;
+  if (!run) return;
+  populationIndex = 0;
+  populationButton.textContent = `population: ${POPULATIONS[0]!.label}`;
+  applyPopulation();
+  run.phase = "baseline-cooldown";
+  run.elapsedMs = 0;
+  run.baselineFrames.length = 0;
+  setBenchmarkStatus("establishing 100-avatar baseline · cooling down");
 }
 
 function beginBenchmarkPopulation(presetIndex: number): void {
   const run = benchmarkRun;
   if (!run) return;
   run.presetIndex = presetIndex;
-  run.phase = "warmup";
+  run.phase = "population-cooldown";
   run.elapsedMs = 0;
   run.capture = undefined;
   run.steady = undefined;
   reactionStartedAt = undefined;
+  reactionTimeScale = 1;
   for (const pool of pools) {
     for (const member of pool.members) setMemberStage(pool, member, "base");
   }
@@ -560,7 +717,9 @@ function beginBenchmarkPopulation(presetIndex: number): void {
   const started = performance.now();
   applyPopulation();
   run.populationApplyMs = performance.now() - started;
-  ctx.panel.set("benchmark", `${POPULATIONS[presetIndex]!.label}: warming up`);
+  setBenchmarkStatus(
+    `${run.orders[run.passIndex]!.direction} · ${POPULATIONS[presetIndex]!.label}: cooling down`
+  );
 }
 
 function beginBenchmarkCapture(phase: "steady" | "reaction"): void {
@@ -575,13 +734,56 @@ function beginBenchmarkCapture(phase: "steady" | "reaction"): void {
     countersBefore: getBenchmarkCounters(),
     heapBefore: getHeapBytes()
   };
-  ctx.panel.set("benchmark", `${POPULATIONS[run.presetIndex]!.label}: ${phase}`);
+  setBenchmarkStatus(`${POPULATIONS[run.presetIndex]!.label}: ${phase}`);
 }
 
 function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
   const run = benchmarkRun;
   if (!run) return;
   run.elapsedMs += deltaMs;
+  if (run.phase === "baseline-cooldown") {
+    if (run.elapsedMs >= BENCHMARK_POPULATION_COOLDOWN_MS) {
+      run.phase = "baseline";
+      run.elapsedMs = 0;
+      setBenchmarkStatus("measuring 100-avatar recovery baseline");
+    }
+    return;
+  }
+  if (run.phase === "baseline") {
+    run.baselineFrames.push({
+      frameMs: deltaMs,
+      updateMs,
+      gpuMs: ctx.engine.gpuFrameTimeMs,
+      drawCalls: ctx.engine.drawCallCount
+    });
+    if (run.elapsedMs >= BENCHMARK_BASELINE_MS) {
+      run.baselineFrameP95Ms = percentile(run.baselineFrames.map((sample) => sample.frameMs), 0.95);
+      run.baselineGpuP95Ms = percentile(
+        run.baselineFrames.map((sample) => sample.gpuMs).filter((sample) => sample > 0),
+        0.95
+      );
+      benchmarkPanel.set(
+        "baseline",
+        `frame ${run.baselineFrameP95Ms.toFixed(2)} ms · GPU ${formatGpuMs(run.baselineGpuP95Ms)}`
+      );
+      beginBenchmarkPopulation(0);
+    }
+    return;
+  }
+  if (run.phase === "recovery") {
+    advanceBenchmarkRecovery(run);
+    return;
+  }
+  if (run.phase === "population-cooldown") {
+    if (run.elapsedMs >= BENCHMARK_POPULATION_COOLDOWN_MS) {
+      run.phase = "warmup";
+      run.elapsedMs = 0;
+      setBenchmarkStatus(
+        `${run.orders[run.passIndex]!.direction} · ${POPULATIONS[run.presetIndex]!.label}: warming up`
+      );
+    }
+    return;
+  }
   if (run.phase === "warmup") {
     if (run.elapsedMs >= BENCHMARK_WARMUP_MS) beginBenchmarkCapture("steady");
     return;
@@ -600,7 +802,7 @@ function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
   if (run.phase === "steady" && capture.elapsedMs >= BENCHMARK_STEADY_MS) {
     run.steady = finishBenchmarkCapture(capture, BENCHMARK_STEADY_MS);
     beginBenchmarkCapture("reaction");
-    startReactionWave();
+    startReactionWave(BENCHMARK_REACTION_TIME_SCALE);
     return;
   }
   if (run.phase !== "reaction" || capture.elapsedMs < BENCHMARK_REACTION_MS) return;
@@ -614,6 +816,7 @@ function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
     population: expectedPopulation,
     populationApplyMs: run.populationApplyMs,
     visibleCount,
+    geometry: getGeometryWorkload(run.presetIndex),
     steady,
     reaction,
     passed:
@@ -621,21 +824,147 @@ function advanceArenaBenchmark(deltaMs: number, updateMs: number): void {
       steady.frames > 0 &&
       reaction.frames > 0 &&
       Number.isFinite(steady.frameP95Ms) &&
-      Number.isFinite(reaction.frameP95Ms)
+      Number.isFinite(reaction.frameP95Ms),
+    sampleCount: 1,
+    frameP95DriftPercent: 0,
+    gpuP95DriftPercent: undefined,
+    reliable: false
   };
-  run.results.push(result);
-  ctx.panel.set(
-    `bench ${expectedPopulation.toLocaleString()}`,
-    `steady ${steady.frameP95Ms.toFixed(2)}ms · wave ${reaction.frameP95Ms.toFixed(2)}ms · ` +
-      `${reaction.playbackMutationCount} edits · ${formatBytes(reaction.uploads.backendBytesUploaded)}`
-  );
+  run.passResults.push(result);
+  advanceBenchmarkSequence(run, expectedPopulation);
+}
 
-  const nextPreset = run.presetIndex + 1;
-  if (nextPreset < POPULATIONS.length) {
-    beginBenchmarkPopulation(nextPreset);
+function advanceBenchmarkSequence(run: BenchmarkRun, completedPopulation: ArenaBenchmarkPopulation): void {
+  const completedPassIteration = run.passIndex + 1;
+  const order = run.orders[run.passIndex]!;
+  run.positionIndex += 1;
+  if (run.positionIndex >= order.indices.length) {
+    run.passes.push({
+      iteration: completedPassIteration,
+      direction: order.direction,
+      results: [...run.passResults]
+    });
+    run.passResults.length = 0;
+    run.passIndex += 1;
+    run.positionIndex = 0;
+  }
+
+  if (run.passIndex >= run.orders.length) {
+    finishArenaBenchmark(aggregateBenchmarkResults(run.passes), run, true, undefined, run.passes);
     return;
   }
-  finishArenaBenchmark(run.results);
+
+  if (completedPopulation > 100) {
+    beginBenchmarkRecovery(run, completedPopulation, completedPassIteration);
+    return;
+  }
+
+  const nextOrder = run.orders[run.passIndex]!;
+  beginBenchmarkPopulation(nextOrder.indices[run.positionIndex]!);
+}
+
+function getBenchmarkReportPasses(run: BenchmarkRun): readonly ArenaBenchmarkPassResult[] {
+  if (run.passResults.length === 0 || run.passIndex >= run.orders.length) return run.passes;
+  return [
+    ...run.passes,
+    {
+      iteration: run.passIndex + 1,
+      direction: run.orders[run.passIndex]!.direction,
+      results: [...run.passResults]
+    }
+  ];
+}
+
+function aggregateBenchmarkResults(
+  passes: readonly ArenaBenchmarkPassResult[]
+): readonly ArenaPopulationBenchmarkResult[] {
+  return BENCHMARK_POPULATION_INDICES.map((index) => POPULATIONS[index]!).flatMap((preset) => {
+    const samples = passes.flatMap((pass) =>
+      pass.results.filter((result) => result.population === preset.population)
+    );
+    return samples.length > 0 ? [aggregateArenaPopulationResults(samples)] : [];
+  });
+}
+
+function beginBenchmarkRecovery(
+  run: BenchmarkRun,
+  afterPopulation: ArenaBenchmarkPopulation,
+  passIteration: number
+): void {
+  populationIndex = 0;
+  populationButton.textContent = `population: ${POPULATIONS[0]!.label}`;
+  applyPopulation();
+  reactionStartedAt = undefined;
+  reactionTimeScale = 1;
+  run.phase = "recovery";
+  run.elapsedMs = 0;
+  run.capture = undefined;
+  run.steady = undefined;
+  run.recoveryGpuSamples.length = 0;
+  run.recoveryLastCheckMs = BENCHMARK_RECOVERY_SETTLE_MS;
+  run.latestRecoveryGpuP95Ms = 0;
+  run.recoveryAfterPopulation = afterPopulation;
+  run.recoveryAfterPassIteration = passIteration;
+  setBenchmarkStatus(`recovering at 100 after ${afterPopulation.toLocaleString()} avatars`);
+}
+
+function advanceBenchmarkRecovery(run: BenchmarkRun): void {
+  if (run.elapsedMs >= BENCHMARK_RECOVERY_SETTLE_MS && ctx.engine.gpuFrameTimeMs > 0) {
+    run.recoveryGpuSamples.push(ctx.engine.gpuFrameTimeMs);
+  }
+
+  const windowComplete = run.elapsedMs - run.recoveryLastCheckMs >= BENCHMARK_RECOVERY_WINDOW_MS;
+  if (windowComplete) {
+    run.latestRecoveryGpuP95Ms = percentile(run.recoveryGpuSamples, 0.95);
+    run.recoveryGpuSamples.length = 0;
+    run.recoveryLastCheckMs = run.elapsedMs;
+    const recoveryLimit = run.baselineGpuP95Ms * (1 + BENCHMARK_RECOVERY_TOLERANCE_PERCENT / 100);
+    const recovered =
+      gpuTimingSupported &&
+      run.baselineGpuP95Ms > 0 &&
+      run.latestRecoveryGpuP95Ms > 0 &&
+      run.latestRecoveryGpuP95Ms <= recoveryLimit;
+    benchmarkPanel.set(
+      "recovery",
+      `${formatGpuMs(run.latestRecoveryGpuP95Ms)} / ${formatGpuMs(recoveryLimit)} limit`
+    );
+    if (recovered) {
+      finishBenchmarkRecovery(run, true);
+      return;
+    }
+  }
+
+  if (!gpuTimingSupported && windowComplete) {
+    finishBenchmarkRecovery(run, true);
+    return;
+  }
+  if (run.elapsedMs >= BENCHMARK_RECOVERY_MAX_MS) {
+    finishBenchmarkRecovery(run, false);
+  }
+}
+
+function finishBenchmarkRecovery(run: BenchmarkRun, recovered: boolean): void {
+  const afterPopulation = run.recoveryAfterPopulation;
+  if (afterPopulation === undefined) throw new Error("Avatar Arena recovery completed without a population.");
+  run.recoveries.push({
+    afterPopulation,
+    passIteration: run.recoveryAfterPassIteration,
+    durationMs: run.elapsedMs,
+    gpuP95Ms: run.latestRecoveryGpuP95Ms,
+    recovered
+  });
+  run.recoveryAfterPopulation = undefined;
+  if (!recovered) {
+    abortArenaBenchmark(run, `thermal recovery failed after ${afterPopulation.toLocaleString()} avatars`);
+    return;
+  }
+  const order = run.orders[run.passIndex]!;
+  beginBenchmarkPopulation(order.indices[run.positionIndex]!);
+}
+
+function abortArenaBenchmark(run: BenchmarkRun, reason: string): void {
+  const passes = getBenchmarkReportPasses(run);
+  finishArenaBenchmark(aggregateBenchmarkResults(passes), run, false, reason, passes);
 }
 
 function finishBenchmarkCapture(capture: BenchmarkCapture, durationMs: number): ArenaBenchmarkPhaseResult {
@@ -651,35 +980,119 @@ function finishBenchmarkCapture(capture: BenchmarkCapture, durationMs: number): 
   });
 }
 
-function finishArenaBenchmark(results: readonly ArenaPopulationBenchmarkResult[]): void {
-  const report = {
-    schemaVersion: 2,
+function finishArenaBenchmark(
+  results: readonly ArenaPopulationBenchmarkResult[],
+  run: BenchmarkRun,
+  completed: boolean,
+  stopReason: string | undefined,
+  passes: readonly ArenaBenchmarkPassResult[]
+): void {
+  const report: ArenaBenchmarkReport = {
+    schemaVersion: 6,
     timestamp: new Date().toISOString(),
     environment: {
       userAgent: navigator.userAgent,
       hardwareConcurrency: navigator.hardwareConcurrency,
-      renderingBackend: "webgpu"
+      renderingBackend: "webgpu",
+      gpuTimingSupported
     },
     settings: {
+      mode: run.mode,
       warmupMs: BENCHMARK_WARMUP_MS,
       steadyMs: BENCHMARK_STEADY_MS,
-      reactionMs: BENCHMARK_REACTION_MS
+      reactionMs: BENCHMARK_REACTION_MS,
+      reactionTimeScale: BENCHMARK_REACTION_TIME_SCALE,
+      populationCooldownMs: BENCHMARK_POPULATION_COOLDOWN_MS,
+      baselineMs: BENCHMARK_BASELINE_MS,
+      recoverySettleMs: BENCHMARK_RECOVERY_SETTLE_MS,
+      recoveryWindowMs: BENCHMARK_RECOVERY_WINDOW_MS,
+      recoveryMaxMs: BENCHMARK_RECOVERY_MAX_MS,
+      recoveryTolerancePercent: BENCHMARK_RECOVERY_TOLERANCE_PERCENT,
+      reliabilityDriftPercent: ARENA_BENCHMARK_RELIABILITY_DRIFT_PERCENT,
+      passCount: run.orders.length,
+      populations: BENCHMARK_POPULATION_INDICES.map((index) => POPULATIONS[index]!.population)
     },
-    results
+    completed,
+    ...(stopReason === undefined ? {} : { stopReason }),
+    baseline: { frameP95Ms: run.baselineFrameP95Ms, gpuP95Ms: run.baselineGpuP95Ms },
+    results,
+    passes,
+    recoveries: run.recoveries
   };
+  latestBenchmarkReport = report;
   (globalThis as typeof globalThis & { __liteInstancerArenaBenchmark?: unknown }).__liteInstancerArenaBenchmark = report;
+  for (const result of results) showBenchmarkResult(result);
   console.table(results.map((result) => ({
     population: result.population,
     applyMs: result.populationApplyMs.toFixed(2),
     steadyP95Ms: result.steady.frameP95Ms.toFixed(2),
     reactionP95Ms: result.reaction.frameP95Ms.toFixed(2),
+    updateP95Ms: result.reaction.updateP95Ms.toFixed(2),
+    gpuP95Ms: formatGpuMs(result.reaction.gpuP95Ms),
+    averageDraws: result.reaction.averageDrawCalls.toFixed(1),
+    renderedVertices: Math.round(result.geometry.renderedVertices),
+    renderedTriangles: Math.round(result.geometry.renderedTriangles),
     mutationP95Ms: result.reaction.playbackMutationP95Ms.toFixed(3),
+    uploadCalls: result.reaction.uploads.backendUploadCalls,
     uploadMiB: (result.reaction.uploads.backendBytesUploaded / 1024 / 1024).toFixed(2),
-    passed: result.passed
+    samples: result.sampleCount,
+    frameDriftPercent: result.frameP95DriftPercent.toFixed(1),
+    gpuDriftPercent: result.gpuP95DriftPercent?.toFixed(1) ?? "n/a",
+    passed: result.passed,
+    reliable: result.reliable
   })));
-  ctx.panel.set("benchmark", results.every((result) => result.passed) ? "complete · report ready" : "complete · validation failed");
+  const repeatedResults = results.filter((result) => result.sampleCount > 1);
+  const unreliable = repeatedResults.filter((result) => !result.reliable).length;
+  const completionStatus = !completed
+      ? `stopped · ${stopReason ?? "incomplete"} · partial report ready`
+      : !results.every((result) => result.passed)
+      ? "complete · validation failed"
+      : unreliable > 0
+        ? `complete · ${unreliable} unreliable median${unreliable === 1 ? "" : "s"}`
+        : run.mode === "quick"
+          ? "complete · quick single-pass report ready"
+          : "complete · report ready";
+  setBenchmarkStatus(completionStatus, false);
   benchmarkRun = undefined;
-  benchmarkButton.disabled = false;
+  reactionStartedAt = undefined;
+  reactionTimeScale = 1;
+  populationIndex = 0;
+  populationButton.textContent = `population: ${POPULATIONS[0]!.label}`;
+  applyPopulation();
+  ctx.setCameraControlsEnabled(true);
+  benchmarkButton.textContent = benchmarkButtonLabel;
+  stressBenchmarkButton.disabled = false;
+  copyBenchmarkButton.disabled = false;
+}
+
+async function copyBenchmarkReport(): Promise<void> {
+  if (!latestBenchmarkReport) {
+    benchmarkPanel.set("copy", "no report available");
+    return;
+  }
+  const text = serializeArenaBenchmarkReport(latestBenchmarkReport);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyTextFallback(text);
+    }
+    benchmarkPanel.set("copy", `copied ${text.length.toLocaleString()} characters`);
+  } catch (error) {
+    benchmarkPanel.set("copy", error instanceof Error ? error.message : "copy failed");
+  }
+}
+
+function copyTextFallback(text: string): void {
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.append(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("Clipboard access is unavailable.");
 }
 
 function getBenchmarkCounters(): ArenaBenchmarkCounters {
@@ -704,8 +1117,63 @@ function getBenchmarkPopulation(index: number): ArenaBenchmarkPopulation {
   return POPULATIONS[index]?.population ?? 100;
 }
 
+function getGeometryWorkload(presetIndex: number): ArenaGeometryWorkload {
+  const preset = POPULATIONS[presetIndex] ?? POPULATIONS[0]!;
+  return {
+    sourceMeshParts: pools.reduce((total, pool) => total + pool.geometry.meshParts, 0),
+    renderedMeshInstances: pools.reduce(
+      (total, pool) => total + preset.counts[pool.spec.kind] * pool.geometry.meshParts,
+      0
+    ),
+    renderedVertices: pools.reduce(
+      (total, pool) => total + preset.counts[pool.spec.kind] * pool.geometry.verticesPerCharacter,
+      0
+    ),
+    renderedTriangles: pools.reduce(
+      (total, pool) => total + preset.counts[pool.spec.kind] * pool.geometry.trianglesPerCharacter,
+      0
+    )
+  };
+}
+
+function showBenchmarkResult(result: ArenaPopulationBenchmarkResult): void {
+  const label = `${result.sampleCount > 1 ? "median" : "sample"} ${result.population.toLocaleString()}`;
+  benchmarkPanel.set(
+    `${label} timing`,
+    `F ${result.steady.frameP95Ms.toFixed(2)}/${result.reaction.frameP95Ms.toFixed(2)} ms · ` +
+      `U ${result.reaction.updateP95Ms.toFixed(2)} ms · G ${formatGpuMs(result.reaction.gpuP95Ms)}`
+  );
+  benchmarkPanel.set(
+    `${label} work`,
+    `${result.reaction.playbackMutationCount.toFixed(0)} edits · ${result.reaction.averageDrawCalls.toFixed(1)} draws · ` +
+      `${result.reaction.uploads.backendUploadCalls.toFixed(0)} calls · ${formatBytes(result.reaction.uploads.backendBytesUploaded)}`
+  );
+  benchmarkPanel.set(
+    `${label} geometry`,
+    `${formatCount(result.geometry.renderedMeshInstances)} mesh instances · ` +
+      `${formatCount(result.geometry.renderedVertices)} vertices · ${formatCount(result.geometry.renderedTriangles)} triangles`
+  );
+  benchmarkPanel.set(
+    `${label} confidence`,
+    result.sampleCount < 2
+      ? "1 sample · repeatability not measured"
+      : `${result.sampleCount} samples · F drift ${result.frameP95DriftPercent.toFixed(1)}% · ` +
+        `G drift ${result.gpuP95DriftPercent === undefined ? "n/a" : `${result.gpuP95DriftPercent.toFixed(1)}%`} · ` +
+        (result.reliable ? "reliable" : "unreliable")
+  );
+}
+
 function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+}
+
+function formatCount(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+function formatGpuMs(milliseconds: number): string {
+  if (milliseconds > 0) return `${milliseconds.toFixed(2)} ms`;
+  return gpuTimingSupported ? "pending" : "unsupported";
 }
 
 function updateTelemetry(): void {
@@ -719,11 +1187,11 @@ function updateTelemetry(): void {
   ctx.panel.set("camera", heroView ? "hero" : "arena manual");
   ctx.panel.set("animation", paused ? "paused" : "playing with varied phases/fps");
   if (++telemetryFrames % 30 === 0) {
-    ctx.panel.set("frame p50 / p95", `${percentile(frameSamples, 0.5).toFixed(2)} / ${percentile(frameSamples, 0.95).toFixed(2)} ms`);
-    ctx.panel.set("playback p50 / p95", `${percentile(playbackMutationSamples, 0.5).toFixed(3)} / ${percentile(playbackMutationSamples, 0.95).toFixed(3)} ms`);
+    benchmarkPanel.set("live frame p50 / p95", `${percentile(frameSamples, 0.5).toFixed(2)} / ${percentile(frameSamples, 0.95).toFixed(2)} ms`);
+    benchmarkPanel.set("live playback p50 / p95", `${percentile(playbackMutationSamples, 0.5).toFixed(3)} / ${percentile(playbackMutationSamples, 0.95).toFixed(3)} ms`);
     const counters = getBenchmarkCounters();
-    ctx.panel.set("VAT uploaded", `${(counters.backendBytesUploaded / 1024 / 1024).toFixed(2)} MiB / ${counters.backendUploadCalls} calls`);
-    ctx.panel.set("GPU / draws", `${ctx.engine.gpuFrameTimeMs.toFixed(2)} ms / ${ctx.engine.drawCallCount}`);
+    benchmarkPanel.set("live VAT uploaded", `${(counters.backendBytesUploaded / 1024 / 1024).toFixed(2)} MiB / ${counters.backendUploadCalls} calls`);
+    benchmarkPanel.set("live GPU / draws", `${formatGpuMs(ctx.engine.gpuFrameTimeMs)} / ${ctx.engine.drawCallCount}`);
   }
   ctx.panel.set("selected", selected ? `${selected.pool.spec.kind} #${Number(selected.member.id)} · ${selected.member.stage}` : "-");
   ctx.panel.set("status", "running");

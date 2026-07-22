@@ -72,6 +72,44 @@ canvas {
   text-align: right;
 }
 
+.benchmark-panel {
+  right: 16px;
+  left: auto;
+  width: min(500px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.benchmark-panel dl {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.benchmark-status {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 20;
+  max-width: min(620px, calc(100vw - 48px));
+  padding: 10px 16px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 190, 70, 0.65);
+  border-radius: 8px;
+  background: rgba(80, 42, 8, 0.94);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+  color: #fff2cf;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-align: center;
+  pointer-events: none;
+}
+
+.benchmark-status[hidden] {
+  display: none;
+}
+
 .controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
