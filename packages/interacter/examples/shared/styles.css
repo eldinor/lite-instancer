@@ -1,0 +1,73 @@
+:root {
+  color: #edf3ff;
+  background: #08101e;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; height: 100%; margin: 0; }
+body { overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.panel {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  width: min(390px, calc(100vw - 36px));
+  padding: 18px;
+  border: 1px solid #314463;
+  border-radius: 14px;
+  background: color-mix(in srgb, #101b2d 92%, transparent);
+  box-shadow: 0 18px 50px #0008;
+  backdrop-filter: blur(12px);
+}
+.panel h1 { margin: 8px 0 6px; font-size: 22px; }
+.panel p { margin: 0 0 12px; color: #aebcd2; line-height: 1.45; }
+.home { color: #75c9ff; text-decoration: none; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+button {
+  padding: 8px 12px;
+  border: 1px solid #456187;
+  border-radius: 8px;
+  background: #193050;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover { background: #24436d; }
+.status { color: #87d9ff; font-weight: 700; }
+.log {
+  height: 150px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #050a12;
+  color: #b9f8d0;
+  font: 12px/1.5 ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+.index {
+  overflow: auto;
+  max-width: 900px;
+  height: auto;
+  margin: 0 auto;
+  padding: 64px 24px;
+}
+.index h1 { font-size: clamp(38px, 8vw, 72px); margin: 0; }
+.index > main > p { color: #aebcd2; font-size: 18px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 32px; }
+.card {
+  display: block;
+  min-height: 150px;
+  padding: 20px;
+  border: 1px solid #314463;
+  border-radius: 14px;
+  background: #101b2d;
+  color: inherit;
+  text-decoration: none;
+  transition: 150ms ease;
+}
+.card:hover { border-color: #75c9ff; transform: translateY(-2px); }
+.card strong { display: block; margin-bottom: 8px; font-size: 19px; }
+.card span { color: #aebcd2; line-height: 1.45; }
