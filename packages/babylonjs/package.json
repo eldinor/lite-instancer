@@ -1,6 +1,6 @@
 {
   "name": "@litools/instancer-babylonjs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon.js thin instances.",
   "type": "module",
   "license": "MIT",

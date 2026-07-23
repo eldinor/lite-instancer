@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-07-23
+
 ### Added
 
 - Add independent slot-aligned float streams with lifecycle-aware defaults, dirty-range coalescing, upload diagnostics, and native Babylon.js partial-buffer adapters.
