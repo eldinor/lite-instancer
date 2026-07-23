@@ -3,7 +3,7 @@
 Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon.js thin instances.
 
 ```sh
-npm install @litools/instancer-babylonjs @babylonjs/core
+npm install @litools/instancer-babylonjs
 ```
 
 ```ts
@@ -12,7 +12,7 @@ import { createInstanceSet } from "@litools/instancer-babylonjs";
 const boxes = createInstanceSet(boxMesh, {
   capacity: 500,
   colors: true,
-  visibleStrategy: "active-count"
+  visibleStrategy: "active-count",
 });
 
 const id = boxes.create({ position: [0, 1, 0] }, { selected: false });
@@ -51,8 +51,8 @@ const crowd = createInstanceSet(mesh, {
   boundsMode: "fixed",
   fixedBounds: {
     minimum: [-50, -5, -50],
-    maximum: [50, 20, 50]
-  }
+    maximum: [50, 20, 50],
+  },
 });
 ```
 
@@ -67,14 +67,14 @@ import {
   bakeBabylonVatAsset,
   createVatInstanceSetFromAsset,
   decodeBabylonVatAsset,
-  encodeBabylonVatAsset
+  encodeBabylonVatAsset,
 } from "@litools/instancer-babylonjs/vat";
 
 // Preprocessing step after loading the source GLB in Babylon.js:
 const asset = bakeBabylonVatAsset(skinnedMesh, animationGroups, {
   bounds: animatedBounds,
   sockets: socketAsset,
-  source: { name: "hero.glb", hash: sourceHash }
+  source: { name: "hero.glb", hash: sourceHash },
 });
 const { manifest, payload } = encodeBabylonVatAsset(asset);
 
@@ -83,10 +83,12 @@ const decoded = decodeBabylonVatAsset(manifestText, payloadBuffer);
 const modelBounds = decoded.bounds?.model;
 const crowd = createVatInstanceSetFromAsset(engine, skinnedMesh, decoded, {
   capacity: 1000,
-  ...(modelBounds ? {
-    boundsMode: "fixed",
-    fixedBounds: { minimum: modelBounds.min, maximum: modelBounds.max }
-  } : {})
+  ...(modelBounds
+    ? {
+        boundsMode: "fixed",
+        fixedBounds: { minimum: modelBounds.min, maximum: modelBounds.max },
+      }
+    : {}),
 });
 ```
 
@@ -107,14 +109,11 @@ const capabilities = inspectInstancerCapabilities(engine);
 VAT control descriptors use the same names and behavior as Lite. They are frozen metadata with no editor dependency, global registration, renderer work, or state writes:
 
 ```ts
-import {
-  createVatInstanceControlAdapter,
-  defineVatInstanceControls
-} from "@litools/instancer-babylonjs/vat";
+import { createVatInstanceControlAdapter, defineVatInstanceControls } from "@litools/instancer-babylonjs/vat";
 
 const controls = defineVatInstanceControls(vat, {
   equipment: ["Sword", "Shield"],
-  sockets: ["RightHand", "LeftHand"]
+  sockets: ["RightHand", "LeftHand"],
 });
 
 const values = createVatInstanceControlAdapter(vat);
