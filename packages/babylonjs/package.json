@@ -44,6 +44,8 @@
     "dev:vat": "vite --config vite.vat.config.ts --host 0.0.0.0",
     "dev:vat-character": "vite --config vite.vat-character.config.ts --host 0.0.0.0",
     "dev:vat-attachments": "vite --config vite.vat-attachments.config.ts --host 0.0.0.0",
+    "dev:benchmark": "vite --config vite.benchmark.config.ts --host 0.0.0.0",
+    "dev:vat-asset-smoke": "vite --config vite.vat-asset-smoke.config.ts --host 0.0.0.0",
     "build:examples": "npm run build && vite build --config vite.examples.config.ts",
     "test": "vitest run",
     "test:browser": "playwright test",

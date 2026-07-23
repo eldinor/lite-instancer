@@ -18,7 +18,9 @@ import {
   type VatInstanceSet,
   type VatInstanceSetOptions,
   type VatPlaybackSample,
-  type VatPlaybackSource
+  type VatPlaybackSource,
+  type VatPlaybackUpdate,
+  type VatPlaybackUpdateEntry
 } from "./vat-instance-set.js";
 
 export interface VatCharacterSetOptions extends VatInstanceSetOptions {}
@@ -40,6 +42,7 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   create(options?: VatInstanceCreateOptions<TMetadata>): InstanceId;
   createMany(items: Iterable<VatInstanceCreateOptions<TMetadata>>): InstanceId[];
   remove(id: InstanceId): boolean;
+  removeMany(ids: Iterable<InstanceId>): number;
   clear(): void;
   has(id: InstanceId): boolean;
   getSlot(id: InstanceId): number | undefined;
@@ -51,6 +54,7 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   forEach(callback: (id: InstanceId, slot: number) => void): void;
   getVisible(id: InstanceId): boolean;
   setVisible(id: InstanceId, visible: boolean): void;
+  setVisibleMany(ids: Iterable<InstanceId>, visible: boolean): void;
   setMatrix(id: InstanceId, matrix: Mat4): void;
   setTransform(id: InstanceId, transform: InstanceTransformInput): void;
   getMatrix(id: InstanceId, out?: Mat4): Mat4;
@@ -69,7 +73,11 @@ export interface VatCharacterSet<TMetadata = unknown> extends VatPlaybackSource 
   setClip(id: InstanceId, clip: string | undefined): boolean;
   setPhaseOffset(id: InstanceId, offset: number): void;
   setFps(id: InstanceId, fps: number | undefined): void;
+  setPlayback(id: InstanceId, update: VatPlaybackUpdate): boolean;
+  setPlaybackMany(items: Iterable<VatPlaybackUpdateEntry>): number;
+  batchPlayback<TResult>(callback: () => TResult): TResult;
   getPlaybackSample(id: InstanceId, out?: VatPlaybackSample): VatPlaybackSample | undefined;
+  refreshBounds(): void;
   syncInstances(): void;
   dispose(): void;
 }
@@ -104,6 +112,13 @@ export function createVatCharacterSet<TMetadata = unknown>(
   }
 
   const secondaryId = (part: SecondaryPart, id: InstanceId): InstanceId | undefined => part.secondaryByPrimary.get(id);
+  const batchAllPlayback = <T>(callback: () => T): T => {
+    const run = (index: number): T => {
+      if (index === secondary.length) return callback();
+      return secondary[index]!.vat.batchPlayback(() => run(index + 1));
+    };
+    return primary.batchPlayback(() => run(0));
+  };
 
   const api: VatCharacterSet<TMetadata> = {
     root,
@@ -129,7 +144,22 @@ export function createVatCharacterSet<TMetadata = unknown>(
       return id;
     },
     createMany(items) {
-      return Array.from(items, (item) => api.create(item));
+      const inputs = Array.from(items);
+      return batchAllPlayback(() => {
+        const ids = primary.createMany(inputs);
+        for (const part of secondary) {
+          const secondaryIds = part.vat.createMany(inputs.map((item) => ({
+            ...(item.transform === undefined ? {} : { transform: item.transform }),
+            ...(item.clip === undefined ? {} : { clip: item.clip }),
+            ...(item.offset === undefined ? {} : { offset: item.offset }),
+            ...(item.fps === undefined ? {} : { fps: item.fps })
+          })));
+          for (let index = 0; index < ids.length; index++) {
+            part.secondaryByPrimary.set(ids[index]!, secondaryIds[index]!);
+          }
+        }
+        return ids;
+      });
     },
     remove(id) {
       if (!primary.remove(id)) return false;
@@ -139,6 +169,23 @@ export function createVatCharacterSet<TMetadata = unknown>(
         part.secondaryByPrimary.delete(id);
       }
       return true;
+    },
+    removeMany(ids) {
+      return batchAllPlayback(() => {
+        const candidates = Array.from(ids);
+        const live = candidates.filter((id) => primary.has(id));
+        const removed = primary.removeMany(candidates);
+        for (const part of secondary) {
+          const secondaryIds: InstanceId[] = [];
+          for (const id of live) {
+            const sid = part.secondaryByPrimary.get(id);
+            if (sid !== undefined) secondaryIds.push(sid);
+          }
+          part.vat.removeMany(secondaryIds);
+          for (const id of live) part.secondaryByPrimary.delete(id);
+        }
+        return removed;
+      });
     },
     clear() {
       primary.clear();
@@ -161,6 +208,18 @@ export function createVatCharacterSet<TMetadata = unknown>(
       for (const part of secondary) {
         const sid = secondaryId(part, id);
         if (sid !== undefined) part.vat.setVisible(sid, visible);
+      }
+    },
+    setVisibleMany(ids, visible) {
+      const primaryIds = Array.from(ids);
+      primary.setVisibleMany(primaryIds, visible);
+      for (const part of secondary) {
+        const secondaryIds: InstanceId[] = [];
+        for (const id of primaryIds) {
+          const sid = secondaryId(part, id);
+          if (sid !== undefined) secondaryIds.push(sid);
+        }
+        part.vat.setVisibleMany(secondaryIds, visible);
       }
     },
     setMatrix(id, matrix) {
@@ -220,7 +279,29 @@ export function createVatCharacterSet<TMetadata = unknown>(
         if (sid !== undefined) part.vat.setFps(sid, fps);
       }
     },
+    setPlayback(id, update) {
+      if (!primary.setPlayback(id, update)) return false;
+      for (const part of secondary) {
+        const sid = secondaryId(part, id);
+        if (sid !== undefined) part.vat.setPlayback(sid, update);
+      }
+      return true;
+    },
+    setPlaybackMany(items) {
+      return api.batchPlayback(() => {
+        let accepted = 0;
+        for (const { id, ...update } of items) if (api.setPlayback(id, update)) accepted++;
+        return accepted;
+      });
+    },
+    batchPlayback(callback) {
+      return batchAllPlayback(callback);
+    },
     getPlaybackSample: (id, out) => primary.getPlaybackSample(id, out),
+    refreshBounds() {
+      primary.refreshBounds();
+      for (const part of secondary) part.vat.refreshBounds();
+    },
     syncInstances() {
       primary.syncInstances();
       for (const part of secondary) part.vat.syncInstances();

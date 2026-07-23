@@ -1,7 +1,14 @@
-import type { SlotAlignedFloatStream, SlotDirtyRange } from "../../src/slot-aligned-stream.js";
+import type { SlotDirtyRange } from "../../src/slot-aligned-stream.js";
+
+export interface ContractSlotAlignedFloatStream {
+  readonly capacity: number;
+  setSlot(slot: number, value: ArrayLike<number>): void;
+  getSlot(slot: number, out?: Float32Array): Float32Array;
+  flush(count: number, force?: boolean): void;
+}
 
 export interface ContractStreamHarness {
-  readonly stream: SlotAlignedFloatStream;
+  readonly stream: ContractSlotAlignedFloatStream;
   create(slot: number): void;
   swap(a: number, b: number): void;
   grow(capacity: number): void;

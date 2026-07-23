@@ -78,6 +78,51 @@ describe("Babylon.js InstanceSet", () => {
     engine.dispose();
   });
 
+  it("batches bulk lifecycle work and keeps default colors white", () => {
+    const { engine, mesh } = setup();
+    const set = createInstanceSet(mesh, { capacity: 4, grow: "double", colors: true });
+    const uploads = vi.spyOn(mesh, "thinInstancePartialBufferUpdate");
+    const bounds = vi.spyOn(mesh, "thinInstanceRefreshBoundingInfo");
+    uploads.mockClear();
+    bounds.mockClear();
+
+    const ids = set.createMany([
+      { transform: { position: [0, 0, 0] } },
+      { transform: { position: [1, 0, 0] } },
+      { transform: { position: [2, 0, 0] } }
+    ]);
+
+    expect(uploads.mock.calls.filter(([kind]) => kind === "matrix")).toEqual([["matrix", 3, 0]]);
+    expect(uploads.mock.calls.filter(([kind]) => kind === "color")).toEqual([["color", 3, 0]]);
+    expect(bounds.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(set.getColor(ids[1]!)).toEqual(new Float32Array([1, 1, 1, 1]));
+
+    uploads.mockClear();
+    bounds.mockClear();
+    expect(set.removeMany([ids[0]!, ids[2]!])).toBe(2);
+    expect(bounds.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(uploads.mock.calls.filter(([kind]) => kind === "matrix").length).toBeLessThanOrEqual(1);
+    engine.dispose();
+  });
+
+  it("disposes idempotently and rejects later use", () => {
+    const { engine, mesh } = setup();
+    const set = createInstanceSet(mesh, { colors: true });
+    const id = set.create();
+    set.dispose();
+    expect(() => set.dispose()).not.toThrow();
+    expect(() => set.has(id)).toThrow(/disposed/);
+    expect(() => set.create()).toThrow(/disposed/);
+    engine.dispose();
+  });
+
+  it("validates unknown IDs before returning a default color", () => {
+    const { engine, mesh } = setup();
+    const set = createInstanceSet(mesh);
+    expect(() => set.getColor(123 as never)).toThrow(/Unknown instance id/);
+    engine.dispose();
+  });
+
   it("refreshes aggregate bounds so every rendered instance can be picked", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
@@ -90,6 +135,79 @@ describe("Babylon.js InstanceSet", () => {
     const bounds = mesh.getBoundingInfo().boundingBox;
     expect(bounds.minimum.x).toBeLessThanOrEqual(-8.5);
     expect(bounds.maximum.x).toBeGreaterThanOrEqual(8.5);
+    engine.dispose();
+  });
+
+  it("performs exactly one automatic bounds scan per batch", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = MeshBuilder.CreateBox("single-auto-bounds", { size: 1 }, scene);
+    const set = createInstanceSet(mesh, { capacity: 4, boundsMode: "auto" });
+    const refresh = vi.spyOn(mesh, "thinInstanceRefreshBoundingInfo");
+    set.createMany([
+      { transform: { position: [-3, 0, 0] } },
+      { transform: { position: [0, 0, 0] } },
+      { transform: { position: [3, 0, 0] } }
+    ]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    set.batch((writer) => {
+      for (const id of set.ids()) writer.translate(id, [0, 1, 0]);
+    });
+    expect(refresh).toHaveBeenCalledTimes(2);
+    set.dispose();
+    expect(mesh.doNotSyncBoundingInfo).toBe(false);
+    engine.dispose();
+  });
+
+  it("supports manual bounds refresh without automatic population scans", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = MeshBuilder.CreateBox("manual-bounds", { size: 1 }, scene);
+    const set = createInstanceSet(mesh, { capacity: 4, boundsMode: "manual" });
+    const refresh = vi.spyOn(mesh, "thinInstanceRefreshBoundingInfo");
+    set.createMany([
+      { transform: { position: [-8, 0, 0] } },
+      { transform: { position: [8, 0, 0] } }
+    ]);
+    expect(refresh).not.toHaveBeenCalled();
+    set.refreshBounds();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(mesh.getBoundingInfo().boundingBox.minimum.x).toBeLessThanOrEqual(-8.5);
+    engine.dispose();
+  });
+
+  it("uses conservative fixed bounds without thin-instance scans and restores source bounds", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = MeshBuilder.CreateBox("fixed-bounds", { size: 1 }, scene);
+    const originalMinimum = mesh.getBoundingInfo().minimum.clone();
+    const set = createInstanceSet(mesh, {
+      capacity: 4,
+      boundsMode: "fixed",
+      fixedBounds: { minimum: [-20, -3, -2], maximum: [20, 3, 2] }
+    });
+    const refresh = vi.spyOn(mesh, "thinInstanceRefreshBoundingInfo");
+    set.createMany([
+      { transform: { position: [-8, 0, 0] } },
+      { transform: { position: [8, 0, 0] } }
+    ]);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(mesh.getBoundingInfo().minimum.x).toBe(-20);
+    expect(mesh.getBoundingInfo().maximum.x).toBe(20);
+    set.refreshBounds();
+    expect(refresh).not.toHaveBeenCalled();
+    set.dispose();
+    expect(mesh.getBoundingInfo().minimum.x).toBeCloseTo(originalMinimum.x);
+    engine.dispose();
+  });
+
+  it("requires valid fixed bounds", () => {
+    const { engine, mesh } = setup();
+    expect(() => createInstanceSet(mesh, { boundsMode: "fixed" })).toThrow(/fixedBounds/);
+    expect(() => createInstanceSet(mesh, {
+      boundsMode: "fixed",
+      fixedBounds: { minimum: [1, 0, 0], maximum: [-1, 1, 1] }
+    })).toThrow(/finite minimum/);
     engine.dispose();
   });
 

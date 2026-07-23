@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babylon.js Instancer Benchmark</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="benchmarkStatus" role="status">Ready for Babylon.js instancer checks</div>
+    <aside class="panel">
+      <p class="eyebrow">@litools/instancer-babylonjs · manual release check</p>
+      <h1>Lifecycle and partial-upload benchmark</h1>
+      <p id="summary">Compare automatic bounds scans with conservative fixed bounds after the scene stabilizes.</p>
+      <div class="actions">
+        <button id="run">Run benchmark</button>
+        <button id="copy" disabled>Copy report</button>
+      </div>
+      <section>
+        <h2>Lifecycle</h2>
+        <ul id="checks"></ul>
+      </section>
+      <section>
+        <h2>Results</h2>
+        <div id="results" class="results">No report yet.</div>
+      </section>
+    </aside>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

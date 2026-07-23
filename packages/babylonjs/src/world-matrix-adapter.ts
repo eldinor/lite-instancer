@@ -13,17 +13,30 @@ export class MeshWorldMatrixAdapter {
   readonly #inverseWorld = Matrix.Identity();
   readonly #worldLogical = Matrix.Identity();
   readonly #adapted = Matrix.Identity();
+  #prepared = false;
 
   constructor(mesh: Mesh) {
     this.#mesh = mesh;
   }
 
-  write(logicalMatrices: ArrayLike<number>, logicalOffset: number, target: Float32Array, targetOffset: number): void {
+  /** Prepare the authored mesh transform once before writing one or more slots. */
+  prepare(): void {
     const world = this.#mesh.computeWorldMatrix(true);
     if (Math.abs(world.determinant()) < 1e-12) {
       throw new InstancerError(`Cannot instance mesh '${this.#mesh.name}' with a non-invertible world transform`);
     }
     world.invertToRef(this.#inverseWorld);
+    this.#prepared = true;
+  }
+
+  write(logicalMatrices: ArrayLike<number>, logicalOffset: number, target: Float32Array, targetOffset: number): void {
+    this.prepare();
+    this.writePrepared(logicalMatrices, logicalOffset, target, targetOffset);
+  }
+
+  writePrepared(logicalMatrices: ArrayLike<number>, logicalOffset: number, target: Float32Array, targetOffset: number): void {
+    if (!this.#prepared) this.prepare();
+    const world = this.#mesh.getWorldMatrix();
     Matrix.FromArrayToRef(logicalMatrices, logicalOffset, this.#logical);
 
     // Babylon evaluates thin * meshWorld. Application transforms are defined
@@ -36,6 +49,10 @@ export class MeshWorldMatrixAdapter {
 
   writeSlot(logicalMatrices: ArrayLike<number>, target: Float32Array, slot: number): void {
     this.write(logicalMatrices, slot * 16, target, slot * 16);
+  }
+
+  writeSlotPrepared(logicalMatrices: ArrayLike<number>, target: Float32Array, slot: number): void {
+    this.writePrepared(logicalMatrices, slot * 16, target, slot * 16);
   }
 }
 

@@ -88,6 +88,8 @@
     "dev:babylonjs:hierarchy": "npm run dev:hierarchy --workspace @litools/instancer-babylonjs",
     "dev:babylonjs:vat": "npm run dev:vat --workspace @litools/instancer-babylonjs",
     "dev:babylonjs:vat-character": "npm run dev:vat-character --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:benchmark": "npm run dev:benchmark --workspace @litools/instancer-babylonjs",
+    "dev:babylonjs:vat-asset-smoke": "npm run dev:vat-asset-smoke --workspace @litools/instancer-babylonjs",
     "preview:examples": "vite preview --host 0.0.0.0 --outDir examples-dist",
     "test": "vitest run",
     "test:all": "npm test && npm test --workspace @litools/instancer-babylonjs",

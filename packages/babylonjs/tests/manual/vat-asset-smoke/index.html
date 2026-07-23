@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babylon.js VAT Asset Smoke Check</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="smokeStatus" role="status">Ready for the VAT asset release check</div>
+    <div class="path-label runtime">Runtime baked</div>
+    <div class="path-label asset">Encoded → decoded</div>
+    <aside class="panel">
+      <p class="eyebrow">@litools/instancer-babylonjs · manual release check</p>
+      <h1>VAT asset round-trip smoke check</h1>
+      <p id="summary">Runs a short bake, deterministic codec round-trip, no-resampling load, and paired lifecycle comparison.</p>
+      <div class="actions">
+        <button id="run">Run check</button>
+        <button id="copy" disabled>Copy report</button>
+      </div>
+      <section>
+        <h2>Checks</h2>
+        <ul id="checks"><li>Not run yet.</li></ul>
+      </section>
+      <section>
+        <h2>Asset</h2>
+        <div id="assetInfo" class="report-block">No report yet.</div>
+      </section>
+      <section>
+        <h2>Capabilities</h2>
+        <div id="capabilities" class="report-block">Detecting…</div>
+      </section>
+    </aside>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -55,6 +55,43 @@ describe("Babylon.js VatInstanceSet", () => {
     engine.dispose();
   });
 
+  it("uploads sparse playback edits as coalesced native partial ranges", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 0, -5), scene);
+    const mesh = new Mesh("vat-partial-source", scene);
+    const skeleton = new Skeleton("partial-skeleton", "partial-skeleton", scene);
+    const bone = new Bone("root", skeleton, null, Matrix.Identity());
+    mesh.skeleton = skeleton;
+    const animation = new Animation("sway", "rotationQuaternion", 20, Animation.ANIMATIONTYPE_QUATERNION);
+    animation.setKeys([
+      { frame: 0, value: Quaternion.Identity() },
+      { frame: 2, value: Quaternion.RotationAxis(Vector3.Forward(), 0.25) }
+    ]);
+    bone.animations.push(animation);
+    const group = new AnimationGroup("Sway", scene);
+    group.addTargetedAnimation(animation, bone);
+    const vat = createVatInstanceSet(engine, mesh, [group], { capacity: 4, visibleStrategy: "active-count" });
+    const ids = vat.createMany([{ offset: 0 }, { offset: 0.1 }, { offset: 0.2 }, { offset: 0.3 }]);
+    const upload = vi.spyOn(mesh, "thinInstancePartialBufferUpdate");
+    upload.mockClear();
+    const bytesBefore = vat.playbackStats.backendBytesUploaded;
+
+    expect(vat.setPlayback(ids[2]!, { offset: 0.75, fps: 12 })).toBe(true);
+    expect(upload).toHaveBeenCalledWith("bakedVertexAnimationSettingsInstanced", 1, 2);
+    expect(vat.playbackStats.backendBytesUploaded - bytesBefore).toBe(16);
+
+    upload.mockClear();
+    vat.batchPlayback(() => {
+      vat.setPhaseOffset(ids[0]!, 0.5);
+      vat.setPhaseOffset(ids[1]!, 0.6);
+    });
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledWith("bakedVertexAnimationSettingsInstanced", 2, 0);
+    vat.dispose();
+    engine.dispose();
+  });
+
   it("keeps multi-part character visibility and slots synchronized", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);

@@ -60,7 +60,8 @@ export function bakeVatSocketAsset(
     group.start(false, 1, from, to);
     for (let frame = from; frame <= to; frame++) {
       group.goToFrame(frame);
-      scene.render();
+      // AnimationGroup.goToFrame writes target values immediately. Forced
+      // world-matrix evaluation samples them without presenting a GPU frame.
       const rootInverse = options.root.computeWorldMatrix(true).clone();
       rootInverse.invert();
       for (const [key, node] of Object.entries(nodes)) {

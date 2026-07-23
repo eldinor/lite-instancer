@@ -2,7 +2,25 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { registerThinInstanceSupport } from "./babylon-registration.js";
 import { assertValidCapacity, InstancerError } from "./errors.js";
+import {
+  prepareBoundsOwnership,
+  refreshMeshBounds,
+  restoreBoundsOwnership,
+  type MeshBoundsOwnership
+} from "./bounds.js";
 import { InstanceSlotStore } from "./slot-store.js";
+import { readMatrixPosition, swapMatrix16, translateMatrixPosition, writeMatrixPosition, writeMatrixScale } from "./matrix-buffer.js";
+import {
+  createHostSlotStream,
+  disposeSlotStreamHost,
+  notifySlotCapacity,
+  notifySlotCreated,
+  notifySlotsCleared,
+  notifySlotsSwapped,
+  notifySlotsTruncated,
+  registerSlotStreamHost,
+  type SlotAlignedFloatStream
+} from "./slot-aligned-stream.js";
 import { MeshWorldMatrixAdapter } from "./world-matrix-adapter.js";
 import {
   composeMat4,
@@ -19,6 +37,8 @@ import {
   type InstanceEntry,
   type InstanceBatchWriter,
   type InstanceColorInput,
+  type InstanceBounds,
+  type InstanceBoundsMode,
   type InstanceId,
   type InstanceMatrixUpdate,
   type InstanceMetadataPredicate,
@@ -71,20 +91,28 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   #gpuMatrices: Float32Array;
   #matrixAdapter: MeshWorldMatrixAdapter;
   #colors: Float32Array | undefined;
+  #colorStream: SlotAlignedFloatStream | undefined;
+  #matrixScratch = new Float32Array(16);
   #hiddenMatrices = new Map<InstanceId, Mat4>();
   #visibleStrategy: "active-count" | "scale-zero";
   #grow: "none" | "double" | "exact";
   #engine: AbstractEngine;
   #batchDepth = 0;
   #dirtyMatrices = new Set<number>();
-  #dirtyColors = new Set<number>();
   #needsCountSync = false;
+  #disposed = false;
+  #boundsMode: InstanceBoundsMode;
+  #fixedBounds: InstanceBounds | undefined;
+  #boundsOwnership: MeshBoundsOwnership;
 
   constructor(mesh: Mesh, options: InstanceSetOptions) {
     this.mesh = mesh;
     this.#capacity = options.capacity ?? 128;
     assertValidCapacity(this.#capacity);
     this.#grow = options.grow ?? "double";
+    this.#boundsMode = options.boundsMode ?? "auto";
+    this.#fixedBounds = options.fixedBounds;
+    this.#boundsOwnership = prepareBoundsOwnership(this.mesh, this.#boundsMode, this.#fixedBounds);
     this.#engine = this.mesh.getEngine();
     if (options.engine && options.engine !== this.#engine) {
       throw new InstancerError("InstanceSet engine does not match the mesh engine");
@@ -96,24 +124,28 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#matrices = new Float32Array(this.#capacity * 16);
     this.#gpuMatrices = new Float32Array(this.#capacity * 16);
     this.#matrixAdapter = new MeshWorldMatrixAdapter(this.mesh);
+    registerSlotStreamHost(this, this.#capacity);
     this.mesh.thinInstanceSetBuffer("matrix", this.#gpuMatrices, 16, false);
     this.mesh.thinInstanceCount = 0;
+    if (this.#boundsMode === "fixed") refreshMeshBounds(this.mesh, this.#boundsMode, this.#fixedBounds);
 
     if (options.colors) {
-      this.#colors = new Float32Array(this.#capacity * 4);
-      this.mesh.thinInstanceSetBuffer("color", this.#colors, 4, false);
+      this.#ensureColorStream();
     }
   }
 
   get count(): number {
+    this.#assertUsable();
     return this.#slots.count;
   }
 
   get capacity(): number {
+    this.#assertUsable();
     return this.#capacity;
   }
 
   get visibleCount(): number {
+    this.#assertUsable();
     if (this.#visibleStrategy === "scale-zero") {
       return this.#slots.count - this.#hiddenMatrices.size;
     }
@@ -121,9 +153,11 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   create(transform?: InstanceTransformInput, metadata?: TMetadata): InstanceId {
+    this.#assertUsable();
     this.#ensureCapacity(this.#slots.count + 1);
     const matrix = composeMat4(transform);
     const { id, slot } = this.#slots.create(metadata);
+    notifySlotCreated(this, slot);
     this.#writeMatrixAt(slot, matrix);
 
     this.setVisible(id, true);
@@ -133,12 +167,18 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   createMany(items: Iterable<InstanceCreateInput<TMetadata>>): InstanceId[] {
+    this.#assertUsable();
     const inputs = Array.from(items);
     this.reserve(this.#slots.count + inputs.length);
-    return inputs.map((item) => this.create(item.transform, item.metadata));
+    const ids: InstanceId[] = [];
+    this.batch(() => {
+      for (const item of inputs) ids.push(this.create(item.transform, item.metadata));
+    });
+    return ids;
   }
 
   remove(id: InstanceId): boolean {
+    this.#assertUsable();
     const removed =
       this.#visibleStrategy === "active-count"
         ? this.#slots.remove(id, (a, b) => this.#swapSlotBuffers(a, b))
@@ -147,59 +187,69 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       return false;
     }
     this.#hiddenMatrices.delete(id);
+    notifySlotsTruncated(this, this.#slots.count);
     this.#syncDrawCount();
     return true;
   }
 
   removeMany(ids: Iterable<InstanceId>): number {
     let removed = 0;
-    for (const id of ids) {
-      if (this.remove(id)) {
-        removed++;
-      }
-    }
+    this.batch(() => {
+      for (const id of ids) if (this.remove(id)) removed++;
+    });
     return removed;
   }
 
   clear(): void {
+    this.#assertUsable();
     this.#slots.clear();
     this.#hiddenMatrices.clear();
+    notifySlotsCleared(this);
     this.#syncDrawCount();
   }
 
   has(id: InstanceId): boolean {
+    this.#assertUsable();
     return this.#slots.has(id);
   }
 
   getSlot(id: InstanceId): number | undefined {
+    this.#assertUsable();
     return this.#slots.getSlot(id);
   }
 
   getIdForSlot(slot: number): InstanceId | undefined {
+    this.#assertUsable();
     return this.#slots.getIdForSlot(slot);
   }
 
   *ids(): IterableIterator<InstanceId> {
+    this.#assertUsable();
     yield* this.#slots.ids();
   }
 
   *visibleIds(): IterableIterator<InstanceId> {
+    this.#assertUsable();
     yield* this.#slots.visibleIds((id) => this.getVisible(id));
   }
 
   *slots(): IterableIterator<InstanceSlotEntry> {
+    this.#assertUsable();
     yield* this.#slots.slots();
   }
 
   *entries(): IterableIterator<InstanceEntry<TMetadata>> {
+    this.#assertUsable();
     yield* this.#slots.entries();
   }
 
   forEach(callback: (id: InstanceId, slot: number) => void): void {
+    this.#assertUsable();
     this.#slots.forEach(callback);
   }
 
   setMatrix(id: InstanceId, matrix: Mat4): void {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
     if (this.#visibleStrategy === "scale-zero" && !this.getVisible(id)) {
       this.#hiddenMatrices.set(id, copyMat4(matrix));
@@ -218,6 +268,7 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getMatrix(id: InstanceId, out: Mat4 = new Float32Array(16) as Mat4): Mat4 {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
     const hidden = this.#hiddenMatrices.get(id);
     if (hidden) {
@@ -248,16 +299,24 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getPosition(id: InstanceId, out?: Float32Array): Float32Array {
-    return getMat4Position(this.getMatrix(id), out);
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    return hidden ? getMat4Position(hidden, out) : readMatrixPosition(this.#matrices, slot * 16, out);
   }
 
   getPositionOrUndefined(id: InstanceId, out?: Float32Array): Float32Array | undefined {
-    const matrix = this.getMatrixOrUndefined(id);
-    return matrix ? getMat4Position(matrix, out) : undefined;
+    return this.has(id) ? this.getPosition(id, out) : undefined;
   }
 
   setPosition(id: InstanceId, position: Vec3Like): void {
-    this.setMatrix(id, withMat4Position(this.getMatrix(id), position));
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      this.#hiddenMatrices.set(id, withMat4Position(hidden, position));
+      return;
+    }
+    writeMatrixPosition(this.#matrices, slot * 16, position);
+    this.#markMatrixDirty(slot);
   }
 
   trySetPosition(id: InstanceId, position: Vec3Like): boolean {
@@ -269,7 +328,14 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   translate(id: InstanceId, delta: Vec3Like): void {
-    this.setMatrix(id, translateMat4(this.getMatrix(id), delta));
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      this.#hiddenMatrices.set(id, translateMat4(hidden, delta));
+      return;
+    }
+    translateMatrixPosition(this.#matrices, slot * 16, delta);
+    this.#markMatrixDirty(slot);
   }
 
   tryTranslate(id: InstanceId, delta: Vec3Like): boolean {
@@ -281,7 +347,14 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   setScale(id: InstanceId, scale: Vec3Like | number): void {
-    this.setMatrix(id, withMat4Scale(this.getMatrix(id), scale));
+    const slot = this.#slots.requireSlot(id);
+    const hidden = this.#hiddenMatrices.get(id);
+    if (hidden) {
+      this.#hiddenMatrices.set(id, withMat4Scale(hidden, scale));
+      return;
+    }
+    writeMatrixScale(this.#matrices, slot * 16, scale);
+    this.#markMatrixDirty(slot);
   }
 
   trySetScale(id: InstanceId, scale: Vec3Like | number): boolean {
@@ -309,6 +382,7 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getVisible(id: InstanceId): boolean {
+    this.#assertUsable();
     if (this.#visibleStrategy === "active-count") {
       return this.#slots.getActiveCountVisible(id);
     }
@@ -323,6 +397,7 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   setVisible(id: InstanceId, visible: boolean): void {
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
 
     if (this.#visibleStrategy === "active-count") {
@@ -373,10 +448,12 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   getMetadata(id: InstanceId): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.getMetadata(id);
   }
 
   setMetadata(id: InstanceId, metadata: TMetadata): void {
+    this.#assertUsable();
     this.#slots.setMetadata(id, metadata);
   }
 
@@ -385,46 +462,50 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   findByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId | undefined {
+    this.#assertUsable();
     return this.#slots.findByMetadata(predicate);
   }
 
   filterByMetadata(predicate: InstanceMetadataPredicate<TMetadata>): InstanceId[] {
+    this.#assertUsable();
     return this.#slots.filterByMetadata(predicate);
   }
 
   updateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.updateMetadata(id, updater);
   }
 
   tryUpdateMetadata(id: InstanceId, updater: InstanceMetadataUpdater<TMetadata>): TMetadata | undefined {
+    this.#assertUsable();
     return this.#slots.tryUpdateMetadata(id, updater);
   }
 
   deleteMetadata(id: InstanceId): boolean {
+    this.#assertUsable();
     return this.#slots.deleteMetadata(id);
   }
 
   setColor(id: InstanceId, color: InstanceColorInput): void {
-    if (!this.#colors) {
-      this.#colors = new Float32Array(this.#capacity * 4);
-      this.mesh.thinInstanceSetBuffer("color", this.#colors, 4, false);
-    }
+    this.#assertUsable();
     const slot = this.#slots.requireSlot(id);
-    this.#writeColorAt(slot, color);
-    this.#markColorDirty(slot);
+    const stream = this.#ensureColorStream();
+    stream.setSlot(slot, color);
+    if (this.#batchDepth === 0) stream.flush(this.#slots.count);
   }
 
   getColor(id: InstanceId, out = new Float32Array(4)): Float32Array {
-    if (!this.#colors) {
+    this.#assertUsable();
+    const slot = this.#slots.requireSlot(id);
+    if (!this.#colorStream) {
       out.fill(1);
       return out;
     }
-    const slot = this.#slots.requireSlot(id);
-    out.set(this.#colors.subarray(slot * 4, slot * 4 + 4));
-    return out;
+    return this.#colorStream.getSlot(slot, out);
   }
 
   batch(callback: (writer: InstanceBatchWriter<TMetadata>) => void): void {
+    this.#assertUsable();
     this.#batchDepth++;
     try {
       callback({
@@ -446,6 +527,7 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   editRaw(callback: (raw: RawInstanceWriter) => void): void {
+    this.#assertUsable();
     const raw: RawInstanceWriter = {
       matrices: this.#matrices,
       getSlot: (id) => this.getSlot(id),
@@ -472,6 +554,7 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
   }
 
   reserve(capacity: number): void {
+    this.#assertUsable();
     assertValidCapacity(capacity);
     if (capacity <= this.#capacity) {
       return;
@@ -479,12 +562,20 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     this.#resize(capacity);
   }
 
+  refreshBounds(): void {
+    this.#assertUsable();
+    refreshMeshBounds(this.mesh, this.#boundsMode, this.#fixedBounds);
+  }
+
   dispose(): void {
-    this.clear();
+    if (this.#disposed) return;
+    this.#slots.clear();
+    this.#hiddenMatrices.clear();
+    notifySlotsCleared(this);
+    disposeSlotStreamHost(this);
     this.mesh.thinInstanceSetBuffer("matrix", null);
-    if (this.#colors) {
-      this.mesh.thinInstanceSetBuffer("color", null);
-    }
+    restoreBoundsOwnership(this.mesh, this.#boundsOwnership);
+    this.#disposed = true;
   }
 
   #ensureCapacity(required: number): void {
@@ -503,18 +594,13 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
     nextMatrices.set(this.#matrices.subarray(0, this.#slots.count * 16));
     this.#matrices = nextMatrices;
     this.#gpuMatrices = new Float32Array(capacity * 16);
+    this.#matrixAdapter.prepare();
     for (let slot = 0; slot < this.#slots.count; slot++) {
-      this.#matrixAdapter.writeSlot(this.#matrices, this.#gpuMatrices, slot);
+      this.#matrixAdapter.writeSlotPrepared(this.#matrices, this.#gpuMatrices, slot);
     }
     this.#capacity = capacity;
     this.mesh.thinInstanceSetBuffer("matrix", this.#gpuMatrices, 16, false);
-
-    if (this.#colors) {
-      const nextColors = new Float32Array(capacity * 4);
-      nextColors.set(this.#colors.subarray(0, this.#slots.count * 4));
-      this.#colors = nextColors;
-      this.mesh.thinInstanceSetBuffer("color", this.#colors, 4, false);
-    }
+    notifySlotCapacity(this, capacity);
 
     this.#syncDrawCount();
   }
@@ -525,62 +611,32 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
 
   #swapSlotBuffers(a: number, b: number): void {
     this.#swapMatrix(a, b);
-    if (this.#colors) {
-      this.#swapColor(a, b);
-    }
+    notifySlotsSwapped(this, a, b);
   }
 
   #writeMatrixAt(slot: number, matrix: Mat4): void {
     this.#matrices.set(matrix, slot * 16);
   }
 
-  #writeColorAt(slot: number, color: InstanceColorInput): void {
-    if (!this.#colors) {
-      return;
-    }
-    this.#colors[slot * 4] = color[0];
-    this.#colors[slot * 4 + 1] = color[1];
-    this.#colors[slot * 4 + 2] = color[2];
-    this.#colors[slot * 4 + 3] = color[3];
-  }
-
   #swapMatrix(a: number, b: number): void {
     const aStart = a * 16;
     const bStart = b * 16;
-    const tmp = this.#matrices.slice(aStart, aStart + 16);
-    this.#matrices.copyWithin(aStart, bStart, bStart + 16);
-    this.#matrices.set(tmp, bStart);
+    swapMatrix16(this.#matrices, aStart, bStart, this.#matrixScratch);
     this.#markMatrixDirty(a);
     this.#markMatrixDirty(b);
   }
 
-  #swapColor(a: number, b: number): void {
-    if (!this.#colors) {
-      return;
-    }
-    const aStart = a * 4;
-    const bStart = b * 4;
-    const tmp = this.#colors.slice(aStart, aStart + 4);
-    this.#colors.copyWithin(aStart, bStart, bStart + 4);
-    this.#colors.set(tmp, bStart);
-    this.#markColorDirty(a);
-    this.#markColorDirty(b);
-  }
-
   #markMatrixDirty(slot: number): void {
     if (slot < this.#slots.visibleCount || this.#visibleStrategy === "scale-zero") {
-      this.#matrixAdapter.writeSlot(this.#matrices, this.#gpuMatrices, slot);
       this.#dirtyMatrices.add(slot);
       this.#flushDirtyIfReady();
     }
   }
 
   #markColorDirty(slot: number): void {
-    if (!this.#colors) {
-      return;
-    }
-    this.#dirtyColors.add(slot);
-    this.#flushDirtyIfReady();
+    if (!this.#colorStream) return;
+    this.#colorStream.markDirty(slot);
+    if (this.#batchDepth === 0) this.#colorStream.flush(this.#slots.count);
   }
 
   #syncDrawCount(): void {
@@ -598,14 +654,18 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       this.#needsCountSync = false;
       this.mesh.thinInstanceCount = this.#visibleStrategy === "active-count" ? this.#slots.visibleCount : this.#slots.count;
     }
-    this.#uploadRanges("matrix", this.#dirtyMatrices);
-    this.#uploadRanges("color", this.#dirtyColors);
-    if (refreshBounds && this.mesh.thinInstanceCount > 0) {
-      this.mesh.thinInstanceRefreshBoundingInfo(false);
+    if (this.#dirtyMatrices.size > 0) {
+      this.#matrixAdapter.prepare();
+      for (const slot of this.#dirtyMatrices) {
+        this.#matrixAdapter.writeSlotPrepared(this.#matrices, this.#gpuMatrices, slot);
+      }
     }
+    this.#uploadRanges("matrix", this.#dirtyMatrices);
+    this.#colorStream?.flush(this.#slots.count);
+    if (refreshBounds && this.#boundsMode === "auto") this.refreshBounds();
   }
 
-  #uploadRanges(kind: "matrix" | "color", dirty: Set<number>): void {
+  #uploadRanges(kind: "matrix", dirty: Set<number>): void {
     if (dirty.size === 0) return;
     const slots = Array.from(dirty).sort((a, b) => a - b);
     dirty.clear();
@@ -620,5 +680,42 @@ class BabylonInstanceSet<TMetadata> implements ColoredInstanceSet<TMetadata> {
       this.mesh.thinInstancePartialBufferUpdate(kind, end - start + 1, start);
       if (slot !== undefined) start = end = slot;
     }
+  }
+
+  #ensureColorStream(): SlotAlignedFloatStream {
+    if (this.#colorStream) return this.#colorStream;
+    const stream = createHostSlotStream(this, {
+      components: 4,
+      defaultValue: [1, 1, 1, 1],
+      backend: {
+        bind: (data) => {
+          this.#colors = data;
+          this.mesh.thinInstanceSetBuffer("color", data, 4, false);
+        },
+        upload: (_data, count, ranges) => {
+          let calls = 0;
+          let bytes = 0;
+          for (const range of ranges) {
+            const end = Math.min(range.end, count - 1);
+            if (end < range.start) continue;
+            const length = end - range.start + 1;
+            this.mesh.thinInstancePartialBufferUpdate("color", length, range.start);
+            calls++;
+            bytes += length * 4 * Float32Array.BYTES_PER_ELEMENT;
+          }
+          return { calls, bytes };
+        },
+        dispose: () => {
+          this.mesh.thinInstanceSetBuffer("color", null);
+          this.#colors = undefined;
+        }
+      }
+    });
+    this.#colorStream = stream;
+    return stream;
+  }
+
+  #assertUsable(): void {
+    if (this.#disposed) throw new InstancerError("InstanceSet has been disposed");
   }
 }

@@ -4,6 +4,9 @@ import { VertexAnimationBaker } from "@babylonjs/core/BakedVertexAnimation/verte
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { createInstanceSet, type ColoredInstanceSet } from "./instance-set.js";
+import { createHostSlotStream, type SlotAlignedFloatStreamStats } from "./slot-aligned-stream.js";
+import { validateBabylonVatAsset, type BabylonVatAsset, type VatAssetAnimatedBounds } from "./vat-asset.js";
+import { bakeBabylonAnimationGroupsSync } from "./vat-asset-baker.js";
 import type {
   InstanceBatchWriter,
   InstanceColorInput,
@@ -27,8 +30,8 @@ export interface VatClip {
   fromRow: number;
   frameCount: number;
   fps: number;
-  fromFrame: number;
-  toFrame: number;
+  fromFrame?: number;
+  toFrame?: number;
 }
 
 /** Babylon.js-native VAT resources exposed for advanced integrations. */
@@ -95,6 +98,18 @@ export interface VatInstanceCreateOptions<TMetadata = unknown> {
   fps?: number;
 }
 
+/** Atomic changes to one instance's VAT playback overrides. Omitted fields are preserved. */
+export interface VatPlaybackUpdate {
+  readonly clip?: string | undefined;
+  readonly offset?: number;
+  readonly fps?: number | undefined;
+}
+
+/** Stable-ID playback update used by {@link VatInstanceSet.setPlaybackMany}. */
+export interface VatPlaybackUpdateEntry extends VatPlaybackUpdate {
+  readonly id: InstanceId;
+}
+
 /**
  * VAT-backed animated instance helper for one skinned mesh.
  *
@@ -120,6 +135,12 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   readonly capacity: number;
   /** Number of currently visible animated IDs. */
   readonly visibleCount: number;
+  /** Source portable asset when this set was created without rebaking. */
+  readonly asset: BabylonVatAsset | undefined;
+  /** Conservative whole-model and optional per-clip animated bounds from the asset. */
+  readonly animatedBounds: VatAssetAnimatedBounds | undefined;
+  /** CPU dirtiness and actual Babylon.js upload counters for the playback stream. */
+  readonly playbackStats: SlotAlignedFloatStreamStats;
 
   /** Create an animated instance and return its stable ID. */
   create(options?: VatInstanceCreateOptions<TMetadata>): InstanceId;
@@ -215,6 +236,8 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   editRaw(callback: (raw: RawInstanceWriter) => void): void;
   /** Ensure at least the requested number of slots is allocated. */
   reserve(capacity: number): void;
+  /** Refresh aggregate instance bounds, or reapply configured fixed bounds. */
+  refreshBounds(): void;
   /** Release the instance set and VAT playback handle. */
   dispose(): void;
   /** Return the shared default clip data. */
@@ -233,6 +256,12 @@ export interface VatInstanceSet<TMetadata = unknown> extends VatPlaybackSource {
   setPhaseOffset(id: InstanceId, offset: number): void;
   /** Set or clear a per-instance playback fps override. */
   setFps(id: InstanceId, fps: number | undefined): void;
+  /** Atomically update any combination of clip, offset, and FPS. */
+  setPlayback(id: InstanceId, update: VatPlaybackUpdate): boolean;
+  /** Apply many playback updates and flush coalesced ranges once. */
+  setPlaybackMany(items: Iterable<VatPlaybackUpdateEntry>): number;
+  /** Group nested playback changes into one partial-upload flush. */
+  batchPlayback<TResult>(callback: () => TResult): TResult;
   /** Rebuild and upload per-slot VAT playback parameters. */
   syncInstances(): void;
 }
@@ -254,13 +283,51 @@ export function createVatInstanceSet<TMetadata = unknown>(
     throw new Error("VAT engine does not match the mesh engine.");
   }
   const handle = bakeBabylonVat(mesh, animationGroups);
+  try {
+    return createVatInstanceSetFromHandle(engine, mesh, handle, options);
+  } catch (error) {
+    handle.dispose();
+    throw error;
+  }
+}
+
+/** Create a VAT set from decoded portable data without replaying or sampling animations. */
+export function createVatInstanceSetFromAsset<TMetadata = unknown>(
+  engine: AbstractEngine,
+  mesh: Mesh,
+  asset: BabylonVatAsset,
+  options: VatInstanceSetOptions = {}
+): VatInstanceSet<TMetadata> {
+  if (mesh.getEngine() !== engine) throw new Error("VAT engine does not match the mesh engine.");
+  validateBabylonVatAsset(asset);
+  if (!mesh.skeleton) throw new Error("VAT asset loading requires a skinned Babylon.js mesh.");
+  if (mesh.skeleton.bones.length !== asset.boneCount) {
+    throw new Error(`Babylon VAT asset bone count ${asset.boneCount} does not match mesh skeleton ${mesh.skeleton.bones.length}.`);
+  }
+  const handle = createBabylonVatHandleFromAsset(mesh, asset);
+  try {
+    return createVatInstanceSetFromHandle(engine, mesh, handle, options, asset);
+  } catch (error) {
+    handle.dispose();
+    throw error;
+  }
+}
+
+function createVatInstanceSetFromHandle<TMetadata>(
+  engine: AbstractEngine,
+  mesh: Mesh,
+  handle: BabylonVatHandle,
+  options: VatInstanceSetOptions,
+  sourceAsset?: BabylonVatAsset
+): VatInstanceSet<TMetadata> {
   const initialClip = options.clip ?? Object.keys(handle.clips)[0];
   if (initialClip) handle.play(initialClip);
   const { clip: _clip, ...setOptions } = options;
+  const visibleStrategy = options.visibleStrategy ?? "scale-zero";
   const set = createInstanceSet<TMetadata>(mesh, {
     ...setOptions,
     gpuCulling: options.gpuCulling ?? false,
-    visibleStrategy: options.visibleStrategy ?? "scale-zero"
+    visibleStrategy
   });
 
   let activeClip = initialClip;
@@ -268,26 +335,55 @@ export function createVatInstanceSet<TMetadata = unknown>(
   const playback = new Map<InstanceId, VatInstancePlayback>();
   let playbackSyncDepth = 0;
   let playbackSyncPending = false;
+  let disposed = false;
 
-  const uploadPlaybackInstances = (): void => {
-    if (!activeClip || set.count === 0) {
-      return;
-    }
-    const params = new Float32Array(set.count * 4);
-    for (let slot = 0; slot < set.count; slot++) {
-      const id = set.getIdForSlot(slot);
-      const item = id === undefined ? undefined : playback.get(id);
-      const clip = getClip(handle.clips, item?.clip ?? activeClip);
-      if (!clip) {
-        continue;
+  const playbackStream = createHostSlotStream(set, {
+    components: 4,
+    backend: {
+      bind(data) {
+        handle.setInstances(data);
+      },
+      upload(_data, count, ranges) {
+        let calls = 0;
+        let bytes = 0;
+        for (const range of ranges) {
+          const end = Math.min(range.end, count - 1);
+          if (end < range.start) continue;
+          const length = end - range.start + 1;
+          mesh.thinInstancePartialBufferUpdate("bakedVertexAnimationSettingsInstanced", length, range.start);
+          calls++;
+          bytes += length * 4 * Float32Array.BYTES_PER_ELEMENT;
+        }
+        return { calls, bytes };
       }
-      params[slot * 4] = clip.fromRow;
-      params[slot * 4 + 1] = clip.fromRow + clip.frameCount - 1;
-      const fps = item?.fps ?? clip.fps;
-      params[slot * 4 + 2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
-      params[slot * 4 + 3] = fps;
     }
-    handle.setInstances(params);
+  });
+  const playbackValues = new Float32Array(4);
+
+  const writePlaybackSlot = (id: InstanceId): void => {
+    const slot = set.getSlot(id);
+    if (slot === undefined) return;
+    const item = playback.get(id);
+    const clip = getClip(handle.clips, item?.clip ?? activeClip);
+    if (!clip) {
+      playbackValues.fill(0);
+    } else {
+      const fps = item?.fps ?? clip.fps;
+      playbackValues[0] = clip.fromRow;
+      playbackValues[1] = clip.fromRow + clip.frameCount - 1;
+      playbackValues[2] = (item?.offset ?? getDefaultOffset(slot, set.count, clip)) * fps;
+      playbackValues[3] = fps;
+    }
+    playbackStream.setSlot(slot, playbackValues);
+  };
+
+  const rebuildPlaybackSlots = (): void => {
+    for (const id of set.ids()) writePlaybackSlot(id);
+  };
+
+  const uploadPlaybackInstances = (force = false): void => {
+    const uploadCount = visibleStrategy === "active-count" ? set.visibleCount : set.count;
+    playbackStream.flush(uploadCount, force);
   };
 
   const syncPlaybackInstances = (): void => {
@@ -311,6 +407,20 @@ export function createVatInstanceSet<TMetadata = unknown>(
     }
   };
 
+  const applyPlaybackUpdate = (id: InstanceId, update: VatPlaybackUpdate): boolean => {
+    if (!set.has(id)) return false;
+    const current = playback.get(id) ?? { offset: 0 };
+    const clip = Object.prototype.hasOwnProperty.call(update, "clip") ? update.clip : current.clip;
+    if (clip !== undefined && !handle.clips[clip]) return false;
+    const offset = update.offset ?? current.offset;
+    const fps = Object.prototype.hasOwnProperty.call(update, "fps") ? update.fps : current.fps;
+    if (clip === current.clip && Object.is(offset, current.offset) && fps === current.fps) return true;
+    playback.set(id, createPlayback({ clip, offset, fps }));
+    writePlaybackSlot(id);
+    syncPlaybackInstances();
+    return true;
+  };
+
   const api: VatInstanceSet<TMetadata> = {
     set,
     mesh,
@@ -331,6 +441,15 @@ export function createVatInstanceSet<TMetadata = unknown>(
     get visibleCount() {
       return set.visibleCount;
     },
+    get asset() {
+      return sourceAsset;
+    },
+    get animatedBounds() {
+      return sourceAsset?.bounds;
+    },
+    get playbackStats() {
+      return playbackStream.stats;
+    },
     create(createOptions = {}) {
       const id = set.create(createOptions.transform, createOptions.metadata);
       const clipName = createOptions.clip && handle.clips[createOptions.clip] ? createOptions.clip : undefined;
@@ -343,37 +462,55 @@ export function createVatInstanceSet<TMetadata = unknown>(
           fps: createOptions.fps
         })
       );
-      api.syncInstances();
+      writePlaybackSlot(id);
+      syncPlaybackInstances();
       return id;
     },
     createMany(items) {
-      return batchPlaybackUpdates(() => Array.from(items, (item) => api.create(item)));
+      const inputs = Array.from(items);
+      return batchPlaybackUpdates(() => {
+        const ids = set.createMany(inputs.map((item) => ({
+          ...(item.transform === undefined ? {} : { transform: item.transform }),
+          ...(item.metadata === undefined ? {} : { metadata: item.metadata })
+        })));
+        for (let index = 0; index < ids.length; index++) {
+          const id = ids[index]!;
+          const createOptions = inputs[index]!;
+          const clipName = createOptions.clip && handle.clips[createOptions.clip] ? createOptions.clip : undefined;
+          const clip = getClip(handle.clips, clipName ?? activeClip);
+          playback.set(id, createPlayback({
+            clip: clipName,
+            offset: createOptions.offset ?? getDefaultOffset(index, ids.length, clip),
+            fps: createOptions.fps
+          }));
+          writePlaybackSlot(id);
+        }
+        syncPlaybackInstances();
+        return ids;
+      });
     },
     remove(id) {
       const removed = set.remove(id);
       if (removed) {
         playback.delete(id);
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return removed;
     },
     removeMany(ids) {
-      let removed = 0;
-      for (const id of ids) {
-        if (set.remove(id)) {
-          playback.delete(id);
-          removed++;
-        }
-      }
+      const candidates = Array.from(ids);
+      const live = candidates.filter((id) => set.has(id));
+      const removed = set.removeMany(candidates);
+      for (const id of live) playback.delete(id);
       if (removed > 0) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return removed;
     },
     clear() {
       set.clear();
       playback.clear();
-      api.syncInstances();
+      playbackStream.flush(0, true);
     },
     has: (id) => set.has(id),
     getSlot: (id) => set.getSlot(id),
@@ -403,18 +540,18 @@ export function createVatInstanceSet<TMetadata = unknown>(
     getVisibleOrUndefined: (id) => set.getVisibleOrUndefined(id),
     setVisible(id, visible) {
       set.setVisible(id, visible);
-      api.syncInstances();
+      syncPlaybackInstances();
     },
     trySetVisible(id, visible) {
       const updated = set.trySetVisible(id, visible);
       if (updated) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
       return updated;
     },
     setVisibleMany(ids, visible) {
       set.setVisibleMany(ids, visible);
-      api.syncInstances();
+      syncPlaybackInstances();
     },
     getMetadata: (id) => set.getMetadata(id),
     setMetadata: (id, metadata) => set.setMetadata(id, metadata),
@@ -438,15 +575,18 @@ export function createVatInstanceSet<TMetadata = unknown>(
         });
       });
       if (needsPlaybackSync) {
-        api.syncInstances();
+        syncPlaybackInstances();
       }
     },
     editRaw: (callback) => set.editRaw(callback),
     reserve: (capacity) => set.reserve(capacity),
+    refreshBounds: () => set.refreshBounds(),
     dispose() {
+      if (disposed) return;
       set.dispose();
       playback.clear();
       handle.dispose();
+      disposed = true;
     },
     getActiveClip() {
       return activeClip ? handle.clips[activeClip] : undefined;
@@ -480,9 +620,14 @@ export function createVatInstanceSet<TMetadata = unknown>(
       if (!handle.clips[clip]) {
         return false;
       }
+      const changed = activeClip !== clip;
       activeClip = clip;
       handle.play(clip);
-      api.syncInstances();
+      if (!changed) return true;
+      for (const id of set.ids()) {
+        if (playback.get(id)?.clip === undefined) writePlaybackSlot(id);
+      }
+      syncPlaybackInstances();
       return true;
     },
     update(deltaSeconds) {
@@ -490,46 +635,31 @@ export function createVatInstanceSet<TMetadata = unknown>(
       handle.update(deltaSeconds);
     },
     setClip(id, clip) {
-      if (!set.has(id) || (clip !== undefined && !handle.clips[clip])) {
-        return false;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(
-        id,
-        createPlayback({
-          clip,
-          offset: current.offset,
-          fps: current.fps
-        })
-      );
-      api.syncInstances();
-      return true;
+      return applyPlaybackUpdate(id, { clip });
     },
     setPhaseOffset(id, offset) {
-      if (!set.has(id)) {
-        return;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(id, { ...current, offset });
-      api.syncInstances();
+      applyPlaybackUpdate(id, { offset });
     },
     setFps(id, fps) {
-      if (!set.has(id)) {
-        return;
-      }
-      const current = playback.get(id) ?? { offset: 0 };
-      playback.set(
-        id,
-        createPlayback({
-          clip: current.clip,
-          offset: current.offset,
-          fps
-        })
-      );
-      api.syncInstances();
+      applyPlaybackUpdate(id, { fps });
+    },
+    setPlayback(id, update) {
+      return applyPlaybackUpdate(id, update);
+    },
+    setPlaybackMany(items) {
+      return batchPlaybackUpdates(() => {
+        let accepted = 0;
+        for (const { id, ...update } of items) if (applyPlaybackUpdate(id, update)) accepted++;
+        return accepted;
+      });
+    },
+    batchPlayback(callback) {
+      return batchPlaybackUpdates(callback);
     },
     syncInstances() {
-      syncPlaybackInstances();
+      rebuildPlaybackSlots();
+      if (playbackSyncDepth > 0) playbackSyncPending = true;
+      else uploadPlaybackInstances(true);
     }
   };
 
@@ -555,7 +685,7 @@ function bakeBabylonVat(mesh: Mesh, animationGroups: AnimationGroup[]): BabylonV
   }
 
   const baker = new VertexAnimationBaker(mesh.getScene(), mesh);
-  const data = bakeAnimationGroupsSync(mesh, animationGroups);
+  const data = bakeBabylonAnimationGroupsSync(mesh, animationGroups);
   const manager = new BakedVertexAnimationManager(mesh.getScene());
   manager.texture = baker.textureFromBakedVertexData(data);
   mesh.bakedVertexAnimationManager = manager;
@@ -588,43 +718,41 @@ function bakeBabylonVat(mesh: Mesh, animationGroups: AnimationGroup[]): BabylonV
   };
 }
 
-/**
- * Bake the supplied AnimationGroups instead of asking the skeleton to play its
- * own animations. glTF loaders commonly attach animation tracks to transform
- * nodes linked to bones, so advancing only `Skeleton.animations` produces a
- * texture containing the rest pose in every row.
- */
-function bakeAnimationGroupsSync(mesh: Mesh, groups: AnimationGroup[]): Float32Array {
-  const skeleton = mesh.skeleton;
-  if (!skeleton) throw new Error("VAT requires a skinned Babylon.js mesh.");
-  const floatsPerFrame = (skeleton.bones.length + 1) * 16;
-  const frameCount = groups.reduce(
-    (total, group) => total + Math.floor(group.to) - Math.floor(group.from) + 1,
-    0
-  );
-  const data = new Float32Array(floatsPerFrame * frameCount);
-  const scene = mesh.getScene();
-  let row = 0;
-
-  for (const group of groups) group.stop(true);
-  skeleton.returnToRest();
-
-  for (const group of groups) {
-    const from = Math.floor(group.from);
-    const to = Math.floor(group.to);
-    group.start(false, 1, from, to);
-    for (let frame = from; frame <= to; frame++) {
-      group.goToFrame(frame);
-      scene.render();
-      skeleton.computeAbsoluteMatrices(true);
-      data.set(skeleton.getTransformMatrices(mesh), row * floatsPerFrame);
-      row++;
-    }
-    group.stop(true);
+function createBabylonVatHandleFromAsset(mesh: Mesh, asset: BabylonVatAsset): BabylonVatHandle {
+  const baker = new VertexAnimationBaker(mesh.getScene(), mesh);
+  const manager = new BakedVertexAnimationManager(mesh.getScene());
+  manager.texture = baker.textureFromBakedVertexData(asset.frameData);
+  mesh.bakedVertexAnimationManager = manager;
+  const clips: Record<string, VatClip> = {};
+  for (const [name, clip] of Object.entries(asset.clips)) {
+    clips[name] = { name, fromRow: clip.fromRow, frameCount: clip.frameCount, fps: clip.fps };
   }
-
-  skeleton.returnToRest();
-  return data;
+  return {
+    manager,
+    clips,
+    setInstances(parameters) {
+      mesh.thinInstanceSetBuffer(
+        "bakedVertexAnimationSettingsInstanced",
+        parameters.length === 0 ? null : parameters,
+        4,
+        false
+      );
+    },
+    play(name) {
+      const clip = clips[name];
+      if (!clip) return false;
+      manager.setAnimationParameters(clip.fromRow, clip.fromRow + clip.frameCount - 1, 0, clip.fps);
+      return true;
+    },
+    update(deltaSeconds) {
+      manager.time += deltaSeconds;
+    },
+    dispose() {
+      mesh.thinInstanceSetBuffer("bakedVertexAnimationSettingsInstanced", null);
+      if (mesh.bakedVertexAnimationManager === manager) mesh.bakedVertexAnimationManager = null;
+      manager.dispose(true);
+    }
+  };
 }
 
 function getDefaultOffset(slot: number, count: number, clip: VatClip | undefined): number {

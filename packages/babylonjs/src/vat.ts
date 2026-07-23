@@ -1,4 +1,7 @@
 export * from "./vat-instance-set.js";
+export * from "./instance-controls.js";
+export * from "./vat-asset.js";
+export * from "./vat-asset-baker.js";
 export * from "./vat-character-set.js";
 export * from "./vat-attachment-controller.js";
 export * from "./vat-attachment-preset.js";

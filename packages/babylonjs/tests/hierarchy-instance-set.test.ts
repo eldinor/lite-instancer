@@ -2,6 +2,7 @@ import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { createHierarchyInstanceSet } from "../src/hierarchy-instance-set.js";
@@ -67,6 +68,30 @@ describe("Babylon.js HierarchyInstanceSet", () => {
       expect(actualOrigin.y).toBeCloseTo(expectedOrigin.y);
       expect(actualOrigin.z).toBeCloseTo(expectedOrigin.z);
     }
+    engine.dispose();
+  });
+
+  it("applies fixed bounds to every hierarchy mesh without automatic scans", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const root = new TransformNode("fixed-root", scene);
+    const left = MeshBuilder.CreateBox("fixed-left", {}, scene);
+    const right = MeshBuilder.CreateBox("fixed-right", {}, scene);
+    left.parent = root;
+    right.parent = root;
+    const set = createHierarchyInstanceSet(root, {
+      capacity: 4,
+      boundsMode: "fixed",
+      fixedBounds: { minimum: [-10, -2, -2], maximum: [10, 2, 2] }
+    });
+    const leftRefresh = vi.spyOn(left, "thinInstanceRefreshBoundingInfo");
+    const rightRefresh = vi.spyOn(right, "thinInstanceRefreshBoundingInfo");
+    set.createMany([{ transform: { position: [-4, 0, 0] } }, { transform: { position: [4, 0, 0] } }]);
+    expect(leftRefresh).not.toHaveBeenCalled();
+    expect(rightRefresh).not.toHaveBeenCalled();
+    expect(left.getBoundingInfo().minimum.x).toBe(-10);
+    expect(right.getBoundingInfo().maximum.x).toBe(10);
+    set.dispose();
     engine.dispose();
   });
 });

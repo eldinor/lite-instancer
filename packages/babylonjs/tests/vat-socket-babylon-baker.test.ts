@@ -25,6 +25,7 @@ describe("Babylon.js VAT socket integration", () => {
     animation.setKeys([{ frame: 0, value: 1 }, { frame: 2, value: 3 }]);
     const group = new AnimationGroup("Wave", scene);
     group.addTargetedAnimation(animation, hand);
+    const render = vi.spyOn(scene, "render");
 
     const asset = bakeVatSocketAsset(engine, [group], { root, sockets: { weapon: "RightHand" } });
     const track = asset.sockets.weapon?.Wave;
@@ -33,6 +34,7 @@ describe("Babylon.js VAT socket integration", () => {
     expect(Array.from(asset.basis)).toEqual([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     expect(track?.translations[0]).toBeCloseTo(1);
     expect(track?.translations[6]).toBeCloseTo(3);
+    expect(render).not.toHaveBeenCalled();
     engine.dispose();
   });
 

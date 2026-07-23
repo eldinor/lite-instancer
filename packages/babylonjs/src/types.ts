@@ -37,6 +37,15 @@ export type HierarchyGrowStrategy = "none" | "rebuild";
  */
 export type VisibilityStrategy = "active-count" | "scale-zero";
 
+/** Aggregate thin-instance bounds maintenance policy. */
+export type InstanceBoundsMode = "auto" | "manual" | "fixed";
+
+/** Conservative mesh-local aggregate AABB covering every rendered instance. */
+export interface InstanceBounds {
+  readonly minimum: Vec3Like;
+  readonly maximum: Vec3Like;
+}
+
 /** Input for creating one instance through bulk helpers. */
 export interface InstanceCreateInput<TMetadata = unknown> {
   transform?: InstanceTransformInput;
@@ -93,6 +102,10 @@ export interface InstanceSetOptions {
   colors?: boolean;
   /** Visibility implementation. Defaults to `"active-count"`. */
   visibleStrategy?: VisibilityStrategy;
+  /** Bounds maintenance. `"auto"` preserves Babylon.js-compatible refresh behavior. */
+  boundsMode?: InstanceBoundsMode;
+  /** Required conservative aggregate AABB when `boundsMode` is `"fixed"`. */
+  fixedBounds?: InstanceBounds;
 }
 
 /** Options for GLB/hierarchy instance pools. */
@@ -107,6 +120,10 @@ export interface HierarchyInstanceSetOptions {
   gpuCulling?: boolean;
   /** Visibility implementation. Defaults to `"active-count"`. */
   visibleStrategy?: VisibilityStrategy;
+  /** Bounds maintenance. `"auto"` preserves Babylon.js-compatible refresh behavior. */
+  boundsMode?: InstanceBoundsMode;
+  /** Common conservative mesh-local aggregate AABB applied to every hierarchy mesh in fixed mode. */
+  fixedBounds?: InstanceBounds;
 }
 
 /** Safe writer passed to `batch` so many app updates flush together. */
@@ -252,6 +269,8 @@ export interface BaseInstanceSet<TMetadata = unknown> {
 
   /** Ensure at least this many slots are allocated. */
   reserve(capacity: number): void;
+  /** Refresh aggregate bounds now, or reapply configured fixed bounds. */
+  refreshBounds(): void;
   /** Clear the set and detach thin instance data from backing objects. */
   dispose(): void;
 }
