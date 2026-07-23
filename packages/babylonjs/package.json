@@ -4,6 +4,9 @@
   "description": "Stable IDs, pooling, picking, visibility, metadata, and batch updates for Babylon.js thin instances.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
