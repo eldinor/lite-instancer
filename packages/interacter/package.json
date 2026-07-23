@@ -14,17 +14,18 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
+    "files": [
+      "dist",
+      "CHANGELOG.md",
+      "README.md",
+      "LICENSE"
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "examples:dev": "vite --config vite.examples.config.ts --host 0.0.0.0",
-    "examples:build": "vite build --config vite.examples.config.ts",
+    "examples:dev": "npm run build && vite --config vite.examples.config.ts --host 0.0.0.0",
+    "examples:build": "npm run build && vite build --config vite.examples.config.ts",
     "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run pack:check"

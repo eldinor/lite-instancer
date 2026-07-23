@@ -68,6 +68,28 @@ const interactions = createInteractionManager({
 });
 ```
 
+### Mouse buttons
+
+Picked `pointerdown` and `pointerup` events are delivered for primary, middle, and secondary mouse buttons. Use `event.button` to identify the changed button:
+
+- `0`: primary
+- `1`: middle
+- `2`: secondary
+
+`event.buttons` contains the DOM button-state bitmask; the middle-button bit is `4`.
+
+Only the primary button can produce Interacter `click` and `doubleclick` events. A middle-button interaction therefore produces `pointerdown` and `pointerup`, but no `click`, `doubleclick`, or `contextmenu`. Handle a middle-button action explicitly when needed:
+
+```ts
+onInteraction(target, "pointerup", (event) => {
+  if (event.button === 1) {
+    console.log("Middle button:", event.mesh);
+  }
+});
+```
+
+Native middle-button browser behavior remains enabled with the default `preventPointerDefault: false`. Set `preventPointerDefault: true` when the application needs to suppress native pointer defaults synchronously.
+
 For touch manipulation, applications may also need CSS such as:
 
 ```css
@@ -100,4 +122,4 @@ Run the standalone multi-page examples site:
 npm run examples:dev --workspace @litools/interacter
 ```
 
-Its index links to focused click, hover, pointer/context-menu, global-dispatch, and lifecycle examples.
+Its index links to focused click, hover, pointer/context-menu, global-dispatch, lifecycle, built-package consumer, static GLB-picking, Samba Girl skeletal picking, Ready Player skeletal picking, and 80-mesh stress-test examples. The consumer imports `dist/index.js` directly; the example scripts build the package before starting Vite.
