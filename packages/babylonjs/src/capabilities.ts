@@ -40,8 +40,8 @@ export function inspectInstancerCapabilities(engine?: AbstractEngine): Instancer
 
 function detectRenderingBackend(engine: AbstractEngine | undefined): InstancerCapabilities["renderingBackend"] {
   if (!engine) return "unknown";
+  if (engine.isWebGPU) return "webgpu";
   const className = engine.getClassName().toLowerCase();
-  if (className.includes("webgpu")) return "webgpu";
   if (className === "engine" || className.includes("thinengine")) return "webgl";
   return "unknown";
 }
