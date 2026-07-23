@@ -1,4 +1,5 @@
 import type { Mesh, SceneContext } from "@babylonjs/lite";
+import * as publicApi from "../../src/index.js";
 import {
   disposeInteractionManager,
   disposeInteractionTarget,
@@ -143,6 +144,25 @@ async function settle(): Promise<void> {
 }
 
 describe("interaction manager", () => {
+  it("keeps the version 0.1 runtime API surface stable", () => {
+    expect(Object.keys(publicApi).sort()).toEqual([
+      "createInteractionManager",
+      "disposeInteractionManager",
+      "disposeInteractionTarget",
+      "getActivePointers",
+      "getHoveredTarget",
+      "getPressedTarget",
+      "isInteractionEnabled",
+      "isTargetHovered",
+      "isTargetPressed",
+      "onInteraction",
+      "onInteractionEvent",
+      "registerMesh",
+      "setInteractionEnabled",
+      "setInteractionFilter"
+    ]);
+  });
+
   it("registers opaque targets and rejects duplicate mesh registration", () => {
     const { manager, mesh } = setup();
     const target = registerMesh(manager, mesh);
@@ -264,6 +284,29 @@ describe("interaction manager", () => {
     picker.hit(mesh);
     await settle();
     expect(clicks).toBe(1);
+  });
+
+  it("delivers middle-button down and up without click events", async () => {
+    const { canvas, picker, manager, mesh } = setup();
+    const target = registerMesh(manager, mesh);
+    const events: Array<{ type: string; button: number; buttons: number }> = [];
+    for (const type of ["pointerdown", "pointerup", "click", "doubleclick"] as const) {
+      onInteraction(target, type, (event) => {
+        events.push({ type: event.type, button: event.button, buttons: event.buttons });
+      });
+    }
+
+    canvas.dispatchEvent(pointer("pointerdown", { button: 1, buttons: 4, timeStamp: 100 }));
+    canvas.dispatchEvent(pointer("pointerup", { button: 1, buttons: 0, timeStamp: 120 }));
+    picker.hit(mesh);
+    await settle();
+    picker.hit(mesh);
+    await settle();
+
+    expect(events).toEqual([
+      { type: "pointerdown", button: 1, buttons: 4 },
+      { type: "pointerup", button: 1, buttons: 0 }
+    ]);
   });
 
   it("cancels pointer sessions and ignores targets disposed during a pick", async () => {

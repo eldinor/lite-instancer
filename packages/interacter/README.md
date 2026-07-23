@@ -4,6 +4,8 @@ Application-level click, hover, and pointer events for Babylon Lite meshes.
 
 Interacter owns one reusable GPU picker, serializes asynchronous picks, coalesces hover work, and delivers resolved events through stable registration handles.
 
+See [WHY.md](./WHY.md) for the design motivation, asynchronous-picking problems, and version 0.1 boundaries.
+
 ## Install
 
 ```sh
@@ -36,6 +38,22 @@ disposeInteractionManager(interactions);
 ```
 
 Use one manager for a scene/canvas pair. Registering the same mesh twice with one manager throws.
+
+## Version 0.1 public API
+
+Version 0.1 exposes only the package root, `@litools/interacter`. This is the complete supported runtime API:
+
+- `createInteractionManager` and `disposeInteractionManager`
+- `registerMesh` and `disposeInteractionTarget`
+- `onInteraction` and `onInteractionEvent`
+- `setInteractionEnabled` and `isInteractionEnabled`
+- `setInteractionFilter`
+- `getHoveredTarget`, `getPressedTarget`, and `getActivePointers`
+- `isTargetHovered` and `isTargetPressed`
+
+The root also exports the TypeScript types `ClickThreshold`, `ClickThresholds`, `InteractionErrorContext`, `InteractionEvent`, `InteractionEventType`, `InteractionListener`, `InteractionManager`, `InteractionManagerOptions`, `InteractionMeshFilter`, `InteractionPointerType`, and `InteractionTarget`.
+
+Deep imports and internal picker, scheduler, resolver, and registration modules are not public API. Version 0.1 does not expose an adapter API or support Instancer targets.
 
 ## Events
 
@@ -106,6 +124,16 @@ A matching double-click emits two immediate `click` events plus `doubleclick`. T
 
 Hover is enabled for mouse and pen. Pointer moves are coalesced to the newest position, limited to one pick start per animation frame, and stale results are ignored. Touch does not create persistent hover.
 
+During rapid pointer movement, intermediate meshes may intentionally receive no hover event. For example, moving quickly across a row can resolve only the first and final positions:
+
+```text
+first mesh: hoverstart
+first mesh: hoverend
+final mesh: hoverstart
+```
+
+After movement stops, only the final mesh should remain hovered. The earlier mesh must receive `hoverend`; two meshes remaining visibly hovered indicates an application cleanup problem or a missing hover transition.
+
 Only registered meshes participate in picks by default. Use `setInteractionFilter` to further restrict them.
 
 ## State and lifecycle
@@ -123,3 +151,13 @@ npm run examples:dev --workspace @litools/interacter
 ```
 
 Its index links to focused click, hover, pointer/context-menu, global-dispatch, lifecycle, built-package consumer, static GLB-picking, Samba Girl skeletal picking, Ready Player skeletal picking, and 80-mesh stress-test examples. The consumer imports `dist/index.js` directly; the example scripts build the package before starting Vite.
+
+## Release verification
+
+Run the complete version 0.1 release audit with:
+
+```sh
+npm run release:check --workspace @litools/interacter
+```
+
+The audit typechecks, runs unit tests, builds the package and examples, verifies every production example index link, creates and inspects a temporary npm tarball, and removes that temporary archive afterward.

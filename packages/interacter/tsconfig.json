@@ -14,6 +14,7 @@
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
       "@litools/interacter": ["./src/index.ts"]

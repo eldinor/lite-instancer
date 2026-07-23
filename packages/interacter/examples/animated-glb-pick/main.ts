@@ -1,6 +1,7 @@
 import {
   addToScene,
   attachControl,
+  computeMaxExtents,
   createDefaultCamera,
   createEngine,
   createHemisphericLight,
@@ -76,9 +77,6 @@ if (!root || !isSceneNode(root)) {
   throw new Error("Samba Girl did not provide a root scene node.");
 }
 
-const camera = createDefaultCamera(scene);
-attachControl(camera, canvas, scene);
-
 const animations = container.animationGroups ?? [];
 let animationIndex = animations.findIndex((candidate) => candidate.name === CLIP_NAME);
 if (animationIndex < 0) animationIndex = 0;
@@ -87,6 +85,18 @@ if (!initialAnimation) {
   throw new Error("Samba Girl did not provide an animation group.");
 }
 let animation = initialAnimation;
+const meshes = collectMeshes(root);
+const animatedExtents = computeMaxExtents(meshes, animation, engine);
+for (const [index, mesh] of meshes.entries()) {
+  const extent = animatedExtents[index];
+  if (!extent || !extent.minimum.every(Number.isFinite) || !extent.maximum.every(Number.isFinite)) continue;
+  mesh.boundMin = extent.minimum;
+  mesh.boundMax = extent.maximum;
+}
+
+const camera = createDefaultCamera(scene);
+attachControl(camera, canvas, scene);
+
 animation.loopAnimation = true;
 animation.speedRatio = Number(animationSpeed.value);
 playAnimation(animation);
@@ -128,9 +138,8 @@ const interactions = createInteractionManager({
   }
 });
 
-const meshes = collectMeshes(root);
 for (const [index, mesh] of meshes.entries()) {
-  if (!mesh.name) mesh.name = `Samba Girl mesh ${index + 1}`;
+  mesh.name = `Samba Girl mesh ${index + 1}`;
   const target = registerMesh(interactions, mesh);
   onInteraction(target, "click", (event) => {
     const point = event.pickedPoint;

@@ -14,11 +14,12 @@
       "import": "./dist/index.js"
     }
   },
-    "files": [
-      "dist",
-      "CHANGELOG.md",
-      "README.md",
-      "LICENSE"
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "README.md",
+    "WHY.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
@@ -26,9 +27,11 @@
     "test": "vitest run",
     "examples:dev": "npm run build && vite --config vite.examples.config.ts --host 0.0.0.0",
     "examples:build": "npm run build && vite build --config vite.examples.config.ts",
+    "examples:verify": "node scripts/verify-examples.mjs",
     "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
-    "pack:check": "npm pack --dry-run --ignore-scripts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run pack:check"
+    "pack:check": "node scripts/verify-package.mjs",
+    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run examples:verify && npm run pack:check",
+    "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
     "@babylonjs/lite": "^1.13.0"

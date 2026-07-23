@@ -15,3 +15,5 @@
 - Add an animated Samba Girl GLB example that exercises picking against live skeletal deformation with play/pause comparison.
 - Add a Ready Player animated GLB example using the same live-skeleton picking and play/pause workflow.
 - Add an 80-mesh interaction stress example with live event-rate counters and lifecycle controls.
+- Add middle-button regression coverage, static production-example link verification, and npm tarball inspection.
+- Document why the package exists, its interaction ownership model, and its intentionally focused version 0.1 scope.

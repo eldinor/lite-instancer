@@ -55,6 +55,12 @@ button:hover { background: #24436d; }
   padding: 64px 24px;
 }
 .index h1 { font-size: clamp(38px, 8vw, 72px); margin: 0; }
+.index h1 .version {
+  color: #8f9aaa;
+  font-size: 0.25em;
+  font-weight: 600;
+  vertical-align: middle;
+}
 .index > main > p { color: #aebcd2; font-size: 18px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 32px; }
 .card {
@@ -71,3 +77,28 @@ button:hover { background: #24436d; }
 .card:hover { border-color: #75c9ff; transform: translateY(-2px); }
 .card strong { display: block; margin-bottom: 8px; font-size: 19px; }
 .card span { color: #aebcd2; line-height: 1.45; }
+.credits {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.credits a {
+  color: #8f9aaa;
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+.credits a:hover { color: #edf3ff; }
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.github-link svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
