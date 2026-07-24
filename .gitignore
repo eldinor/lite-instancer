@@ -5,6 +5,7 @@ docs/api/
 test-results/
 coverage/
 playwright-report/
+debug.log
 .vite/
 *.tsbuildinfo
 PLAN.md

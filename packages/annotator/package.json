@@ -2,12 +2,40 @@
   "name": "@litools/annotator",
   "version": "0.1.2",
   "description": "Spatial HTML labels and markers for Babylon Lite meshes and stable Instancer IDs.",
+  "homepage": "https://github.com/eldinor/lite-instancer/tree/main/packages/annotator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eldinor/lite-instancer.git",
+    "directory": "packages/annotator"
+  },
+  "bugs": {
+    "url": "https://github.com/eldinor/lite-instancer/issues"
+  },
+  "keywords": [
+    "babylonjs",
+    "babylon-lite",
+    "annotations",
+    "labels",
+    "markers",
+    "collision",
+    "occlusion",
+    "instancing",
+    "spatial-ui",
+    "webgpu",
+    "3d"
+  ],
   "type": "module",
   "license": "MIT",
   "author": {
     "name": "Andrei Stepanov",
     "email": "eldinor@gmail.com",
     "url": "https://babylonpress.org/"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -48,7 +76,8 @@
     "test:browser": "node ../../node_modules/@playwright/test/cli.js test",
     "typecheck": "tsc --noEmit",
     "pack:check": "node scripts/verify-package.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run pack:check"
+    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run test:browser && npm run pack:check",
+    "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
     "@babylonjs/lite": "^1.13.0",
