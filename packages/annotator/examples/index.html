@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Runnable @litools/annotator examples for Babylon Lite." />
+    <title>Annotator examples</title>
+    <link rel="stylesheet" href="./shared/styles.css" />
+    <script type="module" src="./index.ts"></script>
+  </head>
+  <body class="gallery-page">
+    <header class="gallery-hero">
+      <div class="eyebrow">Babylon Lite spatial UI</div>
+      <h1>Annotator <small data-package-version></small></h1>
+      <p>
+        Readable labels and markers that stay attached to meshes, world points,
+        and stable Instancer IDs.
+      </p>
+    </header>
+
+    <main class="gallery-main">
+      <nav class="example-grid" aria-label="Annotator examples">
+        <a class="example-card card-labels" href="./labels/">
+          <span class="card-number">01</span>
+          <span class="card-visual" aria-hidden="true"><i></i><b>Pump A-12</b><em></em></span>
+          <strong>Mesh labels</strong>
+          <span>Attach styled labels to local points on regular meshes.</span>
+          <code>createLabel()</code>
+        </a>
+        <a class="example-card card-markers" href="./markers/">
+          <span class="card-number">02</span>
+          <span class="card-visual marker-visual" aria-hidden="true"><i></i><i></i><i></i></span>
+          <strong>Markers &amp; clamping</strong>
+          <span>Mix dots and rings, then keep a moving target inside the viewport.</span>
+          <code>createMarker()</code>
+        </a>
+        <a class="example-card card-dynamic" href="./dynamic/">
+          <span class="card-number">03</span>
+          <span class="card-visual data-visual" aria-hidden="true"><b>72.4 °C</b><em>LIVE</em></span>
+          <strong>Live data labels</strong>
+          <span>Refresh callback text explicitly while the scene keeps moving.</span>
+          <code>invalidateAnnotation()</code>
+        </a>
+        <a class="example-card card-instancer" href="./instancer/">
+          <span class="card-number">04</span>
+          <span class="card-visual grid-visual" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <strong>Stable instance IDs</strong>
+          <span>Labels survive slot swaps, growth, visibility changes, and removal.</span>
+          <code>createInstanceAnchor()</code>
+        </a>
+        <a class="example-card card-lifecycle" href="./lifecycle/">
+          <span class="card-number">05</span>
+          <span class="card-visual lifecycle-visual" aria-hidden="true"><i></i><b>dispose</b><em>recreate</em></span>
+          <strong>Lifecycle &amp; cleanup</strong>
+          <span>Dispose individual annotations or the complete layer, then rebuild safely.</span>
+          <code>disposeAnnotationLayer()</code>
+        </a>
+      </nav>
+    </main>
+
+    <footer class="gallery-footer">
+      <span>@litools/annotator</span>
+      <a href="https://github.com/eldinor/lite-instancer/tree/main/packages/annotator">View source</a>
+    </footer>
+  </body>
+</html>

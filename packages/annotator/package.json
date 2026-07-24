@@ -1,0 +1,62 @@
+{
+  "name": "@litools/annotator",
+  "version": "0.1.0",
+  "description": "Spatial HTML labels and markers for Babylon Lite meshes and stable Instancer IDs.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./html": {
+      "types": "./dist/html.d.ts",
+      "import": "./dist/html.js"
+    },
+    "./instancer": {
+      "types": "./dist/instancer.d.ts",
+      "import": "./dist/instancer.js"
+    }
+  },
+  "files": [
+    "dist",
+    "API.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "dev:test": "vite --config vite.browser.config.ts --host 127.0.0.1",
+    "examples:dev": "vite --config vite.examples.config.ts --host 0.0.0.0",
+    "examples:build": "vite build --config vite.examples.config.ts",
+    "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
+    "test": "vitest run",
+    "test:browser": "node ../../node_modules/@playwright/test/cli.js test",
+    "typecheck": "tsc --noEmit",
+    "pack:check": "node scripts/verify-package.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run pack:check"
+  },
+  "peerDependencies": {
+    "@babylonjs/lite": "^1.13.0",
+    "@litools/instancer": "^0.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@litools/instancer": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@babylonjs/lite": "^1.13.0",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^26.1.1",
+    "@webgpu/types": "^0.1.71",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}
