@@ -32,7 +32,14 @@ export class FakeBackend implements AnnotationBackend {
   }
 
   measure(resource: unknown): BackendBounds | null {
-    return (resource as FakeResource).update?.rendered ? this.bounds : null;
+    const update = (resource as FakeResource).update;
+    if (!update?.rendered || !update.screenPosition) return null;
+    return {
+      x: update.screenPosition.x - this.bounds.width * 0.5,
+      y: update.screenPosition.y - this.bounds.height * 0.5,
+      width: this.bounds.width,
+      height: this.bounds.height
+    };
   }
 
   setViewport(viewport: AnnotationViewport): void {

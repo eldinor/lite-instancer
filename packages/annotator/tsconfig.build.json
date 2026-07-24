@@ -11,6 +11,7 @@
       "@litools/annotator": ["./src/index.ts"],
       "@litools/annotator/html": ["./src/html.ts"],
       "@litools/annotator/instancer": ["./src/instancer.ts"],
+      "@litools/annotator/babylon-occlusion": ["./src/babylon-occlusion.ts"],
       "@litools/instancer": ["./build-types/instancer-peer.d.ts"]
     }
   },

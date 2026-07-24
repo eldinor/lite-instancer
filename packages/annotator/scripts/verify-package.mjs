@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const expectedPackage = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "litools-annotator-pack-"));
 const consumerDirectory = join(temporaryDirectory, "consumer");
 
@@ -25,7 +26,7 @@ try {
   });
 
   const [metadata] = JSON.parse(packed.stdout);
-  if (metadata.name !== "@litools/annotator" || metadata.version !== "0.1.0") {
+  if (metadata.name !== expectedPackage.name || metadata.version !== expectedPackage.version) {
     throw new Error(`Unexpected packed identity: ${metadata.name}@${metadata.version}`);
   }
   if (!metadata.integrity || !metadata.shasum) {
@@ -56,7 +57,11 @@ try {
     "dist/instancer.js",
     "dist/instancer.js.map",
     "dist/instancer.d.ts",
-    "dist/instancer.d.ts.map"
+    "dist/instancer.d.ts.map",
+    "dist/babylon-occlusion.js",
+    "dist/babylon-occlusion.js.map",
+    "dist/babylon-occlusion.d.ts",
+    "dist/babylon-occlusion.d.ts.map"
   ];
   const missing = required.filter((path) => !files.has(path));
   if (missing.length > 0) {
@@ -129,6 +134,10 @@ import {
   createInstanceAnchor,
   type InstanceAnchorOptions
 } from "@litools/annotator/instancer";
+import {
+  createBabylonDepthOcclusionProvider,
+  type BabylonDepthOcclusionOptions
+} from "@litools/annotator/babylon-occlusion";
 
 void [
   createAnnotationLayer,
@@ -138,14 +147,16 @@ void [
   getAnnotationSnapshot,
   projectAnnotationPosition,
   createHtmlAnnotationBackend,
-  createInstanceAnchor
+  createInstanceAnchor,
+  createBabylonDepthOcclusionProvider
 ];
 type PublicTypes = [
   AnnotationLayerOptions,
   LabelOptions,
   MarkerOptions,
   HtmlAnnotationBackendOptions,
-  InstanceAnchorOptions
+  InstanceAnchorOptions,
+  BabylonDepthOcclusionOptions
 ];
 export type { PublicTypes };
 `
@@ -164,7 +175,8 @@ export type { PublicTypes };
       `await Promise.all([
         import("@litools/annotator"),
         import("@litools/annotator/html"),
-        import("@litools/annotator/instancer")
+        import("@litools/annotator/instancer"),
+        import("@litools/annotator/babylon-occlusion")
       ]);`
     ],
     consumerDirectory
@@ -172,7 +184,7 @@ export type { PublicTypes };
 
   console.log(
     `Verified packed ${metadata.name}@${metadata.version}: ${files.size} files, ` +
-    `${archive.size} bytes, clean install, strict typecheck, and all three runtime imports.`
+    `${archive.size} bytes, clean install, strict typecheck, and all four runtime imports.`
   );
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });

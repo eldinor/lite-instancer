@@ -1,9 +1,20 @@
 import { createHtmlAnnotationBackend } from "../../../src/html.js";
-import type { AnnotationBackend, BackendAnnotationDefinition } from "../../../src/types.js";
+import type {
+  AnnotationBackend,
+  BackendAnnotationDefinition,
+  BackendBounds
+} from "../../../src/types.js";
 
 const container = document.querySelector<HTMLElement>("#container")!;
 const canvas = document.querySelector<HTMLCanvasElement>("#canvas")!;
-const backend = createHtmlAnnotationBackend({ container, rootClassName: "fixture-root" });
+const activations: Array<{ id: number; eventType: string }> = [];
+const backend = createHtmlAnnotationBackend({
+  container,
+  rootClassName: "fixture-root",
+  onLabelActivate(annotationId, event) {
+    activations.push({ id: annotationId, eventType: event.type });
+  }
+});
 
 const labelDefinition: BackendAnnotationDefinition = {
   id: 1 as never,
@@ -15,6 +26,7 @@ const labelDefinition: BackendAnnotationDefinition = {
     backgroundColor: "#243447",
     padding: 4,
     borderRadius: 3,
+    opacityTransitionDuration: 180,
     className: "fixture-label"
   },
   ariaLabel: "Pump A-12 status",
@@ -55,6 +67,10 @@ declare global {
     annotatorFixture: {
       backend: AnnotationBackend;
       align(): void;
+      measureLabel(): BackendBounds | null;
+      moveLabel(x: number, y: number): BackendBounds | null;
+      changeLabelText(text: string): BackendBounds | null;
+      activations(): ReadonlyArray<{ id: number; eventType: string }>;
       dispose(): void;
     };
   }
@@ -63,5 +79,26 @@ declare global {
 window.annotatorFixture = {
   backend,
   align,
+  measureLabel: () => backend.measure(label),
+  moveLabel(x, y) {
+    backend.update(label, {
+      ...labelDefinition,
+      definitionChanged: false,
+      rendered: true,
+      screenPosition: { x, y }
+    });
+    return backend.measure(label);
+  },
+  changeLabelText(text) {
+    backend.update(label, {
+      ...labelDefinition,
+      text,
+      definitionChanged: true,
+      rendered: true,
+      screenPosition: { x: 120, y: 60 }
+    });
+    return backend.measure(label);
+  },
+  activations: () => activations,
   dispose: () => backend.dispose()
 };

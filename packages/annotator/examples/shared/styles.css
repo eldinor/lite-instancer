@@ -82,7 +82,7 @@ button, a { font: inherit; }
 .example-card {
   position: relative;
   display: flex;
-  min-height: 330px;
+  height: 350px;
   flex-direction: column;
   grid-column: span 2;
   padding: 20px;
@@ -219,6 +219,43 @@ button, a { font: inherit; }
 }
 .lifecycle-visual b { left: calc(50% - 92px); color: #ff9f8b; background: #321b18; }
 .lifecycle-visual em { right: calc(50% - 98px); color: var(--mint); background: #123026; }
+.collision-visual b {
+  position: absolute;
+  left: 50%;
+  padding: 7px 10px;
+  border: 1px solid #5bf0bd;
+  border-radius: 6px;
+  color: var(--ink);
+  background: #0a1715;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.collision-visual b:nth-child(1) { top: 22px; transform: translateX(-78%); opacity: .25; }
+.collision-visual b:nth-child(2) { top: 48px; z-index: 2; transform: translateX(-50%); }
+.collision-visual b:nth-child(3) { top: 74px; transform: translateX(-22%); opacity: .25; }
+.stress-visual {
+  display: grid;
+  width: 190px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-inline: auto;
+  padding: 18px 28px;
+}
+.stress-visual i {
+  height: 13px;
+  border: 1px solid #397f6a;
+  border-radius: 3px;
+  background: #102a23;
+}
+.stress-visual i:nth-child(2n) { opacity: .35; }
+.stress-visual b,
+.stress-visual em {
+  position: absolute;
+  bottom: 6px;
+  font: 700 10px/1 ui-monospace, monospace;
+}
+.stress-visual b { left: 38px; color: var(--mint); }
+.stress-visual em { right: 38px; color: var(--cyan); }
 .gallery-footer {
   display: flex;
   justify-content: space-between;
@@ -258,6 +295,12 @@ button, a { font: inherit; }
   font-size: 12px;
 }
 .demo-panel .status { color: var(--cyan); font-weight: 700; }
+.demo-panel .status--metrics {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-line;
+  line-height: 1.5;
+}
 .controls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .controls button {
   padding: 7px 10px;
@@ -301,7 +344,7 @@ button, a { font: inherit; }
   .example-grid { grid-template-columns: 1fr; }
   .example-card,
   .example-card:nth-child(4),
-  .example-card:nth-child(5) { grid-column: auto; min-height: 300px; }
+  .example-card:nth-child(5) { grid-column: auto; height: auto; min-height: 300px; }
   .gallery-footer { gap: 12px; flex-direction: column; }
   .demo-hint { display: none; }
 }

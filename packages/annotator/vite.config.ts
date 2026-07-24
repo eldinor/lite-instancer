@@ -6,7 +6,8 @@ export default defineConfig({
       entry: {
         index: "src/index.ts",
         html: "src/html.ts",
-        instancer: "src/instancer.ts"
+        instancer: "src/instancer.ts",
+        "babylon-occlusion": "src/babylon-occlusion.ts"
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`

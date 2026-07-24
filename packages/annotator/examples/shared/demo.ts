@@ -11,6 +11,7 @@ import {
   registerScene,
   startEngine,
   vec3,
+  type ArcRotateCamera,
   type EngineContext,
   type Mesh,
   type SceneContext,
@@ -19,9 +20,13 @@ import {
 import {
   createAnnotationLayer,
   disposeAnnotationLayer,
-  type AnnotationLayer
+  type AnnotationLayer,
+  type AnnotationOcclusionProvider
 } from "@litools/annotator";
-import { createHtmlAnnotationBackend } from "@litools/annotator/html";
+import {
+  createHtmlAnnotationBackend,
+  type HtmlAnnotationBackendOptions
+} from "@litools/annotator/html";
 import "./styles.css";
 
 export interface DemoPanel {
@@ -34,11 +39,16 @@ export interface DemoPanel {
 export interface DemoContext {
   readonly engine: EngineContext;
   readonly scene: SceneContext;
+  readonly camera: ArcRotateCamera;
   readonly canvas: HTMLCanvasElement;
   readonly overlay: HTMLElement;
   readonly panel: DemoPanel;
   readonly layer: AnnotationLayer | undefined;
-  recreateLayer(updateMode?: "manual" | "raf"): AnnotationLayer;
+  recreateLayer(
+    updateMode?: "manual" | "raf",
+    onLabelActivate?: HtmlAnnotationBackendOptions["onLabelActivate"],
+    occlusionProvider?: AnnotationOcclusionProvider
+  ): AnnotationLayer;
   disposeLayer(): void;
   addBox(name: string, position: readonly [number, number, number], color: readonly [number, number, number], size?: number): Mesh;
   frame(callback: (deltaMs: number) => void): void;
@@ -95,19 +105,24 @@ if (engine) {
   const context: DemoContext = {
     engine,
     scene,
+    camera,
     canvas,
     overlay,
     panel,
     get layer() {
       return activeLayer;
     },
-    recreateLayer(updateMode = "raf") {
+    recreateLayer(updateMode = "raf", onLabelActivate, occlusionProvider) {
       if (activeLayer) disposeAnnotationLayer(activeLayer);
       activeLayer = createAnnotationLayer({
         scene,
         camera,
         canvas,
-        backend: createHtmlAnnotationBackend({ container: overlay }),
+        backend: createHtmlAnnotationBackend({
+          container: overlay,
+          ...(onLabelActivate ? { onLabelActivate } : {})
+        }),
+        ...(occlusionProvider ? { occlusionProvider } : {}),
         updateMode,
         viewportPadding: 12
       });
@@ -173,6 +188,21 @@ async function configureDemo(name: string, ctx: DemoContext): Promise<void> {
   if (name === "lifecycle") {
     const { configureLifecycle } = await import("../lifecycle/main.js");
     configureLifecycle(ctx);
+    return;
+  }
+  if (name === "collisions") {
+    const { configureCollisions } = await import("../collisions/main.js");
+    configureCollisions(ctx);
+    return;
+  }
+  if (name === "collision-stress") {
+    const { configureCollisionStress } = await import("../collision-stress/main.js");
+    configureCollisionStress(ctx);
+    return;
+  }
+  if (name === "occlusion") {
+    const { configureOcclusion } = await import("../occlusion/main.js");
+    configureOcclusion(ctx);
     return;
   }
   throw new Error(`Unknown Annotator example '${name}'.`);

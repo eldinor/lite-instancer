@@ -12,6 +12,10 @@ export default defineConfig({
     alias: [
       { find: "@litools/annotator/html", replacement: resolve(packageRoot, "src/html.ts") },
       { find: "@litools/annotator/instancer", replacement: resolve(packageRoot, "src/instancer.ts") },
+      {
+        find: "@litools/annotator/babylon-occlusion",
+        replacement: resolve(packageRoot, "src/babylon-occlusion.ts")
+      },
       { find: "@litools/annotator", replacement: resolve(packageRoot, "src/index.ts") },
       { find: "@litools/instancer", replacement: resolve(packageRoot, "../../src/index.ts") }
     ]
@@ -26,7 +30,10 @@ export default defineConfig({
         markers: resolve(examplesRoot, "markers/index.html"),
         dynamic: resolve(examplesRoot, "dynamic/index.html"),
         instancer: resolve(examplesRoot, "instancer/index.html"),
-        lifecycle: resolve(examplesRoot, "lifecycle/index.html")
+        lifecycle: resolve(examplesRoot, "lifecycle/index.html"),
+        collisions: resolve(examplesRoot, "collisions/index.html"),
+        collisionStress: resolve(examplesRoot, "collision-stress/index.html"),
+        occlusion: resolve(examplesRoot, "occlusion/index.html")
       }
     }
   }

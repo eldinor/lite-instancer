@@ -1,0 +1,159 @@
+[0724/083028.481:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083029.248:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083029.723:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083030.137:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083030.552:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083030.962:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083155.329:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083155.419:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/083155.959:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083156.371:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083156.788:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083157.212:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083157.624:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083221.488:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083221.575:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/083222.095:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083222.509:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083222.922:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083223.335:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/083223.742:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085945.402:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085945.484:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/085946.033:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085946.454:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085946.865:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085947.280:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085947.690:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/085948.096:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090017.763:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090017.862:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/090017.862:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/090018.509:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090018.955:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090019.379:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090019.798:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090020.210:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090020.611:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090049.384:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090049.761:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090050.047:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090050.349:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090050.613:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090050.865:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090051.128:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090059.464:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090059.520:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/090059.874:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090100.168:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090100.444:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090100.723:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090101.007:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/090101.299:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095141.421:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095141.741:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095142.012:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095142.254:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095142.503:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095142.742:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095142.972:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095158.709:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095158.753:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/095159.050:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095159.305:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095159.547:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095159.778:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095200.013:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/095200.255:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100054.283:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100054.373:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/100054.907:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100055.323:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100055.747:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100056.155:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100056.575:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/100057.003:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103110.890:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103110.993:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/103111.657:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103112.182:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103112.708:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103113.294:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103113.780:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/103114.268:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105445.563:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105445.611:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/105445.974:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105446.251:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105446.537:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105446.836:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105447.111:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/105447.381:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110903.518:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110903.577:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/110903.943:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110904.227:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110904.509:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110904.801:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110905.080:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/110905.363:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111834.420:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111834.485:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/111834.844:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111835.127:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111835.407:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111835.681:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111835.949:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/111836.231:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121720.675:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121720.769:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/121721.305:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121721.726:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121722.152:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121722.564:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121722.976:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121723.391:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121723.800:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/121724.218:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123132.515:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123132.621:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/123133.232:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123133.718:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123134.211:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123134.696:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123135.183:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123135.665:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123136.153:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/123136.646:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162633.963:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162634.030:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/162634.435:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162634.781:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162635.133:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162635.455:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162635.795:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162636.138:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162636.481:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/162636.805:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171124.243:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171124.360:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/171124.995:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171125.498:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171126.091:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171126.633:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171127.170:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171127.684:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171128.174:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171128.716:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171129.213:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171144.052:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171144.148:ERROR:gpu\command_buffer\service\shared_image\shared_image_manager.cc:253] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.
+[0724/171144.692:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171145.108:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171145.522:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171145.958:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171146.379:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171146.800:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171147.215:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171147.644:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
+[0724/171148.050:ERROR:gpu\command_buffer\service\webgpu_decoder_impl.cc:1724] Failed to query ID3D11Device from ANGLE.
