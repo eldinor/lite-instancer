@@ -1,6 +1,6 @@
 {
   "name": "@litools/annotator",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Spatial HTML labels and markers for Babylon Lite meshes and stable Instancer IDs.",
   "type": "module",
   "license": "MIT",

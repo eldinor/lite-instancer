@@ -5,6 +5,10 @@ follows semantic versioning.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.2 - 2026-07-24
+
 ### Added
 
 - Add opt-in label overlap handling with deterministic z-index/creation-order

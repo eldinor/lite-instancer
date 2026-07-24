@@ -1,6 +1,6 @@
 # @litools/annotator API reference
 
-Version 0.1 exposes four ESM entry points:
+Version 0.1.2 exposes four ESM entry points:
 
 - `@litools/annotator` — layers, annotations, anchors, lifecycle, snapshots,
   projection, and backend contracts.
