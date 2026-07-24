@@ -4,6 +4,11 @@
   "description": "Spatial HTML labels and markers for Babylon Lite meshes and stable Instancer IDs.",
   "type": "module",
   "license": "MIT",
+  "author": {
+    "name": "Andrei Stepanov",
+    "email": "eldinor@gmail.com",
+    "url": "https://babylonpress.org/"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
