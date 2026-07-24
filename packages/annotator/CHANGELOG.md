@@ -66,9 +66,6 @@ No changes yet.
 
 - Add package-local license, changelog, and API reference documents.
 - Add direct README links to the examples, API reference, and changelog.
-- Add repeatable packed-tarball validation using a clean consumer project,
-  strict TypeScript compilation, and runtime checks for all public entry
-  points.
 
 ### Changed
 

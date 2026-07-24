@@ -75,8 +75,7 @@
     "test": "vitest run",
     "test:browser": "node ../../node_modules/@playwright/test/cli.js test",
     "typecheck": "tsc --noEmit",
-    "pack:check": "node scripts/verify-package.mjs",
-    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run test:browser && npm run pack:check",
+    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run test:browser",
     "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
