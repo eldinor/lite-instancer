@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Runnable @litools/stager lifecycle and resource-ownership examples for Babylon Lite."
+    />
+    <title>Stager examples</title>
+    <link rel="stylesheet" href="./shared/styles.css" />
+    <script type="module" src="./index.ts"></script>
+  </head>
+  <body class="gallery-page">
+    <header class="gallery-hero">
+      <div class="eyebrow">Babylon Lite application lifecycle</div>
+      <h1>Stager <small data-package-version></small></h1>
+      <p>
+        Preload, switch, cancel, preserve, and dispose application stages without
+        maintaining a custom lifecycle machine.
+      </p>
+      <div class="hero-links">
+        <a href="https://github.com/eldinor/lite-instancer/tree/main/packages/stager" target="_blank" rel="noreferrer">GitHub source</a>
+        <a href="https://babylonpress.org/" target="_blank" rel="noreferrer">BabylonPress</a>
+      </div>
+    </header>
+
+    <main class="gallery-main">
+      <nav class="example-grid" aria-label="Stager examples">
+        <a class="example-card card-navigation" href="./navigation/">
+          <span class="card-number">01</span>
+          <span class="card-visual flow-visual" aria-hidden="true"><b>MENU</b><i></i><b>VIEWER</b></span>
+          <strong>Stage navigation</strong>
+          <span>Switch scenes while watching load, enter, exit, and disposal events.</span>
+          <code>navigateToStage()</code>
+        </a>
+        <a class="example-card card-preload" href="./preload-progress/">
+          <span class="card-number">02</span>
+          <span class="card-visual progress-visual" aria-hidden="true"><i><b></b></i><em>READY</em></span>
+          <strong>Preload &amp; progress</strong>
+          <span>Prepare an inactive scene, report progress, then activate without reloading.</span>
+          <code>preloadStage()</code>
+        </a>
+        <a class="example-card card-cancel" href="./cancellation-failure/">
+          <span class="card-number">03</span>
+          <span class="card-visual cancel-visual" aria-hidden="true"><b>SLOW LOAD</b><i></i><em>SAFE</em></span>
+          <strong>Cancellation &amp; failure</strong>
+          <span>Cancel obsolete work and preserve the current stage when loading fails.</span>
+          <code>beginStageNavigation()</code>
+        </a>
+        <a class="example-card card-resources" href="./resource-ownership/">
+          <span class="card-number">04</span>
+          <span class="card-visual resource-visual" aria-hidden="true"><i></i><i></i><i></i><b>shared × 2</b></span>
+          <strong>Resource ownership</strong>
+          <span>Inspect shared leases and reverse-order cleanup of stage-owned resources.</span>
+          <code>resources.own()</code>
+        </a>
+        <a class="example-card card-fade" href="./dom-fade/">
+          <span class="card-number">05</span>
+          <span class="card-visual fade-visual" aria-hidden="true"><b>A</b><i></i><em>B</em></span>
+          <strong>DOM fade transition</strong>
+          <span>Mask scene handoffs with an optional, application-owned HTML overlay.</span>
+          <code>@litools/stager/dom</code>
+        </a>
+        <a class="example-card card-navigation" href="./free-camera/">
+          <span class="card-number">06</span>
+          <span class="card-visual flow-visual" aria-hidden="true"><b>WASD</b><i></i><b>LOOK</b></span>
+          <strong>Free Camera stages</strong>
+          <span>Switch independent first-person cameras without leaking keyboard or pointer input.</span>
+          <code>freeCameraControls()</code>
+        </a>
+        <a class="example-card card-preload" href="./geospatial-camera/">
+          <span class="card-number">07</span>
+          <span class="card-visual marker-visual" aria-hidden="true"><i></i><b>ORBIT</b></span>
+          <strong>Geospatial Camera stages</strong>
+          <span>Move between generated planets while leasing geospatial controls to one stage.</span>
+          <code>geospatialCameraControls()</code>
+        </a>
+        <a class="example-card card-cancel" href="./activation-rollback/">
+          <span class="card-number">08</span>
+          <span class="card-visual cancel-visual" aria-hidden="true"><b>ENTER FAILS</b><i></i><em>RESTORED</em></span>
+          <strong>Activation rollback</strong>
+          <span>Restore the outgoing scene and camera when incoming activation throws.</span>
+          <code>defineBabylonStage()</code>
+        </a>
+      </nav>
+    </main>
+
+    <footer class="gallery-footer">
+      <span>@litools/stager · Babylon Lite 1.14</span>
+      <span>Created by <a href="https://babylonpress.org/" target="_blank" rel="noreferrer">BabylonPress</a></span>
+    </footer>
+  </body>
+</html>

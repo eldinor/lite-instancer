@@ -37,7 +37,7 @@
     "@babylonjs/lite": "^1.13.0"
   },
   "devDependencies": {
-    "@babylonjs/lite": "^1.13.0",
+    "@babylonjs/lite": "1.14.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typescript": "^6.0.3",

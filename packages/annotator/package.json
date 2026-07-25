@@ -88,7 +88,7 @@
     }
   },
   "devDependencies": {
-    "@babylonjs/lite": "^1.13.0",
+    "@babylonjs/lite": "1.14.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
