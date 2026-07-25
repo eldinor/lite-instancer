@@ -1,0 +1,77 @@
+:root {
+  color: #e8edf7;
+  background: #080b12;
+  font: 14px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; overflow: hidden; }
+canvas { display: block; width: 100vw; height: 100vh; }
+
+.panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: min(390px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #2d3850;
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.92);
+  box-shadow: 0 16px 48px #0009;
+  backdrop-filter: blur(14px);
+}
+
+.panel h1 { margin: 5px 0 4px; font-size: 20px; }
+.panel p { margin: 4px 0 12px; color: #aeb9ce; }
+.panel a { color: #82b7ff; }
+.controls { display: flex; flex-wrap: wrap; gap: 7px; margin: 12px 0; }
+button {
+  border: 1px solid #465675;
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4ff;
+  background: #1b2840;
+  cursor: pointer;
+}
+button:hover { background: #263b61; }
+label { display: grid; grid-template-columns: 110px 1fr 44px; gap: 8px; align-items: center; margin: 8px 0; }
+input[type="range"] { width: 100%; }
+dl { display: grid; grid-template-columns: 112px 1fr; gap: 4px 8px; margin: 10px 0; }
+dt { color: #8e9ab0; }
+dd { margin: 0; overflow-wrap: anywhere; }
+pre {
+  max-height: 190px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #05070c;
+  color: #b9d4ff;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.cards {
+  min-height: 100vh;
+  overflow: auto;
+  padding: 48px;
+  background: radial-gradient(circle at top, #182844, #080b12 55%);
+}
+.cards main { max-width: 940px; margin: auto; }
+.cards h1 { font-size: 36px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+.card {
+  display: block;
+  min-height: 190px;
+  padding: 20px;
+  border: 1px solid #34415a;
+  border-radius: 14px;
+  background: #111827;
+  color: inherit;
+  text-decoration: none;
+}
+.card:hover { border-color: #72a9ff; transform: translateY(-2px); }
+.card strong { display: block; margin-bottom: 8px; font-size: 19px; }
+.card span { color: #aab6c9; }

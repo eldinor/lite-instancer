@@ -1,0 +1,51 @@
+{
+  "name": "@litools/animator",
+  "version": "0.1.0",
+  "description": "Semantic animation playback, cancellation, crossfades, and markers for Babylon Lite.",
+  "homepage": "https://github.com/eldinor/lite-instancer/tree/main/packages/animator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eldinor/lite-instancer.git",
+    "directory": "packages/animator"
+  },
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "docs": "typedoc --options typedoc.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "examples:dev": "vite --config vite.examples.config.ts --host 0.0.0.0",
+    "examples:build": "vite build --config vite.examples.config.ts",
+    "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
+    "pack:check": "npm pack --dry-run --ignore-scripts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run pack:check"
+  },
+  "peerDependencies": {
+    "@babylonjs/lite": "^1.14.0"
+  },
+  "devDependencies": {
+    "@babylonjs/lite": "1.14.0",
+    "@types/node": "^26.1.1",
+    "@webgpu/types": "^0.1.71",
+    "typedoc": "^0.28.20",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/api",
+  "readme": "docs/README.md",
+  "name": "@litools/animator",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "sort": ["source-order"],
+  "requiredToBeDocumented": ["Function"],
+  "validation": {
+    "notDocumented": true,
+    "invalidLink": true
+  },
+  "navigationLinks": {
+    "Examples": "../examples/",
+    "Repository": "https://github.com/eldinor/lite-instancer/tree/main/packages/animator"
+  }
+}
