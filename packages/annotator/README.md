@@ -1,7 +1,7 @@
 # @litools/annotator
 
-Spatial HTML labels and dot/ring markers for Babylon Lite meshes and stable
-`@litools/instancer` IDs.
+Spatial HTML annotations and optional GPU text labels for Babylon Lite meshes
+and stable `@litools/instancer` IDs.
 
 [Examples](https://github.com/eldinor/lite-instancer/tree/main/packages/annotator/examples)
 · [API reference](./API.md)
@@ -85,7 +85,7 @@ or `localBounds`, an instance anchor uses the instance origin.
 - The 0.1 model is runtime-only and is not serializable.
 
 Dimensions, arbitrary callouts, general pointer-event APIs, custom DOM content,
-React bindings, and a GPU annotation renderer are intentionally deferred.
+and React bindings are intentionally deferred.
 
 ## Examples
 
@@ -97,14 +97,90 @@ or run the multi-page gallery from the repository root:
 npm run dev:annotator
 ```
 
-The gallery includes mesh labels, dots and rings with viewport clamping, live
-callback text, stable Instancer anchors, explicit lifecycle/disposal, eight
-collision modes, and experimental batched depth occlusion.
+The unified gallery groups eight HTML-overlay and seven GPU TextRenderer demos.
+Every live page has breadcrumbs, previous/next controls, and an all-demos
+drawer, so the complete learning path stays reachable without returning to the
+catalog. It covers mesh labels, markers, live text, stable Instancer anchors,
+lifecycle, collisions, depth occlusion, GPU shaping, Sprite2D leader lines,
+manual JSON benchmarks, and selectable 100/250/500-label stress loads.
 
 The collision stress scene exercises selectable 100, 250, and 500-label loads
 with moving anchors, changing text widths, and clamped edge labels. Its timing
 panel reports the latest update, arithmetic mean, and p95. A p95 of `7.6 ms`
 means 95% of sampled annotation updates completed in `7.6 ms` or less.
+
+## GPU TextRenderer annotations
+
+Import the optional GPU label-and-marker backend from its tree-shakable entry point. The
+scene must be registered before the backend factory runs because the factory
+registers a non-clearing Lite `TextRenderer` pass.
+
+```ts
+import { loadFont, registerScene } from "@babylonjs/lite";
+import { createAnnotationLayer } from "@litools/annotator";
+import { createTextRendererAnnotationBackend }
+  from "@litools/annotator/textrender";
+
+await registerScene(scene);
+const font = await loadFont("/fonts/Inter-Regular.ttf");
+const backend = createTextRendererAnnotationBackend({
+  surface: scene.surface,
+  font,
+  shapingMode: "public"
+});
+const layer = createAnnotationLayer({ scene, camera, canvas, backend });
+```
+
+The default `"public"` mode shapes through Lite's supported text-data API.
+Opt-in `"guarded-private"` mode uses a bundled Lite 1.14 layout adapter for
+faster shaping. Runtime guards permanently disable that adapter for the
+backend instance after its first mismatch or error, then use the public path.
+`backend.getStats()` reports cache activity, shaping-path counts, private
+fallbacks, adapter availability, live labels and markers, text buckets/draw
+calls, and Sprite2D counts.
+
+The default GPU path is already the fastest batching configuration. Labels
+that omit `zIndex` all use `0`, so they share one TextRenderer bucket and one
+text draw call. Assign distinct `zIndex` values only when labels require
+different draw ordering: each distinct value creates another text bucket and
+draw call. Equal-z labels keep deterministic collision priority through their
+creation order.
+
+The backend supports text, dots, rings, squares, diamonds, triangles, crosses,
+pins, color, opacity, font size, visibility,
+clamping, clustering, every collision mode, hide/fade occlusion, and GPU
+Sprite2D leader lines. Markers use CSS-pixel size plus HTML-compatible fill,
+border color, and border width. Cached atlas frames keep every marker at one
+sprite; all markers share one layer and one draw call. Lines render below
+markers, and markers render below every text bucket. Square line caps are the
+one-sprite default; rounded caps are an explicit three-sprite option. Card
+styling, font weight, CSS classes, opacity transitions, interaction, and DOM
+accessibility remain HTML-only.
+
+`MarkerShape` is an open string union: built-in names retain editor completion
+without closing the API to later or application-defined shapes. Register a
+namespaced custom GPU shape when creating the backend. Its rasterizer runs
+once for each distinct styled atlas frame and must return a 64-by-64
+premultiplied linear RGBA8 image:
+
+```ts
+const backend = createTextRendererAnnotationBackend({
+  surface: scene.surface,
+  font,
+  markerShapes: {
+    "factory/valve": ({ frameSize, fill, border, borderWidth, size }) =>
+      rasterizeValve({ frameSize, fill, border, borderWidth, size })
+  }
+});
+```
+
+Unknown identifiers and attempts to replace a built-in shape throw a clear
+`AnnotatorError`. Every built-in and registered shape remains one GPU sprite.
+
+The backend owns and disposes its renderer, text data, and shared glyph
+storage. The supplied surface and font remain caller-owned. Canvas backing
+dimensions may differ from CSS dimensions by a uniform scale (including DPR
+1 and 2); non-uniform backing scales are rejected.
 
 ## Experimental depth occlusion
 
@@ -218,12 +294,20 @@ Repel placement is deterministic, stays inside the active viewport and
 `collisionMaxShift`, and falls back to collision hiding when no free position
 can be reached.
 
-Leader lines are optional and render only for shifted labels whose layout
-displacement reaches `minLength`. They connect the pre-layout position to the
-nearest label edge, remain behind all labels, and share the label's visibility
-and disposal lifecycle. Pass `leaderLine: false` through `updateLabel()` to
-remove one. The collision stress example leaves lines disabled so its timings
-measure layout rather than hundreds of SVG elements.
+Leader lines are optional and render when collision layout, clamping, or an
+explicit `screenOffset` moves a label at least `minLength` from its projected
+anchor. They connect the anchor to the nearest label edge, remain behind all
+labels, and share the label's visibility and disposal lifecycle. This lets a
+marker and offset label at the same anchor form a compound callout. Pass
+`leaderLine: false` through `updateLabel()` to remove one. The collision stress
+example leaves lines disabled so its timings measure layout rather than
+hundreds of SVG elements.
+
+## Next GPU additions
+
+The remaining useful GPU roadmap is marker presets, optional z-indexed Sprite2D
+buckets, nine-slice label backgrounds, DynamicTexture icons, CPU
+picking/interaction, and a dedicated high-count marker benchmark.
 
 ## Clickable HTML labels
 
@@ -250,4 +334,4 @@ operation, option, anchor, snapshot field, and backend contract.
 
 | Annotator | Babylon Lite | Instancer |
 | --- | --- | --- |
-| `0.1.x` | `^1.13.0` | `^0.6.0` (optional) |
+| `0.1.x` | `^1.14.0` | `^0.6.0` (optional) |

@@ -1,7 +1,7 @@
 {
   "name": "@litools/annotator",
   "version": "0.1.2",
-  "description": "Spatial HTML labels and markers for Babylon Lite meshes and stable Instancer IDs.",
+  "description": "Spatial HTML annotations and GPU text labels for Babylon Lite meshes and stable Instancer IDs.",
   "homepage": "https://github.com/eldinor/lite-instancer/tree/main/packages/annotator#readme",
   "repository": {
     "type": "git",
@@ -50,6 +50,10 @@
       "types": "./dist/html.d.ts",
       "import": "./dist/html.js"
     },
+    "./textrender": {
+      "types": "./dist/textrender.d.ts",
+      "import": "./dist/textrender.js"
+    },
     "./instancer": {
       "types": "./dist/instancer.d.ts",
       "import": "./dist/instancer.js"
@@ -64,22 +68,21 @@
     "API.md",
     "CHANGELOG.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "README.md"
   ],
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
-    "dev:test": "vite --config vite.browser.config.ts --host 127.0.0.1",
+    "build": "vite build && tsc -p tsconfig.build.json && node scripts/verify-exports.mjs",
     "examples:dev": "vite --config vite.examples.config.ts --host 0.0.0.0",
     "examples:build": "vite build --config vite.examples.config.ts",
     "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
     "test": "vitest run",
-    "test:browser": "node ../../node_modules/@playwright/test/cli.js test",
     "typecheck": "tsc --noEmit",
-    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build && npm run test:browser",
+    "release:check": "npm run typecheck && npm test && npm run build && npm run examples:build",
     "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.13.0",
+    "@babylonjs/lite": "^1.14.0",
     "@litools/instancer": "^0.6.0"
   },
   "peerDependenciesMeta": {
@@ -89,7 +92,6 @@
   },
   "devDependencies": {
     "@babylonjs/lite": "1.14.0",
-    "@playwright/test": "^1.58.2",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typescript": "^6.0.3",

@@ -1,0 +1,418 @@
+import "./webgpu-globals.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createFontFromBuffer, type SurfaceContext } from "@babylonjs/lite";
+import { describe, expect, it } from "vitest";
+import {
+  createTextRendererAnnotationBackend,
+  type TextRendererAnnotationBackendOptions
+} from "../../src/textrender.js";
+import type {
+  AnnotationId,
+  BackendAnnotationDefinition,
+  BackendAnnotationUpdate,
+  MarkerShape
+} from "../../src/types.js";
+
+const fontBytes = readFileSync(fileURLToPath(new URL("../../examples/textrender/assets/InterVariable.ttf", import.meta.url)));
+const fontBuffer = fontBytes.buffer.slice(fontBytes.byteOffset, fontBytes.byteOffset + fontBytes.byteLength);
+const font = createFontFromBuffer(fontBuffer);
+
+describe("TextRenderer annotation backend", () => {
+  it("uses the public shaping bridge by default and caches shapes", () => {
+    const { backend } = fixture();
+    const first = backend.create(labelDefinition("Pump A-12"));
+    const second = backend.create(labelDefinition("Pump A-12", 2));
+    expect(backend.getStats()).toMatchObject({
+      requestedShapingMode: "public",
+      cacheHits: 1,
+      cacheMisses: 1,
+      publicShapes: 1,
+      privateShapes: 0,
+      liveLabels: 2
+    });
+    backend.disposeResource(first);
+    backend.disposeResource(second);
+    backend.dispose();
+    backend.dispose();
+    expect(backend.getStats().liveLabels).toBe(0);
+  });
+
+  it("uses guarded private layout when explicitly requested", () => {
+    const { backend } = fixture({ shapingMode: "guarded-private" });
+    backend.create(labelDefinition("Private bridge"));
+    expect(backend.getStats()).toMatchObject({
+      requestedShapingMode: "guarded-private",
+      privateAdapterAvailable: true,
+      privateShapes: 1,
+      privateFallbacks: 0,
+      publicShapes: 0
+    });
+    backend.dispose();
+  });
+
+  it("measures centered text and updates position, visibility, text, and z-index", () => {
+    const { backend } = fixture();
+    const definition = labelDefinition("Valve 7");
+    const resource = backend.create(definition);
+    backend.update(resource, updateFor(definition, { x: 80, y: 45 }));
+    const initial = backend.measure(resource);
+    expect(initial).not.toBeNull();
+    expect(initial!.x + initial!.width * 0.5).toBeCloseTo(80);
+    expect(initial!.y + initial!.height * 0.5).toBeCloseTo(45);
+
+    const changed = { ...definition, text: "Valve 700", zIndex: 9 };
+    backend.update(resource, updateFor(changed, { x: 25, y: 30 }));
+    expect(backend.measure(resource)!.width).toBeGreaterThan(initial!.width);
+    backend.update(resource, { ...updateFor(changed, null), rendered: false });
+    expect(backend.measure(resource)).toBeNull();
+    expect(runColor(resource)).toEqual([0, 0, 0, 0]);
+    backend.disposeResource(resource);
+    expect(backend.getStats().liveLabels).toBe(0);
+    backend.dispose();
+  });
+
+  it("evicts least-recently-used shapes at the configured limit", () => {
+    const { backend } = fixture({ shapeCacheSize: 1 });
+    backend.create(labelDefinition("A", 1));
+    backend.create(labelDefinition("B", 2));
+    backend.create(labelDefinition("A", 3));
+    expect(backend.getStats()).toMatchObject({ cacheHits: 0, cacheMisses: 3, publicShapes: 3 });
+    backend.dispose();
+  });
+
+  it("supports CSS hex color, opacity, font size, and semantic metadata", () => {
+    const { backend } = fixture();
+    const definition = labelDefinition("Status", 1, {
+      color: "#71d7ffcc",
+      opacity: 0.5,
+      fontSize: 22
+    });
+    const resource = backend.create({ ...definition, ariaLabel: "Status", role: "note" });
+    backend.update(resource, updateFor(definition, { x: 10, y: 10 }));
+    const color = runColor(resource);
+    expect(color[3]).toBeCloseTo(0.4);
+    expect(color[0]).toBeLessThanOrEqual(color[3]);
+    expect(color[1]).toBeLessThanOrEqual(color[3]);
+    expect(color[2]).toBeLessThanOrEqual(color[3]);
+    backend.dispose();
+  });
+
+  it.each([
+    ["backgroundColor", { backgroundColor: "#000" }],
+    ["fontWeight", { fontWeight: 700 }],
+    ["borderColor", { borderColor: "#fff" }],
+    ["borderWidth", { borderWidth: 1 }],
+    ["borderRadius", { borderRadius: 4 }],
+    ["padding", { padding: 4 }],
+    ["className", { className: "label" }],
+    ["opacity transition", { opacityTransitionDuration: 100 }]
+  ])("rejects unsupported %s styling", (_name, style) => {
+    const { backend } = fixture();
+    expect(() => backend.create(labelDefinition("Unsupported", 1, style))).toThrow(/does not support/);
+    backend.dispose();
+  });
+
+  it("batches styled dot and ring markers in one Sprite2D draw call", () => {
+    const { backend, surface } = fixture();
+    const dot = markerDefinition("dot", 18, {
+      backgroundColor: "#58e6bd",
+      borderColor: "#ffffff",
+      borderWidth: 2,
+      opacity: 0.6
+    });
+    const dotResource = backend.create(dot);
+    expect(backend.getStats()).toMatchObject({
+      spriteRendererActive: true,
+      liveMarkers: 1,
+      markerSprites: 1,
+      markerDrawCalls: 0
+    });
+    expect(renderingKinds(surface)).toEqual(["sprite-renderer", "text-renderer"]);
+    backend.update(dotResource, updateFor(dot, { x: 40, y: 30 }));
+    const layer = markerLayer(dotResource);
+    const data = layer._instanceData;
+    expect(layer.count).toBe(1);
+    expect(layer.visible).toBe(true);
+    expect(Array.from(data.slice(0, 4))).toEqual([40, 30, 18, 18]);
+    for (const value of data.slice(9, 13)) expect(value).toBeCloseTo(0.6);
+    expect(backend.measure(dotResource)).toEqual({ x: 31, y: 21, width: 18, height: 18 });
+    expect(backend.getStats().markerDrawCalls).toBe(1);
+
+    const ring = markerDefinition("ring", 24, { color: "#72e6ff", borderWidth: 3 }, 2);
+    const ringResource = backend.create(ring);
+    backend.update(ringResource, updateFor(ring, { x: 80, y: 50 }));
+    expect(layer.count).toBe(2);
+    expect(backend.getStats()).toMatchObject({ liveMarkers: 2, markerSprites: 2, markerDrawCalls: 1 });
+    expect(data[17]).not.toBe(data[4]);
+
+    backend.update(dotResource, updateFor(dot, null));
+    expect(data[2]).toBe(0);
+    backend.disposeResource(dotResource);
+    backend.disposeResource(ringResource);
+    expect(layer.count).toBe(0);
+    expect(layer.visible).toBe(false);
+    expect(backend.getStats()).toMatchObject({ liveMarkers: 0, markerSprites: 0, markerDrawCalls: 0 });
+    backend.dispose();
+  });
+
+  it.each(["dot", "ring", "square", "diamond", "triangle", "cross", "pin"] as const)(
+    "renders the built-in %s marker as one sprite",
+    (shape) => {
+      const { backend } = fixture();
+      const definition = markerDefinition(shape, 24, { color: "#58e6bd", borderWidth: 2 });
+      const resource = backend.create(definition);
+      backend.update(resource, updateFor(definition, { x: 40, y: 30 }));
+      expect(backend.getStats()).toMatchObject({ liveMarkers: 1, markerSprites: 1, markerDrawCalls: 1 });
+      backend.dispose();
+    }
+  );
+
+  it("supports namespaced custom marker rasterizers and rejects unknown shapes", () => {
+    let receivedSize = 0;
+    const { backend } = fixture({
+      markerShapes: {
+        "factory/valve": (context) => {
+          receivedSize = context.size;
+          return new Uint8Array(context.frameSize * context.frameSize * 4);
+        }
+      }
+    });
+    const custom = markerDefinition("factory/valve", 26);
+    expect(backend.supportsMarkerShape("diamond")).toBe(true);
+    expect(backend.supportsMarkerShape("factory/valve")).toBe(true);
+    expect(backend.supportsMarkerShape("factory/missing")).toBe(false);
+    backend.create(custom);
+    expect(receivedSize).toBe(26);
+    expect(() => backend.create(markerDefinition("factory/missing", 20, {}, 2))).toThrow(
+      'Unknown GPU marker shape "factory/missing"'
+    );
+    backend.dispose();
+  });
+
+  it("validates custom marker registries and raster output", () => {
+    expect(() => fixture({ markerShapes: { dot: () => new Uint8Array() } })).toThrow(/cannot replace built-in/);
+    const { backend } = fixture({ markerShapes: { "app/bad": () => new Uint8Array(4) } });
+    expect(() => backend.create(markerDefinition("app/bad", 12))).toThrow(/Uint8Array of length/);
+    backend.dispose();
+  });
+
+  it("rejects DOM-only marker styling", () => {
+    const { backend } = fixture();
+    expect(() => backend.create(markerDefinition("dot", 12, { className: "marker" }))).toThrow(/marker style.className/);
+    backend.dispose();
+  });
+
+  it("reuses cached atlas frames for identical marker appearances", () => {
+    const { backend } = fixture();
+    const definition = markerDefinition("ring", 28, { color: "#58e6bd", borderWidth: 3 });
+    const first = backend.create(definition) as { frame: number; sprite: { layer: { atlas: { frames: unknown[] } } } };
+    const frameCount = first.sprite.layer.atlas.frames.length;
+    const second = backend.create({ ...definition, id: 2 as AnnotationId }) as { frame: number };
+    expect(second.frame).toBe(first.frame);
+    expect(first.sprite.layer.atlas.frames).toHaveLength(frameCount);
+    backend.dispose();
+  });
+
+  it("reuses an unbordered dot frame across animated size and opacity updates", () => {
+    const { backend } = fixture();
+    const initial = markerDefinition("dot", 14, { color: "#72e6ff", opacity: 0.5 });
+    const resource = backend.create(initial) as { frame: number; sprite: { layer: { atlas: { frames: unknown[] } } } };
+    const frame = resource.frame;
+    const frameCount = resource.sprite.layer.atlas.frames.length;
+    const animated = markerDefinition("dot", 28, { color: "#72e6ff", opacity: 0.9 });
+    backend.update(resource, updateFor(animated, { x: 30, y: 30 }));
+    expect(resource.frame).toBe(frame);
+    expect(resource.sprite.layer.atlas.frames).toHaveLength(frameCount);
+    backend.dispose();
+  });
+
+  it("lazily creates one square sprite per leader line and draws it behind text", () => {
+    const { backend, surface } = fixture();
+    expect(backend.getStats().spriteRendererActive).toBe(false);
+    const definition = { ...labelDefinition("Line"), leaderLine: { width: 4, color: "#ff8000", opacity: 0.5 } };
+    const resource = backend.create(definition);
+    expect(backend.getStats()).toMatchObject({
+      spriteRendererActive: true,
+      liveLeaderLines: 1,
+      leaderLineSprites: 1,
+      leaderLineDrawCalls: 0,
+      textBuckets: 1,
+      textDrawCalls: 1
+    });
+    expect(renderingKinds(surface)).toEqual(["sprite-renderer", "text-renderer"]);
+    const secondResource = backend.create({ ...definition, id: 2 as AnnotationId });
+    expect(renderingKinds(surface)).toEqual(["sprite-renderer", "text-renderer"]);
+    expect(backend.getStats().leaderLineSprites).toBe(2);
+    backend.disposeResource(secondResource);
+
+    backend.update(resource, {
+      ...updateFor(definition, { x: 30, y: 40 }),
+      leaderLineGeometry: { start: { x: 10, y: 20 }, end: { x: 40, y: 60 } }
+    });
+    const layer = lineLayer(resource);
+    const data = layer._instanceData;
+    expect(layer.count).toBe(1);
+    expect(data[0]).toBeCloseTo(25);
+    expect(data[1]).toBeCloseTo(40);
+    expect(data[2]).toBeCloseTo(50);
+    expect(data[3]).toBeCloseTo(4);
+    expect(data[8]).toBeCloseTo(Math.atan2(40, 30));
+    expect(data[12]).toBeCloseTo(0.5);
+    expect(data[9]).toBeLessThanOrEqual(data[12]!);
+    expect(backend.getStats().leaderLineDrawCalls).toBe(1);
+
+    backend.update(resource, { ...updateFor(definition, null), leaderLineGeometry: null });
+    expect(data[2]).toBe(0);
+    expect(data[3]).toBe(0);
+    expect(backend.getStats().leaderLineDrawCalls).toBe(0);
+    backend.dispose();
+  });
+
+  it("uses three reusable sprites for round caps and reallocates on cap changes", () => {
+    const { backend } = fixture();
+    const square = { ...labelDefinition("Caps"), leaderLine: { width: 6, lineCap: "square" as const } };
+    const resource = backend.create(square);
+    expect(lineLayer(resource).count).toBe(1);
+
+    const round = { ...square, leaderLine: { width: 6, lineCap: "round" as const } };
+    backend.update(resource, {
+      ...updateFor(round, { x: 50, y: 30 }),
+      leaderLineGeometry: { start: { x: 20, y: 30 }, end: { x: 80, y: 30 } }
+    });
+    const layer = lineLayer(resource);
+    expect(layer.count).toBe(3);
+    expect(backend.getStats()).toMatchObject({ liveLeaderLines: 1, leaderLineSprites: 3 });
+    expect(layer._instanceData[2]).toBeCloseTo(60);
+    expect(layer._instanceData[15]).toBeCloseTo(6);
+    expect(layer._instanceData[28]).toBeCloseTo(6);
+    const ids = (resource as { leaderLine: { sprites: Array<{ id: number }> } }).leaderLine.sprites.map((sprite) => sprite.id);
+
+    backend.update(resource, { ...updateFor(round, null), leaderLineGeometry: null });
+    expect(layer._instanceData[2]).toBe(0);
+    expect(layer._instanceData[15]).toBe(0);
+    expect(layer._instanceData[28]).toBe(0);
+    backend.update(resource, {
+      ...updateFor(round, { x: 50, y: 30 }),
+      leaderLineGeometry: { start: { x: 20, y: 30 }, end: { x: 80, y: 30 } }
+    });
+    expect((resource as { leaderLine: { sprites: Array<{ id: number }> } }).leaderLine.sprites.map((sprite) => sprite.id)).toEqual(ids);
+    const { leaderLine: _removed, ...withoutLine } = round;
+    backend.update(resource, { ...updateFor(withoutLine, { x: 50, y: 30 }), leaderLineGeometry: null });
+    expect(layer.count).toBe(0);
+    expect(backend.getStats()).toMatchObject({ liveLeaderLines: 0, leaderLineSprites: 0 });
+    backend.disposeResource(resource);
+    expect(layer.count).toBe(0);
+    expect(backend.getStats()).toMatchObject({ liveLeaderLines: 0, leaderLineSprites: 0 });
+    backend.dispose();
+  });
+
+  it("applies DPR scaling to the shared line layer and disposes it idempotently", () => {
+    const { backend, surface } = fixture();
+    const resource = backend.create({ ...labelDefinition("DPR"), leaderLine: { lineCap: "square" } });
+    const marker = backend.create(markerDefinition("ring", 20));
+    surface.canvas.width = 400;
+    surface.canvas.height = 200;
+    backend.setViewport({ left: 0, top: 0, width: 200, height: 100 });
+    expect(lineLayer(resource).view.zoom).toBe(2);
+    expect(markerLayer(marker).view.zoom).toBe(2);
+    backend.dispose();
+    backend.dispose();
+    expect(renderingKinds(surface)).toEqual([]);
+  });
+
+  it("rejects non-uniform backing-store scale", () => {
+    const { backend, surface } = fixture();
+    surface.canvas.width = 200;
+    surface.canvas.height = 150;
+    expect(() => backend.setViewport({ left: 0, top: 0, width: 100, height: 100 })).toThrow(/uniform/);
+    backend.dispose();
+  });
+});
+
+function fixture(overrides: Partial<TextRendererAnnotationBackendOptions> = {}) {
+  const canvas = { width: 200, height: 100 } as HTMLCanvasElement;
+  const surface = {
+    canvas,
+    format: "bgra8unorm",
+    _renderingContexts: [],
+    _device: fakeGpuDevice()
+  } as unknown as SurfaceContext;
+  (surface as unknown as { engine: SurfaceContext }).engine = surface;
+  const backend = createTextRendererAnnotationBackend({ surface, font, ...overrides });
+  backend.setViewport({ left: 0, top: 0, width: 200, height: 100 });
+  return { backend, surface };
+}
+
+function fakeGpuDevice() {
+  return {
+    queue: { writeTexture() {}, writeBuffer() {} },
+    createTexture() {
+      return { createView: () => ({}), destroy() {} };
+    },
+    createSampler: () => ({}),
+    createBuffer(descriptor: { size: number }) {
+      const memory = new ArrayBuffer(descriptor.size);
+      return { size: descriptor.size, getMappedRange: () => memory, unmap() {}, destroy() {} };
+    },
+    createBindGroupLayout: () => ({}),
+    createShaderModule: () => ({}),
+    createPipelineLayout: () => ({}),
+    createRenderPipeline: () => ({ getBindGroupLayout: () => ({}) })
+  };
+}
+
+function renderingKinds(surface: SurfaceContext): string[] {
+  return (surface as unknown as { _renderingContexts: Array<{ _kind: string }> })._renderingContexts.map((item) => item._kind);
+}
+
+function lineLayer(resource: unknown): {
+  count: number;
+  view: { zoom: number };
+  _instanceData: Float32Array;
+} {
+  return (resource as { leaderLine: { sprites: Array<{ layer: unknown }> } }).leaderLine.sprites[0]!.layer as never;
+}
+
+function markerLayer(resource: unknown): {
+  count: number;
+  visible: boolean;
+  view: { zoom: number };
+  _instanceData: Float32Array;
+} {
+  return (resource as { sprite: { layer: unknown } }).sprite.layer as never;
+}
+
+function markerDefinition(
+  shape: MarkerShape,
+  size: number,
+  style: BackendAnnotationDefinition["style"] = {},
+  id = 1
+): BackendAnnotationDefinition {
+  return { id: id as AnnotationId, type: "marker", shape, size, zIndex: 0, style };
+}
+
+function labelDefinition(
+  text: string,
+  id = 1,
+  style: BackendAnnotationDefinition["style"] = {}
+): BackendAnnotationDefinition {
+  return { id: id as AnnotationId, type: "label", text, zIndex: 0, style };
+}
+
+function updateFor(
+  definition: BackendAnnotationDefinition,
+  screenPosition: Readonly<{ x: number; y: number }> | null
+): BackendAnnotationUpdate {
+  return {
+    ...definition,
+    definitionChanged: true,
+    rendered: screenPosition !== null,
+    screenPosition,
+    leaderLineGeometry: null
+  };
+}
+
+function runColor(resource: unknown): readonly [number, number, number, number] {
+  return (resource as { run: { defaultColor: readonly [number, number, number, number] } }).run.defaultColor;
+}

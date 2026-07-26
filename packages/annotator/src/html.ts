@@ -244,7 +244,6 @@ function applyLeaderLineDefinition(
   if (!resource.leaderLine) {
     line.dataset.annotationLeaderLine = String(definition.id);
     line.setAttribute("vector-effect", "non-scaling-stroke");
-    line.setAttribute("stroke-linecap", "round");
     line.style.display = "none";
     layer.append(line);
     resource.leaderLine = line;
@@ -252,6 +251,7 @@ function applyLeaderLineDefinition(
   line.setAttribute("stroke", options.color ?? definition.style.borderColor ?? definition.style.color ?? "#ffffff");
   line.setAttribute("stroke-width", String(options.width ?? 1));
   line.setAttribute("opacity", String(options.opacity ?? 1));
+  line.setAttribute("stroke-linecap", options.lineCap ?? "square");
 }
 
 function applyLeaderLineGeometry(

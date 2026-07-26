@@ -6,6 +6,7 @@ export default defineConfig({
       entry: {
         index: "src/index.ts",
         html: "src/html.ts",
+        textrender: "src/textrender.ts",
         instancer: "src/instancer.ts",
         "babylon-occlusion": "src/babylon-occlusion.ts"
       },

@@ -11,6 +11,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@litools/annotator/html", replacement: resolve(packageRoot, "src/html.ts") },
+      { find: "@litools/annotator/textrender", replacement: resolve(packageRoot, "src/textrender.ts") },
       { find: "@litools/annotator/instancer", replacement: resolve(packageRoot, "src/instancer.ts") },
       {
         find: "@litools/annotator/babylon-occlusion",
@@ -33,7 +34,15 @@ export default defineConfig({
         lifecycle: resolve(examplesRoot, "lifecycle/index.html"),
         collisions: resolve(examplesRoot, "collisions/index.html"),
         collisionStress: resolve(examplesRoot, "collision-stress/index.html"),
-        occlusion: resolve(examplesRoot, "occlusion/index.html")
+        occlusion: resolve(examplesRoot, "occlusion/index.html"),
+        textRenderer: resolve(examplesRoot, "textrender/index.html"),
+        textRendererBasic: resolve(examplesRoot, "textrender/basic/index.html"),
+        textRendererCallouts: resolve(examplesRoot, "textrender/callouts/index.html"),
+        textRendererAnimatedMarkers: resolve(examplesRoot, "textrender/animated-markers/index.html"),
+        textRendererMarkerShapes: resolve(examplesRoot, "textrender/marker-shapes/index.html"),
+        textRendererDynamic: resolve(examplesRoot, "textrender/dynamic/index.html"),
+        textRendererCollisions: resolve(examplesRoot, "textrender/collisions/index.html"),
+        textRendererStress: resolve(examplesRoot, "textrender/stress/index.html")
       }
     }
   }

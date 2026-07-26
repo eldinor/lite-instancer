@@ -430,6 +430,12 @@ function updateLayer(layer: LayerState): void {
         measured = annotation.layer.backend.measure(annotation.resource);
       }
     }
+    if (annotation.kind === "label" && annotation.leaderLine) {
+      const geometry = measured
+        ? createLeaderLineGeometryForBounds(annotation, projection.screenPosition, measured)
+        : null;
+      updateBackend(annotation, true, final, geometry);
+    }
     annotation.snapshot = Object.freeze({
       id: annotation.handle.id,
       type: annotation.handle.type,
@@ -713,7 +719,11 @@ function shiftAnnotation(annotation: LabelState, placement: ShiftPlacement): voi
     x: base.x + placement.x,
     y: base.y + placement.y
   });
-  const leaderLineGeometry = createLeaderLineGeometry(annotation, base, placement);
+  const raw = snapshot.unclampedScreenPosition;
+  const anchorPosition = raw
+    ? { x: raw.x - annotation.screenOffset[0]!, y: raw.y - annotation.screenOffset[1]! }
+    : base;
+  const leaderLineGeometry = createLeaderLineGeometryForBounds(annotation, anchorPosition, placement.bounds);
   updateBackend(annotation, true, screenPosition, leaderLineGeometry);
   annotation.snapshot = Object.freeze({
     ...snapshot,
@@ -723,24 +733,23 @@ function shiftAnnotation(annotation: LabelState, placement: ShiftPlacement): voi
   });
 }
 
-function createLeaderLineGeometry(
+function createLeaderLineGeometryForBounds(
   annotation: LabelState,
   start: Readonly<{ x: number; y: number }>,
-  placement: ShiftPlacement
+  bounds: Readonly<{ x: number; y: number; width: number; height: number }>
 ): Readonly<BackendLeaderLineGeometry> | null {
   const options = annotation.leaderLine;
-  if (!options || Math.hypot(placement.x, placement.y) < (options.minLength ?? 8)) return null;
-  const bounds = placement.bounds;
+  const centerX = bounds.x + bounds.width * 0.5;
+  const centerY = bounds.y + bounds.height * 0.5;
+  if (!options || Math.hypot(centerX - start.x, centerY - start.y) < (options.minLength ?? 8)) return null;
   if (
-    start.x >= bounds.left &&
-    start.x <= bounds.right &&
-    start.y >= bounds.top &&
-    start.y <= bounds.bottom
+    start.x >= bounds.x &&
+    start.x <= bounds.x + bounds.width &&
+    start.y >= bounds.y &&
+    start.y <= bounds.y + bounds.height
   ) {
     return null;
   }
-  const centerX = bounds.left + bounds.width * 0.5;
-  const centerY = bounds.top + bounds.height * 0.5;
   const deltaX = start.x - centerX;
   const deltaY = start.y - centerY;
   const scaleX = deltaX === 0 ? Number.POSITIVE_INFINITY : (bounds.width * 0.5) / Math.abs(deltaX);
@@ -931,15 +940,20 @@ function normalizeLeaderLine(
   const width = source.width ?? 1;
   const opacity = source.opacity ?? 1;
   const minLength = source.minLength ?? 8;
+  const lineCap = source.lineCap ?? "square";
   assertPositive(width, "Leader line width");
   assertNonNegative(minLength, "Leader line minimum length");
   if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
     throw new AnnotatorError("Leader line opacity must be a finite number from 0 to 1");
   }
+  if (lineCap !== "square" && lineCap !== "round") {
+    throw new AnnotatorError('Leader line cap must be "square" or "round"');
+  }
   return Object.freeze({
     ...(source.color !== undefined ? { color: source.color } : {}),
     width,
     opacity,
+    lineCap,
     minLength
   });
 }

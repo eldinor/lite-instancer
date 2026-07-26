@@ -28,6 +28,7 @@ import {
   type HtmlAnnotationBackendOptions
 } from "@litools/annotator/html";
 import "./styles.css";
+import { createDemoNavigation } from "./navigation.js";
 
 export interface DemoPanel {
   readonly root: HTMLElement;
@@ -58,6 +59,8 @@ export interface DemoContext {
 const demo = document.body.dataset.demo;
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!demo || !app) throw new Error("Example page is missing its demo name or app root.");
+
+createDemoNavigation(document, demo, new URL("../", window.location.href));
 
 const canvas = document.createElement("canvas");
 const overlay = document.createElement("div");
@@ -219,7 +222,6 @@ function createPanel(title: string): DemoPanel {
   const root = document.createElement("section");
   root.className = "demo-panel";
   root.innerHTML = `
-    <a class="back" href="../">← Annotator examples</a>
     <h1></h1>
     <p class="description"></p>
     <div class="status-row">Status: <span class="status">initializing</span></div>

@@ -5,7 +5,43 @@ follows semantic versioning.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Add the tree-shakable `@litools/annotator/textrender` entry with a label-only
+  GPU TextRenderer backend, public shaping bridge, shared glyph storage,
+  z-index batching, bounded shape cache, CSS-pixel measurement, and runtime
+  statistics.
+- Add an opt-in guarded-private Lite 1.14 layout adapter that permanently falls
+  back to public shaping on an error or structural mismatch, with third-party
+  notices for the bundled Apache-2.0 implementation.
+- Add four TextRenderer demos for basic, dynamic, collision, and
+  100/250/500-label stress scenarios plus a bundled OFL-licensed Inter font.
+- Add unit and build-isolation coverage for the GPU text backend while
+  preserving the existing HTML entry and gallery pages.
+- Add lazy GPU Sprite2D leader lines to the TextRenderer backend with a
+  one-sprite square default, opt-in three-sprite rounded caps, shared DPR
+  scaling, reusable hidden slots, lifecycle cleanup, and renderer statistics.
+- Add collision-page leader-line cap/style cases and a manual 30-warm-up,
+  180-sample JSON benchmark with clipboard fallback.
+- Add one-sprite GPU dot and ring markers with cached styled atlas frames,
+  shared DPR scaling, HTML-compatible marker colors/borders, lifecycle cleanup,
+  one marker draw call, statistics, and basic-demo examples.
+- Add compound marker/label callouts by extending leader lines to explicit
+  screen offsets and clamped labels, plus focused GPU callout and animated
+  marker demos with stable sprite-slot updates.
+- Add one-sprite square, diamond, triangle, cross, and pin GPU markers, an open
+  `MarkerShape` string union, namespaced custom rasterizer registration, and a
+  focused built-in/custom marker-shapes demo.
+
+### Changed
+
+- Raise the Babylon Lite peer dependency to `^1.14.0`.
+- Change omitted leader-line caps from rounded to square in both backends for
+  the faster universal default; rounded caps are now explicitly opt-in.
+- Replace the disconnected example galleries with one readable catalog and a
+  shared live-demo header, learning-path controls, and accessible demos drawer.
+- Remove Annotator's browser-automation configuration, fixtures, snapshots,
+  scripts, and package dependency; release checks now use unit and build gates.
 
 ## 0.1.2 - 2026-07-24
 

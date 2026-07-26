@@ -396,6 +396,28 @@ describe("annotation core", () => {
     expect(backend.resources[1]?.update?.leaderLineGeometry).toBeNull();
   });
 
+  it("connects an explicitly offset label to its projected anchor", async () => {
+    const api = await import("../../src/index.js");
+    const backend = new FakeBackend();
+    const layer = api.createAnnotationLayer({
+      scene: {} as never,
+      camera: {} as never,
+      canvas: fakeCanvas(),
+      backend
+    });
+    api.createLabel(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      text: "callout",
+      screenOffset: [40, -20],
+      leaderLine: true
+    });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.update?.leaderLineGeometry).toEqual({
+      start: { x: 50, y: 50 },
+      end: { x: 80, y: 35 }
+    });
+  });
+
   it("falls back to collision hiding when no shift placement fits", async () => {
     const api = await import("../../src/index.js");
     const layer = api.createAnnotationLayer({
@@ -499,11 +521,12 @@ describe("annotation core", () => {
 
   it("validates leader-line options and supports disabling them", async () => {
     const api = await import("../../src/index.js");
+    const backend = new FakeBackend();
     const layer = api.createAnnotationLayer({
       scene: {} as never,
       camera: {} as never,
       canvas: fakeCanvas(),
-      backend: new FakeBackend()
+      backend
     });
     expect(() => api.createLabel(layer, {
       anchor: { kind: "world", position: [0, 0, 0.5] },
@@ -515,12 +538,16 @@ describe("annotation core", () => {
       text: "valid",
       leaderLine: true
     });
+    expect(backend.resources[0]?.definition.leaderLine?.lineCap).toBe("square");
     expect(() => api.updateLabel(label, {
       leaderLine: { opacity: 2 }
     })).toThrow(/opacity/);
     expect(() => api.updateLabel(label, {
       leaderLine: { minLength: -1 }
     })).toThrow(/minimum length/);
+    expect(() => api.updateLabel(label, {
+      leaderLine: { lineCap: "butt" as "square" }
+    })).toThrow(/line cap/i);
     expect(() => api.updateLabel(label, { leaderLine: false })).not.toThrow();
   });
 

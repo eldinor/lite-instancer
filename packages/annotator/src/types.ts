@@ -2,7 +2,19 @@ import type { Camera, Mat4, Mesh, SceneContext } from "@babylonjs/lite";
 
 export type AnnotationId = number & { readonly __annotationIdBrand: unique symbol };
 export type AnnotationType = "label" | "marker";
-export type MarkerShape = "dot" | "ring";
+/**
+ * Marker shape identifier. Known values retain editor completion while the
+ * open string tail permits backend-specific and application-registered shapes.
+ */
+export type MarkerShape =
+  | "dot"
+  | "ring"
+  | "square"
+  | "diamond"
+  | "triangle"
+  | "cross"
+  | "pin"
+  | (string & {});
 export type LabelCollisionMode =
   | "none"
   | "hide"
@@ -72,6 +84,8 @@ export interface LeaderLineOptions {
   color?: string;
   width?: number;
   opacity?: number;
+  /** Line-end shape. Rounded caps cost three GPU sprites per line. @default "square" */
+  lineCap?: "square" | "round";
   /** Minimum collision-layout displacement before the line is shown. @default 8 */
   minLength?: number;
 }

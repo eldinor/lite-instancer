@@ -9,88 +9,38 @@
     <script type="module" src="./index.ts"></script>
   </head>
   <body class="gallery-page">
-    <header class="gallery-hero">
-      <div class="eyebrow">Babylon Lite spatial UI</div>
-      <h1>Annotator <small data-package-version></small></h1>
-      <p>
-        Readable labels and markers that stay attached to meshes, world points,
-        and stable Instancer IDs.
-      </p>
+    <header class="catalog-header">
+      <a href="./" aria-current="page">Annotator examples</a>
+      <nav aria-label="Example sections">
+        <a href="#html-overlay">HTML overlay</a>
+        <a href="#gpu-text">GPU TextRenderer</a>
+      </nav>
+      <nav class="catalog-header__external" aria-label="Project links">
+        <a href="https://github.com/eldinor/lite-instancer/tree/main/packages/annotator">GitHub</a>
+        <a href="https://babylonpress.org/">BabylonPress.org</a>
+      </nav>
     </header>
 
-    <main class="gallery-main">
-      <nav class="example-grid" aria-label="Annotator examples">
-        <a class="example-card card-labels" href="./labels/">
-          <span class="card-number">01</span>
-          <span class="card-visual" aria-hidden="true"><i></i><b>Pump A-12</b><em></em></span>
-          <strong>Mesh labels</strong>
-          <span>Attach styled labels to local points on regular meshes.</span>
-          <code>createLabel()</code>
-        </a>
-        <a class="example-card card-markers" href="./markers/">
-          <span class="card-number">02</span>
-          <span class="card-visual marker-visual" aria-hidden="true"><i></i><i></i><i></i></span>
-          <strong>Markers &amp; clamping</strong>
-          <span>Mix dots and rings, then keep a moving target inside the viewport.</span>
-          <code>createMarker()</code>
-        </a>
-        <a class="example-card card-dynamic" href="./dynamic/">
-          <span class="card-number">03</span>
-          <span class="card-visual data-visual" aria-hidden="true"><b>72.4 °C</b><em>LIVE</em></span>
-          <strong>Live data labels</strong>
-          <span>Refresh callback text explicitly while the scene keeps moving.</span>
-          <code>invalidateAnnotation()</code>
-        </a>
-        <a class="example-card card-instancer" href="./instancer/">
-          <span class="card-number">04</span>
-          <span class="card-visual grid-visual" aria-hidden="true">
-            <i></i><i></i><i></i><i></i><i></i><i></i>
-          </span>
-          <strong>Stable instance IDs</strong>
-          <span>Labels survive slot swaps, growth, visibility changes, and removal.</span>
-          <code>createInstanceAnchor()</code>
-        </a>
-        <a class="example-card card-lifecycle" href="./lifecycle/">
-          <span class="card-number">05</span>
-          <span class="card-visual lifecycle-visual" aria-hidden="true"><i></i><b>dispose</b><em>recreate</em></span>
-          <strong>Lifecycle &amp; cleanup</strong>
-          <span>Dispose individual annotations or the complete layer, then rebuild safely.</span>
-          <code>disposeAnnotationLayer()</code>
-        </a>
-        <a class="example-card card-collisions" href="./collisions/">
-          <span class="card-number">06</span>
-          <span class="card-visual collision-visual" aria-hidden="true">
-            <b>Sensor 01</b><b>Sensor 02</b><b>Sensor 03</b>
-          </span>
-          <strong>Label collisions</strong>
-          <span>Compare hide, shift, radial, cluster, and repel placement strategies.</span>
-          <code>collision: "repel"</code>
-        </a>
-        <a class="example-card card-stress" href="./collision-stress/">
-          <span class="card-number">07</span>
-          <span class="card-visual stress-visual" aria-hidden="true">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-            <b>500</b><em>2.4 ms</em>
-          </span>
-          <strong>Collision stress test</strong>
-          <span>Profile all collision modes at selectable 100–500 label loads with p95 timing.</span>
-          <code>updateAnnotationLayer()</code>
-        </a>
-        <a class="example-card card-occlusion" href="./occlusion/">
-          <span class="card-number">08</span>
-          <span class="card-visual collision-visual" aria-hidden="true">
-            <b>Visible</b><i></i><b>Hidden</b>
-          </span>
-          <strong>Depth occlusion</strong>
-          <span>Fade or hide labels behind geometry and combine depth with collision layout.</span>
-          <code>occlusion: "fade"</code>
-        </a>
-      </nav>
-    </main>
+    <header class="gallery-hero">
+      <div class="eyebrow">Babylon Lite Spatial UI</div>
+      <h1><span class="gallery-title-text">Annotator <small data-package-version></small></span><code class="gallery-install">npm i @litools/annotator</code></h1>
+      <p>
+        Follow the examples in order or jump directly to a capability. HTML
+        overlays provide rich accessible UI; GPU TextRenderer labels optimize
+        large text-only workloads.
+      </p>
+      <div class="catalog-summary"><strong>15 live demos</strong><span>8 HTML</span><span>7 GPU</span></div>
+    </header>
+
+    <main class="gallery-main" id="demo-catalog"></main>
 
     <footer class="gallery-footer">
       <span>@litools/annotator</span>
-      <a href="https://github.com/eldinor/lite-instancer/tree/main/packages/annotator">View source</a>
+      <nav aria-label="Project and page links">
+        <a href="https://github.com/eldinor/lite-instancer/tree/main/packages/annotator">GitHub source</a>
+        <a href="https://babylonpress.org/">BabylonPress.org</a>
+        <a href="#">Back to top ↑</a>
+      </nav>
     </footer>
   </body>
 </html>
