@@ -17,7 +17,9 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
-      "@litools/interacter": ["./src/index.ts"]
+      "@litools/interacter": ["./src/index.ts"],
+      "@litools/instancer": ["../../src/index.ts"],
+      "@litools/instancer/interacter": ["../../src/interacter.ts"]
     }
   },
   "include": ["src", "tests", "examples", "*.config.ts"]

@@ -1,10 +1,13 @@
-import type { Mesh, SceneContext } from "@babylonjs/lite";
+import type { Mesh, PickingInfo, SceneContext } from "@babylonjs/lite";
 import * as publicApi from "../../src/index.js";
 import {
   disposeInteractionManager,
   disposeInteractionTarget,
+  getActivePointers,
   getHoveredTarget,
+  getInteractionDiagnostics,
   getPressedTarget,
+  interpolatePickedAttribute,
   isInteractionEnabled,
   onInteraction,
   onInteractionEvent,
@@ -12,12 +15,35 @@ import {
   setInteractionEnabled
 } from "../../src/index.js";
 import { createManagerInternal } from "../../src/interaction-manager.js";
-import type { FrameDriver, PickDriver, PickResult } from "../../src/pick-scheduler.js";
+import {
+  toInteractionPickDetails,
+  type ClockDriver,
+  type FrameDriver,
+  type PickDriver,
+  type PickResult
+} from "../../src/pick-scheduler.js";
 import type { InteractionManager, InteractionManagerOptions } from "../../src/types.js";
+import type { InteractionPickOptions } from "../../src/types.js";
 
 class FakeCanvas extends EventTarget {
+  readonly capturedPointers = new Set<number>();
+  readonly releasedPointers: number[] = [];
+
   getBoundingClientRect(): DOMRect {
     return { left: 10, top: 20, width: 640, height: 480 } as DOMRect;
+  }
+
+  setPointerCapture(pointerId: number): void {
+    this.capturedPointers.add(pointerId);
+  }
+
+  hasPointerCapture(pointerId: number): boolean {
+    return this.capturedPointers.has(pointerId);
+  }
+
+  releasePointerCapture(pointerId: number): void {
+    this.capturedPointers.delete(pointerId);
+    this.releasedPointers.push(pointerId);
   }
 }
 
@@ -39,11 +65,23 @@ class ManualFrames implements FrameDriver {
   }
 }
 
+class ManualClock implements ClockDriver {
+  value = 0;
+  now(): number {
+    return this.value;
+  }
+  advance(milliseconds: number): void {
+    this.value += milliseconds;
+  }
+}
+
 class FakePicker implements PickDriver {
   readonly pending: Array<{
     x: number;
     y: number;
     filter: (mesh: Mesh) => boolean;
+    options: InteractionPickOptions | undefined;
+    detailed: boolean;
     resolve: (result: PickResult) => void;
     reject: (error: unknown) => void;
   }> = [];
@@ -51,7 +89,13 @@ class FakePicker implements PickDriver {
   maxActive = 0;
   disposed = false;
 
-  pick(x: number, y: number, filter: (mesh: Mesh) => boolean): Promise<PickResult> {
+  pick(
+    x: number,
+    y: number,
+    filter: (mesh: Mesh) => boolean,
+    options: InteractionPickOptions | undefined,
+    detailed: boolean
+  ): Promise<PickResult> {
     this.active++;
     this.maxActive = Math.max(this.maxActive, this.active);
     return new Promise<PickResult>((resolve, reject) => {
@@ -59,6 +103,8 @@ class FakePicker implements PickDriver {
         x,
         y,
         filter,
+        options,
+        detailed,
         resolve: (result) => {
           this.active--;
           resolve(result);
@@ -71,20 +117,46 @@ class FakePicker implements PickDriver {
     });
   }
 
-  hit(mesh: Mesh, point: readonly [number, number, number] = [1, 2, 3]): void {
+  hit(
+    mesh: Mesh,
+    point: readonly [number, number, number] = [1, 2, 3],
+    overrides: Partial<PickResult> = {}
+  ): void {
     const request = this.pending.shift();
     if (!request) throw new Error("No pending pick");
     request.resolve(
       request.filter(mesh)
-        ? { pickedMesh: mesh, pickedPoint: point, distance: 5 }
-        : { pickedMesh: null, pickedPoint: null, distance: null }
+        ? {
+            pickedMesh: mesh,
+            pickedPoint: point,
+            distance: 5,
+            thinInstanceIndex: -1,
+            detailedRequested: request.detailed,
+            details: null,
+            ...overrides
+          }
+        : {
+            pickedMesh: null,
+            pickedPoint: null,
+            distance: null,
+            thinInstanceIndex: -1,
+            detailedRequested: false,
+            details: null
+          }
     );
   }
 
   miss(): void {
     const request = this.pending.shift();
     if (!request) throw new Error("No pending pick");
-    request.resolve({ pickedMesh: null, pickedPoint: null, distance: null });
+    request.resolve({
+      pickedMesh: null,
+      pickedPoint: null,
+      distance: null,
+      thinInstanceIndex: -1,
+      detailedRequested: false,
+      details: null
+    });
   }
 
   fail(error: unknown): void {
@@ -102,15 +174,16 @@ function setup(overrides: Partial<InteractionManagerOptions> = {}) {
   const canvas = new FakeCanvas();
   const picker = new FakePicker();
   const frames = new ManualFrames();
+  const clock = new ManualClock();
   const options: InteractionManagerOptions = {
     scene: {} as SceneContext,
-    canvas: canvas as HTMLCanvasElement,
+    canvas: canvas as unknown as HTMLCanvasElement,
     ...overrides
   };
-  const manager = createManagerInternal(options, picker, frames);
+  const manager = createManagerInternal(options, picker, frames, clock);
   const mesh = {} as Mesh;
   const otherMesh = {} as Mesh;
-  return { canvas, picker, frames, manager, mesh, otherMesh };
+  return { canvas, picker, frames, clock, manager, mesh, otherMesh };
 }
 
 function pointer(
@@ -144,14 +217,53 @@ async function settle(): Promise<void> {
 }
 
 describe("interaction manager", () => {
-  it("keeps the version 0.1 runtime API surface stable", () => {
+  it("preserves Lite 1.14 barycentric coordinates for detailed VAT picks", () => {
+    const result = {
+      hit: true,
+      faceId: 7,
+      bu: 0.2,
+      bv: 0.3,
+      subMeshId: 0,
+      thinInstanceIndex: 4,
+      pickedNormal: null,
+      pickedNormalWorld: null,
+      pickedFaceNormal: null,
+      pickedFaceNormalWorld: null,
+      pickedMesh: null
+    } as PickingInfo;
+
+    expect(toInteractionPickDetails(result, true)).toMatchObject({
+      faceId: 7,
+      vertexIndices: null,
+      barycentric: [0.2, 0.3, 0.5],
+      bu: 0.2,
+      bv: 0.3,
+      thinInstanceIndex: 4,
+      pickedUV: null
+    });
+    expect(toInteractionPickDetails(result, false)).toBeNull();
+  });
+
+  it("interpolates arbitrary VAT vertex attributes from picked triangle weights", () => {
+    const details = {
+      faceId: 2,
+      vertexIndices: [0, 1, 2] as const,
+      barycentric: [0.2, 0.3, 0.5] as const
+    } as NonNullable<PickResult["details"]>;
+    const values = new Float32Array([0, 0, 10, 0, 0, 20]);
+    expect(Array.from(interpolatePickedAttribute(details, values, 2)!)).toEqual([3, 10]);
+  });
+
+  it("exposes only the supported runtime API surface", () => {
     expect(Object.keys(publicApi).sort()).toEqual([
       "createInteractionManager",
       "disposeInteractionManager",
       "disposeInteractionTarget",
       "getActivePointers",
       "getHoveredTarget",
+      "getInteractionDiagnostics",
       "getPressedTarget",
+      "interpolatePickedAttribute",
       "isInteractionEnabled",
       "isTargetHovered",
       "isTargetPressed",
@@ -161,6 +273,286 @@ describe("interaction manager", () => {
       "setInteractionEnabled",
       "setInteractionFilter"
     ]);
+  });
+
+  it("defaults omitted detailed-picking workloads to basic picks", async () => {
+    const { canvas, picker, frames, manager, mesh } = setup({
+      detailedPicking: { discrete: true }
+    });
+    registerMesh(manager, mesh);
+
+    canvas.dispatchEvent(pointer("pointermove"));
+    frames.flush();
+    expect(picker.pending[0]?.detailed).toBe(false);
+    picker.miss();
+    await settle();
+
+    canvas.dispatchEvent(pointer("pointerdown"));
+    expect(picker.pending[0]?.detailed).toBe(true);
+    picker.hit(mesh);
+    await settle();
+  });
+
+  it("reports immutable queue, coalescing, workload, and timing diagnostics", async () => {
+    const { canvas, picker, frames, clock, manager, mesh } = setup({ onError() {} });
+    registerMesh(manager, mesh);
+
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 120 }));
+    clock.advance(5);
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    expect(getInteractionDiagnostics(manager)).toMatchObject({
+      queuedHover: 1,
+      coalescedHoverSamples: 1,
+      inFlightKind: null,
+      completedPicks: 0
+    });
+
+    clock.advance(5);
+    frames.flush();
+    expect(getInteractionDiagnostics(manager)).toMatchObject({
+      queuedHover: 0,
+      inFlightKind: "hover",
+      lastSchedulerWaitMs: 5
+    });
+    clock.advance(20);
+    picker.miss();
+    await settle();
+
+    canvas.dispatchEvent(pointer("pointerdown"));
+    expect(getInteractionDiagnostics(manager).inFlightKind).toBe("discrete");
+    clock.advance(8);
+    picker.fail(new Error("diagnostic failure"));
+    await settle();
+
+    const diagnostics = getInteractionDiagnostics(manager);
+    expect(diagnostics).toMatchObject({
+      queuedDiscrete: 0,
+      queuedHover: 0,
+      queuedDrag: 0,
+      inFlightKind: null,
+      completedPicks: 1,
+      failedPicks: 1,
+      coalescedHoverSamples: 1,
+      coalescedDragSamples: 0,
+      lastSchedulerWaitMs: 0,
+      lastPickDurationMs: 8,
+      averagePickDurationMs: 14,
+      maximumPickDurationMs: 20
+    });
+    expect(Object.isFrozen(diagnostics)).toBe(true);
+  });
+
+  it("selects detailed picking independently for discrete, drag, and hover work", async () => {
+    const policy = { discrete: true, drag: false, hover: true };
+    const { canvas, picker, frames, manager, mesh, otherMesh } = setup({
+      detailedPicking: policy,
+      drag: { surfaceFilter: () => true }
+    });
+    policy.drag = true;
+    registerMesh(manager, mesh);
+
+    canvas.dispatchEvent(pointer("pointermove"));
+    frames.flush();
+    expect(picker.pending[0]?.detailed).toBe(true);
+    picker.hit(mesh);
+    await settle();
+
+    canvas.dispatchEvent(pointer("pointerdown"));
+    expect(picker.pending[0]?.detailed).toBe(true);
+    picker.hit(mesh);
+    await settle();
+
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    expect(picker.pending[0]?.detailed).toBe(false);
+    picker.hit(otherMesh);
+    await settle();
+  });
+
+  it("forwards per-event Lite pick options and resolves stable thin-instance IDs", async () => {
+    const contexts: string[] = [];
+    const discard = {
+      key: "test",
+      wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return false; }"
+    };
+    const { canvas, picker, manager, mesh } = setup({
+      detailedPicking: { discrete: true, drag: true, hover: true },
+      pickOptions(context) {
+        contexts.push(`${context.kind}:${context.eventType}`);
+        return { discard, debugLabel: context.eventType };
+      }
+    });
+    const target = registerMesh(manager, mesh, { resolveInstanceId: (slot) => `vat-${slot}` });
+    let received: { instanceId: string | number | null; status: string; slot: number } | undefined;
+    onInteraction(target, "pointerdown", (event) => {
+      received = {
+        instanceId: event.instanceId,
+        status: event.pickDetailsStatus,
+        slot: event.thinInstanceIndex
+      };
+    });
+
+    canvas.dispatchEvent(pointer("pointerdown"));
+    expect(picker.pending[0]?.options).toMatchObject({ discard, debugLabel: "pointerdown" });
+    picker.hit(mesh, [1, 2, 3], { thinInstanceIndex: 6 });
+    await settle();
+    expect(contexts).toEqual(["discrete:pointerdown"]);
+    expect(received).toEqual({ instanceId: "vat-6", status: "unavailable", slot: 6 });
+  });
+
+  it("coalesces drag picks, ignores the dragged identity, and emits drag lifecycle events", async () => {
+    const { canvas, picker, manager, mesh, otherMesh } = setup({
+      drag: { surfaceFilter: () => true },
+      detailedPicking: { discrete: true, drag: true, hover: false }
+    });
+    const target = registerMesh(manager, mesh, { resolveInstanceId: (slot) => `stable-${slot}` });
+    const events: string[] = [];
+    let endReason: string | undefined;
+    let dragIdentity: unknown;
+    for (const type of ["dragstart", "drag", "dragend"] as const) {
+      onInteraction(target, type, (event) => {
+        events.push(event.type);
+        if (event.type === "dragend") endReason = event.dragEndReason;
+        if (event.type === "drag") {
+          dragIdentity = {
+            mesh: event.mesh,
+            pickedMesh: event.pickedMesh,
+            thinInstanceIndex: event.thinInstanceIndex,
+            pickedThinInstanceIndex: event.pickedThinInstanceIndex,
+            instanceId: event.instanceId
+          };
+        }
+      });
+    }
+
+    canvas.dispatchEvent(pointer("pointerdown", { timeStamp: 100 }));
+    picker.hit(mesh, [1, 2, 3], { thinInstanceIndex: 4 });
+    await settle();
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 130, timeStamp: 120 }));
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 140, timeStamp: 130 }));
+    expect(events).toEqual(["dragstart"]);
+    expect(picker.pending[0]?.x).toBe(120);
+    picker.hit(otherMesh, [3, 4, 5], { thinInstanceIndex: 1 });
+    await settle();
+    expect(events).toEqual(["dragstart", "drag"]);
+    expect(picker.pending[0]?.x).toBe(130);
+    expect(picker.pending[0]?.detailed).toBe(true);
+    expect(picker.pending[0]?.options?.ignore).toEqual({ mesh, thinInstanceIndex: 4 });
+    picker.hit(otherMesh, [4, 5, 6], { thinInstanceIndex: 2 });
+    await settle();
+    expect(events).toEqual(["dragstart", "drag", "drag"]);
+    expect(dragIdentity).toEqual({
+      mesh,
+      pickedMesh: otherMesh,
+      thinInstanceIndex: 4,
+      pickedThinInstanceIndex: 2,
+      instanceId: "stable-4"
+    });
+
+    canvas.dispatchEvent(pointer("pointerup", { clientX: 140, timeStamp: 150 }));
+    picker.hit(mesh);
+    await settle();
+    expect(events).toEqual(["dragstart", "drag", "drag", "dragend"]);
+    expect(endReason).toBe("released");
+  });
+
+  it("ends a cancelled drag exactly once and releases pointer capture", async () => {
+    const { canvas, picker, manager, mesh, otherMesh } = setup({
+      drag: { surfaceFilter: () => true }
+    });
+    const target = registerMesh(manager, mesh);
+    const reasons: string[] = [];
+    onInteraction(target, "dragend", (event) => reasons.push(event.dragEndReason));
+
+    canvas.dispatchEvent(pointer("pointerdown"));
+    picker.hit(mesh);
+    await settle();
+    canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    expect(canvas.capturedPointers.has(1)).toBe(true);
+
+    canvas.dispatchEvent(pointer("pointercancel", { clientX: 130, buttons: 0 }));
+    canvas.dispatchEvent(pointer("pointercancel", { clientX: 130, buttons: 0 }));
+    expect(reasons).toEqual(["pointercancel"]);
+    expect(canvas.capturedPointers.has(1)).toBe(false);
+    expect(canvas.releasedPointers).toEqual([1]);
+    expect(getActivePointers(manager)).toEqual([]);
+
+    picker.hit(otherMesh);
+    await settle();
+    expect(reasons).toEqual(["pointercancel"]);
+  });
+
+  it("ends active drags when interaction is disabled or their target is disposed", async () => {
+    const disabled = setup({ drag: { surfaceFilter: () => true } });
+    const disabledTarget = registerMesh(disabled.manager, disabled.mesh);
+    const disabledReasons: string[] = [];
+    onInteraction(disabledTarget, "dragend", (event) => disabledReasons.push(event.dragEndReason));
+
+    disabled.canvas.dispatchEvent(pointer("pointerdown"));
+    disabled.picker.hit(disabled.mesh);
+    await settle();
+    disabled.canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    setInteractionEnabled(disabled.manager, false);
+    setInteractionEnabled(disabled.manager, false);
+    expect(disabledReasons).toEqual(["disabled"]);
+    expect(disabled.canvas.capturedPointers.size).toBe(0);
+    disabled.picker.hit(disabled.otherMesh);
+    await settle();
+
+    const disposed = setup({ drag: { surfaceFilter: () => true } });
+    const disposedTarget = registerMesh(disposed.manager, disposed.mesh);
+    const disposedReasons: string[] = [];
+    onInteraction(disposedTarget, "dragend", (event) => disposedReasons.push(event.dragEndReason));
+
+    disposed.canvas.dispatchEvent(pointer("pointerdown"));
+    disposed.picker.hit(disposed.mesh);
+    await settle();
+    disposed.canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    disposeInteractionTarget(disposedTarget);
+    disposeInteractionTarget(disposedTarget);
+    expect(disposedReasons).toEqual(["target-disposed"]);
+    expect(disposed.canvas.capturedPointers.size).toBe(0);
+    disposed.picker.hit(disposed.otherMesh);
+    await settle();
+  });
+
+  it("terminates every active pointer on disable and keeps manager disposal quiet", async () => {
+    const multi = setup({ drag: { surfaceFilter: () => true } });
+    const target = registerMesh(multi.manager, multi.mesh);
+    const endings: Array<[number, string]> = [];
+    onInteraction(target, "dragend", (event) => endings.push([event.pointerId, event.dragEndReason]));
+
+    multi.canvas.dispatchEvent(pointer("pointerdown", { pointerId: 1 }));
+    multi.canvas.dispatchEvent(pointer("pointerdown", { pointerId: 2 }));
+    multi.picker.hit(multi.mesh);
+    await settle();
+    multi.picker.hit(multi.mesh);
+    await settle();
+    multi.canvas.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 130 }));
+    multi.canvas.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 140 }));
+
+    setInteractionEnabled(multi.manager, false);
+    expect(endings).toEqual([
+      [1, "disabled"],
+      [2, "disabled"]
+    ]);
+    expect(multi.canvas.capturedPointers.size).toBe(0);
+    multi.picker.hit(multi.otherMesh);
+    await settle();
+
+    const quiet = setup({ drag: { surfaceFilter: () => true } });
+    const quietTarget = registerMesh(quiet.manager, quiet.mesh);
+    const quietReasons: string[] = [];
+    onInteraction(quietTarget, "dragend", (event) => quietReasons.push(event.dragEndReason));
+    quiet.canvas.dispatchEvent(pointer("pointerdown"));
+    quiet.picker.hit(quiet.mesh);
+    await settle();
+    quiet.canvas.dispatchEvent(pointer("pointermove", { clientX: 130 }));
+    disposeInteractionManager(quiet.manager);
+    expect(quietReasons).toEqual([]);
+    expect(quiet.canvas.capturedPointers.size).toBe(0);
+    quiet.picker.hit(quiet.otherMesh);
+    await settle();
+    expect(quiet.picker.disposed).toBe(true);
   });
 
   it("registers opaque targets and rejects duplicate mesh registration", () => {

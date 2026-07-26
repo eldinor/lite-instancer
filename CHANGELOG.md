@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add the optional `@litools/instancer/interacter` adapter entry for live stable-ID resolution across ordinary, VAT, and explicit multi-mesh instance sources, with atomic registration rollback and idempotent binding disposal.
+- Document the adapter ownership decision, lifecycle ordering, hierarchy contract, and the current multi-part VAT character limitation.
+- Add an Interacter demo that proves stable IDs survive Instancer removal and renderer-slot compaction.
+
 ## 0.6.0 - 2026-07-22
 
 ### Added

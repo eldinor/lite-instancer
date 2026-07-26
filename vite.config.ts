@@ -13,13 +13,14 @@ export default defineConfig(({ command }) => ({
         vat: "src/vat.ts",
         animation: "src/animation.ts",
         "vat-sockets": "src/vat-sockets.ts",
-        outline: "src/outline.ts"
+        outline: "src/outline.ts",
+        interacter: "src/interacter.ts"
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`
     },
     rollupOptions: {
-      external: ["@babylonjs/lite"]
+      external: ["@babylonjs/lite", "@litools/interacter"]
     },
     sourcemap: true
   }

@@ -221,6 +221,36 @@ const picked = pickScreenSpaceInstanceFromPointer({
 });
 ```
 
+### Interacter adapter
+
+Use the optional `@litools/instancer/interacter` entry point when Interacter should deliver stable `InstanceId` values instead of renderer slots. Install `@litools/interacter` alongside Instancer, then register an ordinary or VAT single-mesh set:
+
+```ts
+import { onInteraction } from "@litools/interacter";
+import { registerInstanceSet } from "@litools/instancer/interacter";
+
+const target = registerInstanceSet(interactions, boxes);
+
+onInteraction(target, "click", (event) => {
+  console.log(event.instanceId); // Current stable InstanceId, not a durable slot.
+});
+```
+
+The adapter resolves `getIdForSlot()` when each event is created. It does not cache slots, so removal, visibility packing, and compaction remain safe.
+
+Hierarchy sets require their backing meshes explicitly because the common Instancer contract intentionally does not expose hierarchy internals:
+
+```ts
+import { registerInstanceSetMeshes } from "@litools/instancer/interacter";
+
+const binding = registerInstanceSetMeshes(interactions, buildings, buildingMeshes);
+// Subscribe to binding.targets, one Interacter target per backing mesh.
+
+binding.dispose();
+```
+
+Dispose the interaction target or binding before disposing its source set. Multi-part `VatCharacterSet` secondary meshes are not supported yet because their public API does not expose secondary-slot-to-primary-ID resolution. The adapter does not guess or reach into private mappings.
+
 ## VAT Animation
 
 `createVatInstanceSet` bakes Babylon Lite animation groups into a VAT-backed instance set. It defaults to `gpuCulling: false` and `visibleStrategy: "scale-zero"` because animated vertices can move outside rest bounds and playback parameters are slot-based.

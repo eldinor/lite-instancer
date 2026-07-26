@@ -34,7 +34,7 @@ panel.className = "panel";
 panel.innerHTML = `
   <a class="home" href="../">← Interaction examples</a>
   <h1>Ready Player animated picking</h1>
-  <p>Click the Ready Player character while its live skeleton deforms the registered meshes.</p>
+  <p>Release the primary pointer over the Ready Player character while its live skeleton deforms the registered meshes.</p>
   <div class="controls">
     <button type="button" class="playback">Pause animation</button>
     <button type="button" class="next-animation">Next animation</button>
@@ -47,7 +47,7 @@ panel.innerHTML = `
   <div>Status: <span class="status">loading GLB</span></div>
   <div>Animation: <strong class="animation">-</strong></div>
   <div>Registered meshes: <strong class="mesh-count">0</strong></div>
-  <pre class="log" aria-live="polite">Waiting for a click.</pre>
+  <pre class="log" aria-live="polite">Waiting for a primary-pointer release.</pre>
 `;
 document.body.append(panel);
 panel.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -131,7 +131,8 @@ const meshes = collectMeshes(root);
 for (const [index, mesh] of meshes.entries()) {
   if (!mesh.name) mesh.name = `Ready Player mesh ${index + 1}`;
   const target = registerMesh(interactions, mesh);
-  onInteraction(target, "click", (event) => {
+  onInteraction(target, "pointerup", (event) => {
+    if (event.button !== 0) return;
     const point = event.pickedPoint;
     log.textContent = [
       `mesh: ${event.mesh.name}`,

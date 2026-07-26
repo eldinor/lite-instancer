@@ -69,6 +69,10 @@
     "./outline": {
       "types": "./dist/outline.d.ts",
       "import": "./dist/outline.js"
+    },
+    "./interacter": {
+      "types": "./dist/interacter.d.ts",
+      "import": "./dist/interacter.js"
     }
   },
   "publishConfig": {
@@ -76,6 +80,7 @@
   },
   "files": [
     "dist",
+    "INTERACTER_ADAPTER_DESIGN.md",
     "CHANGELOG.md",
     "LICENSE",
     "README.md"
@@ -119,11 +124,15 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run pack:check"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.13.0"
+    "@babylonjs/lite": "^1.13.0",
+    "@litools/interacter": "^0.2.0"
   },
   "peerDependenciesMeta": {
     "@babylonjs/lite": {
       "optional": false
+    },
+    "@litools/interacter": {
+      "optional": true
     }
   },
   "devDependencies": {

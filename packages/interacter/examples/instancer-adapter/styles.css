@@ -1,0 +1,41 @@
+.adapter-panel {
+  width: min(420px, calc(100vw - 36px));
+}
+
+.adapter-panel h2 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+
+.adapter-values {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  margin: 12px 0;
+}
+
+.adapter-values dt {
+  color: #aebcd2;
+}
+
+.adapter-values dd {
+  margin: 0;
+  color: #b9f8d0;
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}
+
+.mapping {
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #050a12;
+  color: #87d9ff;
+  font: 12px/1.5 ui-monospace, monospace;
+}
+
+.adapter-panel .log {
+  height: 88px;
+}

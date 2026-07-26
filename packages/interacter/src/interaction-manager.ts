@@ -1,8 +1,9 @@
-import type { Mesh } from "@babylonjs/lite";
+import { getMeshGeometry, type Mesh, type PickIgnore } from "@babylonjs/lite";
 import {
   createBabylonPickDriver,
   createBrowserFrameDriver,
   PickScheduler,
+  type ClockDriver,
   type FrameDriver,
   type PickDriver,
   type PickResult
@@ -10,14 +11,22 @@ import {
 import type {
   ClickThreshold,
   InteractionErrorContext,
+  InteractionDragOptions,
+  InteractionDetailedPickingPolicy,
+  InteractionDragEndReason,
   InteractionEvent,
   InteractionEventType,
+  InteractionInstanceId,
   InteractionListener,
   InteractionManager,
   InteractionManagerOptions,
   InteractionMeshFilter,
+  InteractionPickDetails,
+  InteractionPickKind,
+  InteractionPickOptions,
   InteractionPointerType,
-  InteractionTarget
+  InteractionTarget,
+  InteractionTargetOptions
 } from "./types.js";
 
 type ListenerMap = Map<InteractionEventType, Set<InteractionListener>>;
@@ -38,6 +47,7 @@ interface PointerSnapshot {
 
 interface PointerSession {
   snapshot: PointerSnapshot;
+  readonly startSnapshot: PointerSnapshot;
   startX: number;
   startY: number;
   startTime: number;
@@ -45,6 +55,9 @@ interface PointerSession {
   rawDown: boolean;
   cancelled: boolean;
   downTarget: TargetImpl | null | undefined;
+  downResult: PickResult | undefined;
+  dragging: boolean;
+  dragResult: PickResult | undefined;
 }
 
 interface HoverRecord {
@@ -62,6 +75,19 @@ interface LastClick {
   button: number;
 }
 
+interface ResolvedDragOptions {
+  startDistance: number;
+  capturePointer: boolean;
+  ignoreTarget: boolean;
+  surfaceFilter: InteractionMeshFilter | null;
+}
+
+interface ResolvedDetailedPickingPolicy {
+  discrete: boolean;
+  drag: boolean;
+  hover: boolean;
+}
+
 const DEFAULT_THRESHOLDS: Record<InteractionPointerType, ClickThreshold> = {
   mouse: { maxDistance: 4, maxDuration: 500 },
   pen: { maxDistance: 4, maxDuration: 500 },
@@ -72,11 +98,14 @@ class TargetImpl {
   readonly mesh: Mesh;
   readonly manager: ManagerImpl;
   readonly listeners: ListenerMap = new Map();
+  readonly options: InteractionTargetOptions;
   active = true;
+  disposing = false;
 
-  constructor(manager: ManagerImpl, mesh: Mesh) {
+  constructor(manager: ManagerImpl, mesh: Mesh, options: InteractionTargetOptions) {
     this.manager = manager;
     this.mesh = mesh;
+    this.options = options;
   }
 }
 
@@ -86,6 +115,9 @@ export class ManagerImpl {
   readonly targetsByMesh = new Map<Mesh, TargetImpl>();
   readonly globalListeners: ListenerMap = new Map();
   readonly pointers = new Map<number, PointerSession>();
+  readonly geometryIndicesByMesh = new WeakMap<Mesh, Uint32Array | null>();
+  readonly dragOptions: ResolvedDragOptions;
+  readonly detailedPickingPolicy: ResolvedDetailedPickingPolicy;
   enabled = true;
   disposed = false;
   filter: InteractionMeshFilter | null;
@@ -96,10 +128,23 @@ export class ManagerImpl {
 
   readonly #removeDomListeners: Array<() => void> = [];
 
-  constructor(options: InteractionManagerOptions, driver: PickDriver, frames: FrameDriver) {
+  constructor(
+    options: InteractionManagerOptions,
+    driver: PickDriver,
+    frames: FrameDriver,
+    clock?: ClockDriver
+  ) {
     this.options = options;
     this.filter = options.filter ?? null;
-    this.scheduler = new PickScheduler(driver, frames);
+    const drag = typeof options.drag === "object" ? options.drag : {};
+    this.dragOptions = {
+      startDistance: drag.startDistance ?? -1,
+      capturePointer: drag.capturePointer ?? true,
+      ignoreTarget: drag.ignoreTarget ?? true,
+      surfaceFilter: drag.surfaceFilter ?? null
+    };
+    this.detailedPickingPolicy = resolveDetailedPickingPolicy(options.detailedPicking);
+    this.scheduler = new PickScheduler(driver, frames, clock);
     this.#listen("pointerdown", this.#onPointerDown);
     this.#listen("pointerup", this.#onPointerUp);
     this.#listen("pointermove", this.#onPointerMove);
@@ -108,25 +153,31 @@ export class ManagerImpl {
     this.#listen("contextmenu", this.#onContextMenu);
   }
 
-  register(mesh: Mesh): TargetImpl {
+  register(mesh: Mesh, options: InteractionTargetOptions = {}): TargetImpl {
     this.#assertUsable();
     if (this.targetsByMesh.has(mesh)) {
       throw new Error("This mesh is already registered with the interaction manager.");
     }
-    const target = new TargetImpl(this, mesh);
+    const target = new TargetImpl(this, mesh, options);
     this.targetsByMesh.set(mesh, target);
     return target;
   }
 
   disposeTarget(target: TargetImpl): void {
-    if (!target.active) return;
+    if (!target.active || target.disposing) return;
+    target.disposing = true;
     if (this.hoverRecord?.target === target) this.#clearHover();
+    for (const [pointerId, session] of this.pointers) {
+      if (session.downTarget !== target) continue;
+      this.#finishDrag(session, "target-disposed", session.snapshot);
+      session.cancelled = true;
+      this.#releasePointer(pointerId);
+      this.pointers.delete(pointerId);
+    }
     target.active = false;
     this.targetsByMesh.delete(target.mesh);
     target.listeners.clear();
-    for (const session of this.pointers.values()) {
-      if (session.downTarget === target) session.downTarget = null;
-    }
+    target.disposing = false;
     if (this.lastClick?.target === target) this.lastClick = undefined;
   }
 
@@ -137,6 +188,12 @@ export class ManagerImpl {
     this.epoch++;
     this.hoverGeneration++;
     this.scheduler.cancelPending();
+    if (!enabled) {
+      for (const session of this.pointers.values()) {
+        this.#finishDrag(session, "disabled", session.snapshot);
+      }
+    }
+    for (const pointerId of this.pointers.keys()) this.#releasePointer(pointerId);
     this.pointers.clear();
     this.lastClick = undefined;
     if (!enabled) this.#clearHover();
@@ -151,6 +208,7 @@ export class ManagerImpl {
     this.hoverGeneration++;
     for (const remove of this.#removeDomListeners) remove();
     this.#removeDomListeners.length = 0;
+    for (const pointerId of this.pointers.keys()) this.#releasePointer(pointerId);
     this.pointers.clear();
     this.scheduler.dispose();
     for (const target of this.targetsByMesh.values()) {
@@ -162,13 +220,26 @@ export class ManagerImpl {
     this.lastClick = undefined;
   }
 
-  dispatch(type: InteractionEventType, target: TargetImpl, snapshot: PointerSnapshot, result: PickResult): void {
+  dispatch(
+    type: InteractionEventType,
+    target: TargetImpl,
+    snapshot: PointerSnapshot,
+    result: PickResult,
+    identityResult: PickResult = result,
+    dragEndReason?: InteractionDragEndReason
+  ): void {
     if (!target.active || this.disposed) return;
+    if (type === "dragend" && !dragEndReason) {
+      throw new Error("A dragend event requires a termination reason.");
+    }
+    const pickDetails = this.#detailsForResult(result);
+    const instanceId = this.#resolveInstanceId(target, identityResult.thinInstanceIndex, type);
     let stopped = false;
     const event: InteractionEvent = {
       type,
       target: target as unknown as InteractionTarget,
       mesh: target.mesh,
+      pickedMesh: result.pickedMesh,
       pointerId: snapshot.pointerId,
       pointerType: snapshot.pointerType,
       button: snapshot.button,
@@ -182,12 +253,53 @@ export class ManagerImpl {
       shiftKey: snapshot.shiftKey,
       pickedPoint: result.pickedPoint,
       distance: result.distance,
+      thinInstanceIndex: identityResult.thinInstanceIndex,
+      pickedThinInstanceIndex: result.thinInstanceIndex,
+      instanceId,
+      pickDetailsStatus: pickDetails
+        ? "available"
+        : result.detailedRequested
+          ? "unavailable"
+          : "disabled",
+      pickDetails,
+      ...(type === "dragend" ? { dragEndReason: dragEndReason! } : {}),
       stopPropagation() {
         stopped = true;
       }
-    };
+    } as InteractionEvent;
     this.#callListeners(target.listeners.get(type), event);
     if (!stopped) this.#callListeners(this.globalListeners.get(type), event);
+  }
+
+  #detailsForResult(result: PickResult): InteractionPickDetails | null {
+    const details = result.details;
+    if (!details || details.vertexIndices) return details;
+    const mesh = result.pickedMesh;
+    if (!mesh) return details;
+    if (!this.geometryIndicesByMesh.has(mesh)) {
+      this.geometryIndicesByMesh.set(mesh, getMeshGeometry(mesh)?.indices ?? null);
+    }
+    const indices = this.geometryIndicesByMesh.get(mesh);
+    const offset = details.faceId * 3;
+    if (!indices || offset < 0 || offset + 2 >= indices.length) return details;
+    return {
+      ...details,
+      vertexIndices: [indices[offset]!, indices[offset + 1]!, indices[offset + 2]!]
+    };
+  }
+
+  #resolveInstanceId(
+    target: TargetImpl,
+    thinInstanceIndex: number,
+    eventType: InteractionEventType
+  ): InteractionInstanceId | null {
+    if (!target.options.resolveInstanceId || thinInstanceIndex < 0) return null;
+    try {
+      return target.options.resolveInstanceId(thinInstanceIndex);
+    } catch (error) {
+      this.report(error, { phase: "resolver", eventType });
+      return null;
+    }
   }
 
   report(error: unknown, context: InteractionErrorContext): void {
@@ -219,20 +331,27 @@ export class ManagerImpl {
     const snapshot = this.#snapshot(event);
     const session: PointerSession = {
       snapshot,
+      startSnapshot: snapshot,
       startX: snapshot.x,
       startY: snapshot.y,
       startTime: snapshot.timeStamp,
       maxDistanceSquared: 0,
       rawDown: true,
       cancelled: false,
-      downTarget: undefined
+      downTarget: undefined,
+      downResult: undefined,
+      dragging: false,
+      dragResult: undefined
     };
     this.pointers.set(snapshot.pointerId, session);
+    if (this.options.drag && this.dragOptions.capturePointer) this.#capturePointer(snapshot.pointerId);
     const epoch = this.epoch;
-    this.#queueDiscrete(snapshot, epoch, (result, target) => {
+    this.#queueDiscrete(snapshot, epoch, "pointerdown", (result, target) => {
       if (session.cancelled) return;
       session.downTarget = target;
+      session.downResult = result;
       if (target) this.dispatch("pointerdown", target, snapshot, result);
+      this.#startPendingDrag(session);
     });
   };
 
@@ -245,10 +364,17 @@ export class ManagerImpl {
       this.#updateMovement(session, snapshot);
       session.rawDown = false;
     }
+    this.#releasePointer(snapshot.pointerId);
     const epoch = this.epoch;
-    this.#queueDiscrete(snapshot, epoch, (result, target) => {
+    this.#queueDiscrete(snapshot, epoch, "pointerup", (result, target) => {
       if (target) this.dispatch("pointerup", target, snapshot, result);
-      if (session && !session.cancelled) this.#resolveClick(session, snapshot, result, target);
+      if (session && !session.cancelled) {
+        if (session.dragging && session.downTarget) {
+          this.#finishDrag(session, "released", snapshot, result);
+        } else {
+          this.#resolveClick(session, snapshot, result, target);
+        }
+      }
       if (this.pointers.get(snapshot.pointerId) === session) this.pointers.delete(snapshot.pointerId);
     });
   };
@@ -261,6 +387,14 @@ export class ManagerImpl {
     if (session) {
       session.snapshot = snapshot;
       this.#updateMovement(session, snapshot);
+      if (session.dragging) {
+        this.#queueDrag(session, snapshot);
+        return;
+      }
+      if (this.options.drag) {
+        this.#startPendingDrag(session);
+        if (session.rawDown) return;
+      }
     }
     if ((this.options.hover ?? true) && snapshot.pointerType !== "touch") this.#queueHover(snapshot);
   };
@@ -269,7 +403,11 @@ export class ManagerImpl {
     const event = nativeEvent as PointerEvent;
     if (this.options.preventPointerDefault) event.preventDefault();
     const session = this.pointers.get(event.pointerId);
-    if (session) session.cancelled = true;
+    if (session) {
+      session.cancelled = true;
+      this.#finishDrag(session, "pointercancel", this.#snapshot(event));
+    }
+    this.#releasePointer(event.pointerId);
     this.pointers.delete(event.pointerId);
     this.lastClick = undefined;
   };
@@ -287,7 +425,7 @@ export class ManagerImpl {
     if (!this.enabled || this.disposed) return;
     const snapshot = this.#snapshotMouse(event);
     const epoch = this.epoch;
-    this.#queueDiscrete(snapshot, epoch, (result, target) => {
+    this.#queueDiscrete(snapshot, epoch, "contextmenu", (result, target) => {
       if (target) this.dispatch("contextmenu", target, snapshot, result);
     });
   };
@@ -295,12 +433,16 @@ export class ManagerImpl {
   #queueDiscrete(
     snapshot: PointerSnapshot,
     epoch: number,
+    eventType: InteractionEventType,
     callback: (result: PickResult, target: TargetImpl | null) => void
   ): void {
+    const options = this.#pickOptions("discrete", eventType, snapshot.pointerId, null);
     this.scheduler.queueDiscrete({
       x: snapshot.x,
       y: snapshot.y,
       filter: this.#pickFilter,
+      options,
+      detailed: this.#usesDetailedPicking("discrete"),
       resolve: (result) => {
         if (!this.#isCurrent(epoch)) return;
         callback(result, this.#resolveTarget(result));
@@ -318,6 +460,8 @@ export class ManagerImpl {
       x: snapshot.x,
       y: snapshot.y,
       filter: this.#pickFilter,
+      options: this.#pickOptions("hover", "hovermove", snapshot.pointerId, null),
+      detailed: this.#usesDetailedPicking("hover"),
       resolve: (result) => {
         if (!this.#isCurrent(epoch) || generation !== this.hoverGeneration) return;
         this.#resolveHover(snapshot, result, this.#resolveTarget(result));
@@ -328,6 +472,69 @@ export class ManagerImpl {
         }
       }
     });
+  }
+
+  #startPendingDrag(session: PointerSession): void {
+    if (!this.options.drag || session.dragging || !session.rawDown || !session.downTarget || !session.downResult) return;
+    const configuredDistance = this.dragOptions.startDistance;
+    const distance =
+      configuredDistance >= 0 ? configuredDistance : this.#threshold(session.snapshot.pointerType).maxDistance;
+    if (session.maxDistanceSquared <= distance * distance) return;
+    session.dragging = true;
+    this.lastClick = undefined;
+    this.dispatch("dragstart", session.downTarget, session.startSnapshot, session.downResult);
+    this.#queueDrag(session, session.snapshot);
+  }
+
+  #queueDrag(session: PointerSession, snapshot: PointerSnapshot): void {
+    const target = session.downTarget;
+    if (!target || !target.active || !session.dragging) return;
+    const epoch = this.epoch;
+    this.scheduler.queueImmediateContinuous(`drag:${snapshot.pointerId}`, {
+      x: snapshot.x,
+      y: snapshot.y,
+      filter: this.dragOptions.surfaceFilter ?? this.#pickFilter,
+      options: this.#pickOptions("drag", "drag", snapshot.pointerId, target),
+      detailed: this.#usesDetailedPicking("drag"),
+      resolve: (result) => {
+        if (
+          !this.#isCurrent(epoch) ||
+          !session.dragging ||
+          this.pointers.get(snapshot.pointerId) !== session
+        ) {
+          return;
+        }
+        session.dragResult = result;
+        this.dispatch("drag", target, snapshot, result, session.downResult);
+      },
+      reject: (error) => {
+        if (this.#isCurrent(epoch) && session.dragging) {
+          this.report(error, { phase: "pick", eventType: "drag" });
+        }
+      }
+    });
+  }
+
+  #finishDrag(
+    session: PointerSession,
+    reason: InteractionDragEndReason,
+    snapshot: PointerSnapshot,
+    fallbackResult?: PickResult
+  ): void {
+    if (!session.dragging) return;
+    session.dragging = false;
+    this.#releasePointer(snapshot.pointerId);
+    const target = session.downTarget;
+    const identityResult = session.downResult;
+    if (!target || !identityResult) return;
+    this.dispatch(
+      "dragend",
+      target,
+      snapshot,
+      session.dragResult ?? fallbackResult ?? identityResult,
+      identityResult,
+      reason
+    );
   }
 
   #resolveClick(
@@ -406,6 +613,45 @@ export class ManagerImpl {
     return Boolean(target?.active && (!this.filter || this.filter(mesh)));
   };
 
+  #usesDetailedPicking(kind: InteractionPickKind): boolean {
+    return this.detailedPickingPolicy[kind];
+  }
+
+  #pickOptions(
+    kind: InteractionPickKind,
+    eventType: InteractionEventType,
+    pointerId: number,
+    dragTarget: TargetImpl | null
+  ): InteractionPickOptions | undefined {
+    const configured = this.options.pickOptions;
+    let options: InteractionPickOptions | undefined;
+    try {
+      options =
+        typeof configured === "function"
+          ? configured({
+              kind,
+              eventType,
+              pointerId,
+              dragTarget: dragTarget as unknown as InteractionTarget | null
+            })
+          : configured;
+    } catch (error) {
+      this.report(error, { phase: "pick-options", eventType });
+    }
+    if (kind !== "drag" || !dragTarget || !this.dragOptions.ignoreTarget) return options;
+    const ignored: PickIgnore = {
+      mesh: dragTarget.mesh,
+      ...((this.pointers.get(pointerId)?.downResult?.thinInstanceIndex ?? -1) >= 0
+        ? { thinInstanceIndex: this.pointers.get(pointerId)!.downResult!.thinInstanceIndex }
+        : {})
+    };
+    const existing = options?.ignore;
+    return {
+      ...options,
+      ignore: existing ? [...(Array.isArray(existing) ? existing : [existing]), ignored] : ignored
+    };
+  }
+
   #threshold(type: InteractionPointerType): ClickThreshold {
     const defaults = DEFAULT_THRESHOLDS[type];
     const configured = this.options.click?.[type];
@@ -419,6 +665,24 @@ export class ManagerImpl {
     const dx = snapshot.x - session.startX;
     const dy = snapshot.y - session.startY;
     session.maxDistanceSquared = Math.max(session.maxDistanceSquared, dx * dx + dy * dy);
+  }
+
+  #capturePointer(pointerId: number): void {
+    try {
+      this.options.canvas.setPointerCapture?.(pointerId);
+    } catch {
+      // Pointer capture is best-effort; synthetic events and detached canvases may reject it.
+    }
+  }
+
+  #releasePointer(pointerId: number): void {
+    try {
+      if (this.options.canvas.hasPointerCapture?.(pointerId)) {
+        this.options.canvas.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // The browser may already have released capture after cancellation.
+    }
   }
 
   #acceptPointer(event: PointerEvent): boolean {
@@ -475,12 +739,23 @@ export class ManagerImpl {
   }
 }
 
+function resolveDetailedPickingPolicy(
+  configured: InteractionDetailedPickingPolicy | undefined
+): ResolvedDetailedPickingPolicy {
+  return {
+    discrete: configured?.discrete ?? false,
+    drag: configured?.drag ?? false,
+    hover: configured?.hover ?? false
+  };
+}
+
 export function createManagerInternal(
   options: InteractionManagerOptions,
   driver: PickDriver,
-  frames: FrameDriver
+  frames: FrameDriver,
+  clock?: ClockDriver
 ): InteractionManager {
-  return new ManagerImpl(options, driver, frames) as unknown as InteractionManager;
+  return new ManagerImpl(options, driver, frames, clock) as unknown as InteractionManager;
 }
 
 export function createManager(options: InteractionManagerOptions): InteractionManager {
@@ -500,4 +775,3 @@ export function asTarget(target: InteractionTarget): TargetImpl {
 function normalizePointerType(value: string): InteractionPointerType {
   return value === "touch" || value === "pen" ? value : "mouse";
 }
-

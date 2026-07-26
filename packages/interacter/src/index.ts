@@ -1,26 +1,47 @@
 import type { Mesh } from "@babylonjs/lite";
 import { asManager, asTarget, createManager } from "./interaction-manager.js";
 import type {
+  InteractionDiagnostics,
   InteractionEventType,
   InteractionListener,
   InteractionManager,
   InteractionManagerOptions,
   InteractionMeshFilter,
-  InteractionTarget
+  InteractionTarget,
+  InteractionTargetOptions
 } from "./types.js";
+
+export { interpolatePickedAttribute } from "./surface.js";
 
 export type {
   ClickThreshold,
   ClickThresholds,
   InteractionErrorContext,
+  InteractionDetailedPickingPolicy,
+  InteractionDiagnostics,
+  InteractionDragEndReason,
+  InteractionDragEndEvent,
+  InteractionDragEvent,
+  InteractionDragOptions,
+  InteractionDragStartEvent,
   InteractionEvent,
+  InteractionEventBase,
+  InteractionEventFor,
   InteractionEventType,
   InteractionListener,
   InteractionManager,
   InteractionManagerOptions,
   InteractionMeshFilter,
+  InteractionInstanceId,
+  InteractionPickDetails,
+  InteractionPickDetailsStatus,
+  InteractionPickKind,
+  InteractionPickOptions,
+  InteractionPickOptionsContext,
+  InteractionPickOptionsProvider,
   InteractionPointerType,
-  InteractionTarget
+  InteractionTarget,
+  InteractionTargetOptions
 } from "./types.js";
 
 export function createInteractionManager(options: InteractionManagerOptions): InteractionManager {
@@ -31,8 +52,12 @@ export function disposeInteractionManager(manager: InteractionManager): void {
   asManager(manager).dispose();
 }
 
-export function registerMesh(manager: InteractionManager, mesh: Mesh): InteractionTarget {
-  return asManager(manager).register(mesh) as unknown as InteractionTarget;
+export function registerMesh(
+  manager: InteractionManager,
+  mesh: Mesh,
+  options?: InteractionTargetOptions
+): InteractionTarget {
+  return asManager(manager).register(mesh, options) as unknown as InteractionTarget;
 }
 
 export function disposeInteractionTarget(target: InteractionTarget): void {
@@ -40,24 +65,24 @@ export function disposeInteractionTarget(target: InteractionTarget): void {
   internal.manager.disposeTarget(internal);
 }
 
-export function onInteraction(
+export function onInteraction<T extends InteractionEventType>(
   target: InteractionTarget,
-  type: InteractionEventType,
-  listener: InteractionListener
+  type: T,
+  listener: InteractionListener<T>
 ): () => void {
   const internal = asTarget(target);
   if (!internal.active) throw new Error("The interaction target has been disposed.");
-  return subscribe(internal.listeners, type, listener);
+  return subscribe(internal.listeners, type, listener as unknown as InteractionListener);
 }
 
-export function onInteractionEvent(
+export function onInteractionEvent<T extends InteractionEventType>(
   manager: InteractionManager,
-  type: InteractionEventType,
-  listener: InteractionListener
+  type: T,
+  listener: InteractionListener<T>
 ): () => void {
   const internal = asManager(manager);
   if (internal.disposed) throw new Error("The interaction manager has been disposed.");
-  return subscribe(internal.globalListeners, type, listener);
+  return subscribe(internal.globalListeners, type, listener as unknown as InteractionListener);
 }
 
 export function setInteractionEnabled(manager: InteractionManager, enabled: boolean): void {
@@ -85,6 +110,10 @@ export function getPressedTarget(manager: InteractionManager, pointerId: number)
 
 export function getActivePointers(manager: InteractionManager): readonly number[] {
   return [...asManager(manager).pointers.keys()];
+}
+
+export function getInteractionDiagnostics(manager: InteractionManager): InteractionDiagnostics {
+  return asManager(manager).scheduler.getDiagnostics();
 }
 
 export function isTargetHovered(target: InteractionTarget): boolean {
@@ -120,4 +149,3 @@ function subscribe(
     if (set?.size === 0) listeners.delete(type);
   };
 }
-

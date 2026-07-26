@@ -28,7 +28,7 @@ try {
   }
 
   const [metadata] = JSON.parse(packed.stdout);
-  if (metadata.name !== "@litools/interacter" || metadata.version !== "0.1.0") {
+  if (metadata.name !== "@litools/interacter" || metadata.version !== "0.2.0") {
     throw new Error(`Unexpected packed identity: ${metadata.name}@${metadata.version}`);
   }
   if (!metadata.integrity || !metadata.shasum) {

@@ -26,6 +26,7 @@ import {
   type InteractionManager,
   type InteractionTarget
 } from "@litools/interacter";
+import { createThinInstanceOutliner } from "../../../../src/outline.js";
 import "./styles.css";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -83,15 +84,20 @@ function configureDemo(): void {
     return;
   }
   if (demo === "hover") {
-    panel.describe("Move across the cubes to observe ordered hoverstart, hovermove, and hoverend events.");
+    panel.describe("Move across the cubes to observe ordered hoverstart, hovermove, and hoverend events with transform-safe outlines.");
+    const outliner = createThinInstanceOutliner(engine, scene);
+    const outlines = new Map([
+      [left, outliner.attach(left, { thickness: 0.045, color: [0.2, 0.82, 1], smoothNormals: true })],
+      [right, outliner.attach(right, { thickness: 0.045, color: [1, 0.32, 0.28], smoothNormals: true })]
+    ]);
     for (const target of [leftTarget, rightTarget]) {
       subscriptions.push(onInteraction(target, "hoverstart", (event) => {
-        event.mesh.scaling.x = event.mesh.scaling.y = event.mesh.scaling.z = 1.18;
+        outlines.get(event.mesh)?.highlight(0);
         panel.event(event);
       }));
       subscriptions.push(onInteraction(target, "hovermove", (event) => panel.event(event)));
       subscriptions.push(onInteraction(target, "hoverend", (event) => {
-        event.mesh.scaling.x = event.mesh.scaling.y = event.mesh.scaling.z = 1;
+        outlines.get(event.mesh)?.clear(0);
         panel.event(event);
       }));
     }

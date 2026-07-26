@@ -1,6 +1,6 @@
 # Why This Package Exists
 
-Babylon Lite gives applications GPU picking, but a complete interaction system needs more than an individual pick result. Real applications need clicks, double-clicks, hover transitions, pointer state, filtering, propagation control, error handling, and predictable cleanup.
+Babylon Lite gives applications GPU picking, but a complete interaction system needs more than an individual pick result. Real applications need clicks, double-clicks, hover transitions, drag sessions, pointer state, filtering, propagation control, error handling, and predictable cleanup.
 
 `@litools/interacter` exists to provide that application-facing interaction layer for Babylon Lite meshes.
 
@@ -10,6 +10,7 @@ A browser pointer event happens synchronously, while Babylon Lite GPU picking re
 
 - multiple picks can overlap and resolve in a different order from the original pointer events
 - a pointer can move again before an earlier hover pick finishes
+- sustained pointer movement can outpace drag-surface GPU readback
 - a target can be removed while its pick is still pending
 - a manager or scene can be disposed while GPU work is in flight
 - pointer-down and pointer-up results must be compared before a click can be recognized
@@ -20,11 +21,19 @@ Calling `pickAsync` directly from several event handlers spreads this coordinati
 
 ## One interaction owner
 
-Interacter gives one manager ownership of interaction for one scene/canvas pair. That manager owns one Babylon Lite GPU picker and serializes every pick request.
+Interacter gives one manager ownership of interaction for one scene/canvas pair. That manager owns a basic Babylon Lite GPU picker and, when detailed picking is requested, lazily creates a separate detailed picker. Requests across both are serialized so GPU reads cannot overlap through the manager.
 
-Discrete pointer-down, pointer-up, and context-menu requests keep their FIFO order. Hover work is different: only the newest queued pointer position matters, so obsolete positions are coalesced and stale results are ignored. Discrete work has priority over queued hover work.
+Discrete pointer-down, pointer-up, and context-menu requests keep their FIFO order. Hover work is different: only the newest queued pointer position matters, so obsolete positions are coalesced and stale results are ignored. Drag work also coalesces unsent positions, but its completed in-flight result remains useful and is delivered during sustained movement. Drag picks start immediately and take priority over frame-throttled hover work.
 
-This division preserves meaningful button-event ordering without forcing the picker to process every intermediate pointer position.
+This division preserves meaningful button-event ordering without forcing the picker to process every intermediate pointer position or allowing continuous movement to starve drag updates.
+
+## Drag semantics and latency
+
+A drag session begins only after the initial pointer-down target has resolved and movement exceeds the configured threshold. Interacter can capture the pointer, ignores the dragged identity by default, and applies a separate filter to drag surfaces. This allows an unregistered ground, terrain, or placement mesh to guide a registered target.
+
+Drag events preserve two identities. The event's target fields always describe the object being moved, while its picked fields describe the surface currently under the pointer. Keeping those identities separate is particularly important for thin instances, where a stable application ID may differ from the renderer slot and the surface can be another mesh entirely.
+
+GPU surface resolution remains asynchronous. Interacter removes avoidable scheduling delay by starting drag picks immediately, prioritizing them over hover, delivering each completed in-flight result, and retaining only the newest unsent pointer sample. Applications therefore receive drag updates at the device's GPU pick-completion rate. Exact face and barycentric details require detailed picking and may cost more than point-only dragging.
 
 ## Interaction semantics above raw picking
 
@@ -68,16 +77,16 @@ The goal is that an application can treat cleanup as a normal lifecycle operatio
 
 ## Why this is separate from Instancer
 
-`@litools/interacter` is deliberately an independent package. Version 0.1 supports regular Babylon Lite meshes only and does not import or modify `@litools/instancer`.
+`@litools/interacter` is deliberately an independent package. Version 0.2 supports stable thin-instance ID resolvers while still importing or modifying neither `@litools/instancer` nor application state. The optional concrete adapter remains owned by `@litools/instancer/interacter`.
 
 The mesh interaction model needs to be reliable before another target-resolution system is added. Keeping the first version focused lets scheduling, click recognition, hover transitions, propagation, and disposal be tested without coupling those semantics to instance-slot resolution.
 
-The internal design leaves room for another resolver later, but no public adapter contract is being committed prematurely. Instancer integration should begin only after the regular-mesh interaction core is proven in tests and real examples.
+The initial regular-mesh interaction core was proven before stable-ID resolution and the Instancer-owned adapter were added, preserving the dependency direction and lifecycle boundaries described here.
 
 ## Version 0.1 boundaries
 
-The first version intentionally does not include drag behavior, selection state, keyboard or gamepad input, React bindings, public adapter APIs, or Instancer targets.
+The first version includes mesh and thin-instance-aware pointer, hover, click, and drag behavior. It intentionally does not include selection state, keyboard or gamepad input, React bindings, public adapter APIs, or direct Instancer ownership.
 
 Those features can build on the interaction core later. They should not make the foundational pointer and picking behavior harder to understand or less deterministic.
 
-In short, this package exists so Babylon Lite applications can work with reliable mesh interaction events instead of independently rebuilding asynchronous GPU-picking coordination, click recognition, hover state, and resource cleanup.
+In short, this package exists so Babylon Lite applications can work with reliable mesh interaction events instead of independently rebuilding asynchronous GPU-picking coordination, click recognition, hover and drag state, and resource cleanup.
