@@ -1,10 +1,14 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const packageManifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+if (typeof packageManifest.name !== "string" || typeof packageManifest.version !== "string") {
+  throw new Error("Package manifest must contain string name and version fields.");
+}
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "litools-interacter-pack-"));
 
 try {
@@ -28,7 +32,7 @@ try {
   }
 
   const [metadata] = JSON.parse(packed.stdout);
-  if (metadata.name !== "@litools/interacter" || metadata.version !== "0.2.0") {
+  if (metadata.name !== packageManifest.name || metadata.version !== packageManifest.version) {
     throw new Error(`Unexpected packed identity: ${metadata.name}@${metadata.version}`);
   }
   if (!metadata.integrity || !metadata.shasum) {
