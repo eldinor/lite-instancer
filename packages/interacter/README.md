@@ -4,7 +4,7 @@ Application-level pointer, click, hover, and drag events for Babylon Lite meshes
 
 Interacter owns one reusable GPU picker, serializes asynchronous picks, coalesces hover work, and delivers resolved events through stable registration handles.
 
-See [WHY.md](./WHY.md) for the motivation and [DESIGN.md](./DESIGN.md) for the current invariants, proposed APIs, performance model, and staged roadmap.
+See [WHY.md](./WHY.md) for the package motivation and scope.
 
 ## Install
 

@@ -1,9 +1,14 @@
 {
   "name": "@litools/interacter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pointer, click, hover, and drag interaction utilities for Babylon Lite meshes.",
   "type": "module",
   "license": "MIT",
+  "author": {
+    "name": "Andrei Stepanov",
+    "email": "eldinor@gmail.com",
+    "url": "https://babylonpress.org/"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
