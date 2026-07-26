@@ -63,6 +63,9 @@ try {
   if (leaked.length > 0) {
     throw new Error(`Packed archive contains development files: ${leaked.join(", ")}`);
   }
+  if (files.has("DESIGN.md")) {
+    throw new Error("Packed archive contains the repository-only DESIGN.md document.");
+  }
 
   console.log(
     `Verified ${metadata.name}@${metadata.version}: ${files.size} files, ${archive.size} bytes, integrity ${metadata.integrity}.`
