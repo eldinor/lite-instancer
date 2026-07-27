@@ -1,11 +1,45 @@
 # @litools/annotator
 
-Spatial HTML annotations and optional GPU text labels for Babylon Lite meshes
-and stable `@litools/instancer` IDs.
+Annotator is a lightweight annotation system for Babylon Lite that provides
+world-space labels, dimensions, callouts, markers, and stable annotations for
+regular meshes and `@litools/instancer` instances.
+
+Babylon Lite provides the rendering foundation required for interactive 3D
+applications, but application developers still need higher-level tools for
+presenting spatial information.
+
+Common use cases include:
+
+- Displaying labels above objects.
+- Showing dimensions between points.
+- Attaching callouts to parts.
+- Placing markers in world space.
+- Keeping annotations readable on screen.
+- Hiding labels behind geometry.
+- Preventing label overlap.
+- Attaching annotations to stable Instancer IDs.
+- Making annotations interactive.
+
+`@litools/annotator` provides these capabilities without becoming a general
+GUI framework.
+
+Babylon Lite renders the scene. `@litools/annotator` explains the scene.
+
+[Annotator website](https://annotator.babylonpress.org)
 
 [Examples](https://github.com/eldinor/lite-instancer/tree/main/packages/annotator/examples)
 · [API reference](./API.md)
 · [Changelog](./CHANGELOG.md)
+
+## Rendering backends
+
+The **HTML backend** renders annotations as DOM elements over the canvas. It is
+the best choice for rich CSS styling, accessibility, familiar browser layout,
+and smaller annotation counts.
+
+The fast **GPU TextRenderer backend** renders text, markers, backgrounds, and
+leader lines through Babylon Lite. It batches large annotation sets efficiently
+and is the better choice for dense or frequently changing 3D scenes.
 
 ## Install
 
@@ -88,6 +122,9 @@ Dimensions, arbitrary callouts, general pointer-event APIs, custom DOM content,
 and React bindings are intentionally deferred.
 
 ## Examples
+
+Open the hosted [Annotator examples](https://annotator.babylonpress.org), browse the
+repository source below, or run the gallery locally.
 
 Browse the
 [example source](https://github.com/eldinor/lite-instancer/tree/main/packages/annotator/examples)

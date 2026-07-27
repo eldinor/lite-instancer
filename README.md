@@ -10,6 +10,9 @@ Created by [BabylonPress](https://babylonpress.org/).
 
 This repository also contains the independently published `@litools/instancer-babylonjs` workspace for full Babylon.js. Its supported API surface and migration notes are tracked in [BABYLONJS_COMPATIBILITY.md](./BABYLONJS_COMPATIBILITY.md).
 
+For world-space labels, markers, dimensions, callouts, collision handling, and
+depth occlusion, see [`@litools/annotator`](https://annotator.babylonpress.org).
+
 ## Install
 
 ```sh

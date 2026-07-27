@@ -1,5 +1,9 @@
 # @litools/annotator API reference
 
+[Annotator website](https://annotator.babylonpress.org) |
+[Package README](./README.md) |
+[Examples](https://annotator.babylonpress.org)
+
 Version 0.1.2 exposes six ESM entry points:
 
 - `@litools/annotator` — layers, annotations, anchors, lifecycle, snapshots,

@@ -2,7 +2,7 @@
   "name": "@litools/annotator",
   "version": "0.1.2",
   "description": "Spatial HTML annotations and GPU text labels for Babylon Lite meshes and stable Instancer IDs.",
-  "homepage": "https://github.com/eldinor/lite-instancer/tree/main/packages/annotator#readme",
+  "homepage": "https://annotator.babylonpress.org",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eldinor/lite-instancer.git",
