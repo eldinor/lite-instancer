@@ -167,6 +167,11 @@ describe("TextRenderer annotation backend", () => {
     backend.updateMarkerPositions?.([{ resource, rendered: false, x: 75, y: 60 }]);
     expect(markerLayer(resource).visible).toBe(false);
     expect(backend.measure(resource)).toBeNull();
+    expect(backend.getStats()).toMatchObject({
+      fullMarkerUpdates: 1,
+      markerPositionBatches: 2,
+      batchedMarkerPositions: 2
+    });
     backend.dispose();
   });
 

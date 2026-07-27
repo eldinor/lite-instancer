@@ -49,6 +49,29 @@ follows semantic versioning.
   reuse projection scratch storage, and lazily materialize immutable public
   snapshots to reduce high-count moving-camera CPU and allocation overhead;
   the 10,000-marker reference orbit benchmark dropped about 65%.
+- Upgrade the manual marker benchmark with quick/thorough profiles, settling
+  and three-round medians, split mutation/Annotator timing, frame cadence and
+  dropped-frame data, optional Lite GPU timestamps, fast-path counter deltas,
+  preparation/first-frame costs, and correctness checks.
+- Record the first version 3 thorough baseline: sub-0.5 ms static/GPU-pulse
+  CPU p95 at 10,000 markers, 4.8 ms camera-orbit p95, and configuration spikes
+  up to 73 ms when thousands of definitions change together.
+- Record a newer 1920 x 953 version 3 baseline with 3.6 ms camera-orbit,
+  2.3 ms visibility-churn, and 21 ms CPU-pulse p95 at 10,000 markers.
+- Add the tree-shakable `@litools/annotator/interaction` entry with synchronous
+  CSS-pixel picking, lazy incremental spatial indexing, shape-aware markers,
+  coalesced hover, click/double-click semantics, lifecycle cleanup, and frozen
+  diagnostics without GPU readback or mass snapshot allocation.
+- Add a GPU interaction demo with live hover/click feedback and a manual
+  100/1,000/10,000-target query plus moving-index JSON benchmark.
+- Adapt the CPU interaction index between per-target cell updates and full
+  rebuilds, and upgrade its benchmark with excluded warm-up queries, three
+  measured rounds, viewport/center-density workloads, medians, throughput, and
+  separate partial/camera movement plus a 32/64/128-pixel cell-size sweep.
+- Record the first picking v2 baseline: 568,000 viewport queries/s at 10,000
+  targets, a 6.0 ms full camera rebuild, and a 0.2 ms incremental sync for 100
+  moved targets; retain 64 px as the balanced default and document 32 px for
+  dense static high-query workloads.
 
 ### Changed
 

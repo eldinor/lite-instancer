@@ -61,7 +61,41 @@ interface CommonState {
   snapshot: AnnotationSnapshot;
   readonly positionScratch: Float32Array;
   readonly worldScratch: Float32Array;
+  readonly hitRegion: MutableInternalAnnotationHitRegion;
+  hitRegionInitialized: boolean;
 }
+
+export interface InternalAnnotationHitRegion {
+  readonly annotation: AnnotationHandle;
+  readonly layer: AnnotationLayer;
+  readonly id: AnnotationId;
+  readonly type: "label" | "marker";
+  readonly shape: MarkerShape | null;
+  readonly zIndex: number;
+  readonly active: boolean;
+  readonly rendered: boolean;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+interface MutableInternalAnnotationHitRegion {
+  annotation: AnnotationHandle;
+  layer: AnnotationLayer;
+  id: AnnotationId;
+  type: "label" | "marker";
+  shape: MarkerShape | null;
+  zIndex: number;
+  active: boolean;
+  rendered: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type AnnotationHitRegionObserver = (region: InternalAnnotationHitRegion) => void;
 
 interface LabelState extends CommonState {
   kind: "label";
@@ -129,6 +163,7 @@ interface LayerState {
   readonly markerPositionUpdates: MutableBackendMarkerPositionUpdate[];
   readonly projectionInputScratch: MutableProjectionInput;
   readonly projectionResultScratch: MutableProjectionResult;
+  readonly hitRegionObservers: Set<AnnotationHitRegionObserver>;
 }
 
 interface MutableProjectionInput {
@@ -187,7 +222,8 @@ export function createAnnotationLayer(options: AnnotationLayerOptions): Annotati
       screenPosition: { x: 0, y: 0 },
       depth: 0,
       distance: 0
-    }
+    },
+    hitRegionObservers: new Set()
   };
   layerStates.set(handle, state);
   if (typeof ResizeObserver === "function") {
@@ -345,6 +381,7 @@ export function disposeAnnotation(annotation: AnnotationHandle): void {
   state.layer.annotations.delete(annotation.id);
   state.layer.backend.disposeResource(state.resource);
   state.disposed = true;
+  publishRemovedHitRegion(state);
 }
 
 export function disposeAnnotationLayer(layer: AnnotationLayer): void {
@@ -359,7 +396,29 @@ export function disposeAnnotationLayer(layer: AnnotationLayer): void {
   for (const annotation of Array.from(state.annotations.values())) disposeAnnotation(annotation.handle);
   state.options.occlusionProvider?.dispose();
   state.backend.dispose();
+  state.hitRegionObservers.clear();
   state.disposed = true;
+}
+
+/** @internal Used by the optional interaction entry without materializing public snapshots. */
+export function observeAnnotationHitRegions(
+  layer: AnnotationLayer,
+  observer: AnnotationHitRegionObserver
+): () => void {
+  const state = requireLayer(layer);
+  state.hitRegionObservers.add(observer);
+  for (const annotation of state.annotations.values()) {
+    refreshHitRegion(annotation);
+    observer(annotation.hitRegion);
+  }
+  return () => state.hitRegionObservers.delete(observer);
+}
+
+/** @internal Reads one annotation's current hit region into stable core-owned storage. */
+export function getInternalAnnotationHitRegion(annotation: AnnotationHandle): InternalAnnotationHitRegion {
+  const state = requireAnnotation(annotation);
+  refreshHitRegion(state);
+  return state.hitRegion;
 }
 
 function createCommonState(
@@ -397,13 +456,29 @@ function createCommonState(
     definitionDirty: true,
     snapshot: createSnapshot(handle, false, "anchor-unavailable", options.visible ?? true),
     positionScratch: new Float32Array(3),
-    worldScratch: new Float32Array(3)
+    worldScratch: new Float32Array(3),
+    hitRegion: {
+      annotation: handle,
+      layer: layer.handle,
+      id: handle.id,
+      type: handle.type,
+      shape: null,
+      zIndex: options.zIndex ?? 0,
+      active: true,
+      rendered: false,
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    },
+    hitRegionInitialized: false
   };
 }
 
 function registerState(layer: LayerState, state: AnnotationState): void {
   layer.annotations.set(state.handle.id, state);
   annotationStates.set(state.handle, state);
+  publishHitRegion(state, true);
 }
 
 function updateLayer(layer: LayerState): void {
@@ -427,6 +502,7 @@ function updateLayer(layer: LayerState): void {
   if (width <= 0 || height <= 0) {
     for (const annotation of layer.annotations.values()) hideAnnotation(annotation, "offscreen");
     layer.options.occlusionProvider?.update([]);
+    publishHitRegions(layer);
     return;
   }
   const pixelViewport = resolveCameraViewport(layer.options.camera, width, height);
@@ -592,6 +668,78 @@ function updateLayer(layer: LayerState): void {
   if (markerPositionUpdates.length > 0) layer.backend.updateMarkerPositions?.(markerPositionUpdates);
   layer.options.occlusionProvider?.update(occlusionRequests);
   if (hasLabels) applyLabelCollisions(layer, cameraViewport, padding);
+  publishHitRegions(layer);
+}
+
+function publishHitRegions(layer: LayerState): void {
+  if (layer.hitRegionObservers.size === 0) return;
+  for (const annotation of layer.annotations.values()) publishHitRegion(annotation, false);
+}
+
+function publishHitRegion(annotation: AnnotationState, force: boolean): void {
+  const observers = annotation.layer.hitRegionObservers;
+  if (observers.size === 0) return;
+  const changed = refreshHitRegion(annotation);
+  if (!force && !changed) return;
+  for (const observer of observers) observer(annotation.hitRegion);
+}
+
+function publishRemovedHitRegion(annotation: AnnotationState): void {
+  const observers = annotation.layer.hitRegionObservers;
+  if (observers.size === 0) return;
+  const region = annotation.hitRegion;
+  region.active = false;
+  region.rendered = false;
+  region.width = 0;
+  region.height = 0;
+  for (const observer of observers) observer(region);
+}
+
+function refreshHitRegion(annotation: AnnotationState): boolean {
+  const region = annotation.hitRegion;
+  let rendered: boolean;
+  let x = 0;
+  let y = 0;
+  let width = 0;
+  let height = 0;
+  if (annotation.kind === "marker" && annotation.projectedSnapshotPending) {
+    const projected = annotation.projectedSnapshot;
+    rendered = true;
+    x = projected.boundsX;
+    y = projected.boundsY;
+    width = projected.boundsWidth;
+    height = projected.boundsHeight;
+  } else {
+    const bounds = annotation.snapshot.bounds;
+    rendered = annotation.snapshot.rendered && bounds !== null;
+    if (bounds) {
+      x = bounds.x;
+      y = bounds.y;
+      width = bounds.width;
+      height = bounds.height;
+    }
+  }
+  const shape = annotation.kind === "marker" ? annotation.shape : null;
+  const changed =
+    !annotation.hitRegionInitialized ||
+    region.active !== !annotation.disposed ||
+    region.rendered !== rendered ||
+    region.zIndex !== annotation.zIndex ||
+    region.shape !== shape ||
+    region.x !== x ||
+    region.y !== y ||
+    region.width !== width ||
+    region.height !== height;
+  region.active = !annotation.disposed;
+  region.rendered = rendered;
+  region.zIndex = annotation.zIndex;
+  region.shape = shape;
+  region.x = x;
+  region.y = y;
+  region.width = width;
+  region.height = height;
+  annotation.hitRegionInitialized = true;
+  return changed;
 }
 
 function canReuseRequestedHiddenMarker(annotation: AnnotationState): boolean {

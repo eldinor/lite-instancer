@@ -159,6 +159,7 @@ async function configureDemo(name: string, context: TextDemoContext): Promise<vo
   if (name === "animated-markers") return (await import("./animated-markers/main.js")).configureAnimatedGpuMarkers(context);
   if (name === "marker-shapes") return (await import("./marker-shapes/main.js")).configureGpuMarkerShapes(context);
   if (name === "marker-benchmark") return (await import("./marker-benchmark/main.js")).configureGpuMarkerBenchmark(context);
+  if (name === "interaction") return (await import("./interaction/main.js")).configureGpuInteraction(context);
   if (name === "dynamic") return (await import("./dynamic/main.js")).configureDynamicText(context);
   if (name === "collisions") return (await import("./collisions/main.js")).configureTextCollisions(context);
   if (name === "stress") return (await import("./stress/main.js")).configureTextStress(context);

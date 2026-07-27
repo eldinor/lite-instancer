@@ -1,6 +1,6 @@
 # @litools/annotator API reference
 
-Version 0.1.2 exposes five ESM entry points:
+Version 0.1.2 exposes six ESM entry points:
 
 - `@litools/annotator` — layers, annotations, anchors, lifecycle, snapshots,
   projection, and backend contracts.
@@ -9,6 +9,9 @@ Version 0.1.2 exposes five ESM entry points:
 - `@litools/annotator/babylon-occlusion` — experimental batched depth
   occlusion for Babylon Lite.
 - `@litools/annotator/textrender` — optional GPU text and marker backend.
+
+- `@litools/annotator/interaction` — optional synchronous CPU picking and
+  pointer interaction for either backend.
 
 ## Layer lifecycle
 
@@ -382,6 +385,9 @@ interface TextRendererAnnotationBackendStats {
   readonly markerSprites: number;
   readonly markerDrawCalls: number;
   readonly animatedMarkerDrawCalls: number;
+  readonly fullMarkerUpdates: number;
+  readonly markerPositionBatches: number;
+  readonly batchedMarkerPositions: number;
 }
 ```
 
@@ -397,6 +403,9 @@ of label count. Equal-z collision priority remains deterministic by creation
 order. Each explicitly distinct `zIndex` creates a separate text bucket and
 draw call, so use additional values only when different text draw ordering is
 required. `getStats().textBuckets` and `textDrawCalls` expose the result.
+`fullMarkerUpdates`, `markerPositionBatches`, and `batchedMarkerPositions` are
+lifetime counters intended for profiling. Take snapshots before and after a
+sample to obtain workload-local deltas.
 
 The default public bridge shapes with temporary `DefaultTextData` and copies
 its public run and metrics into shared storage. `"guarded-private"` is an
@@ -480,8 +489,63 @@ Background and border styling is supported for markers but remains unsupported
 for labels. Radius, padding, font weight, classes, and opacity transitions
 throw `AnnotatorError`. `ariaLabel` and
 `role` are accepted but ignored, including for cluster summaries. This backend
-has no DOM accessibility or interaction layer; use the HTML backend when those
-capabilities are required.
+has no DOM accessibility. Pointer interaction can be added explicitly through
+`@litools/annotator/interaction`; use the HTML backend when DOM semantics or
+keyboard accessibility are required.
+
+## CPU interaction
+
+Import from `@litools/annotator/interaction`; the main entry does not re-export
+these functions.
+
+```ts
+const manager = createAnnotationInteractionManager({
+  layer,
+  canvas,
+  hover: true,
+  cellSize: 64,
+  hitSlop: 0
+});
+const target = registerInteractiveAnnotation(manager, annotation, {
+  enabled: true,
+  hitSlop: 4
+});
+const remove = onAnnotationInteraction(target, "click", listener);
+```
+
+`createAnnotationInteractionManager(options)` observes core-owned final hit
+regions for one layer. It does not call `getAnnotationSnapshot()` and does not
+perform GPU readback. The uniform spatial index is synchronized lazily after a
+registered region changes. Small dirty sets update only their previous and new
+cells; large dirty sets use one full rebuild. `cellSize` must be positive;
+hit-slop values must be non-negative. Logical hit priority is higher `zIndex`,
+then later annotation creation. Leader lines are not targets.
+
+`registerInteractiveAnnotation()` accepts labels and markers from the manager's
+layer. Labels use measured bounds. Dot/ring, diamond, and triangle markers use
+shape-aware tests; other shapes use their rectangular bounds. Hidden and
+disposed annotations leave the index automatically.
+
+Target listeners and `onAnnotationInteractionEvent(manager, type, listener)`
+support `pointerdown`, `pointerup`, `click`, `doubleclick`, `contextmenu`,
+`hoverstart`, `hovermove`, and `hoverend`. Hover is disabled for touch and
+coalesced to the newest mouse/pen sample per animation frame. Listener errors
+are isolated through `onError`. `stopPropagation()` prevents only the manager's
+global listener; it does not alter native DOM propagation.
+
+`pickInteractiveAnnotation(manager, canvasX, canvasY)` performs a synchronous
+manual query in CSS pixels. Enable/lifecycle helpers are
+`setAnnotationInteractionEnabled()`, `setInteractiveAnnotationEnabled()`,
+`disposeInteractiveAnnotation()`, and
+`disposeAnnotationInteractionManager()`. State/diagnostic queries are
+`getHoveredAnnotation()`, `getPressedAnnotation()`, and
+`getAnnotationInteractionDiagnostics()`. Diagnostics report registered/indexed
+targets, grid cells and full rebuilds, incremental target updates, region
+updates, queries/hits, candidate tests, and hover coalescing counters.
+
+Interaction supplies no focus management, keyboard semantics, dragging,
+selection ownership, or camera arbitration. Dispose the manager before or with
+its annotation layer.
 
 ## HTML backend
 

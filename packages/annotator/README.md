@@ -155,8 +155,9 @@ sprite; markers sharing a `zIndex` share one layer and draw call. Lines render
 below markers in each Sprite2D bucket, and all sprites render below every text
 bucket. Square line caps are the
 one-sprite default; rounded caps are an explicit three-sprite option. Card
-styling, font weight, CSS classes, opacity transitions, interaction, and DOM
-accessibility remain HTML-only.
+styling, font weight, CSS classes, opacity transitions, and DOM accessibility
+remain HTML-only. The optional interaction entry adds pointer hit testing to
+either backend without adding DOM semantics.
 
 `MarkerShape` is an open string union: built-in names retain editor completion
 without closing the API to later or application-defined shapes. Register a
@@ -352,22 +353,125 @@ behind markers inside the same bucket. Empty buckets are removed. Keep the
 number of distinct values small because each visible layer is one draw call.
 All Sprite2D buckets still render behind the later TextRenderer pass.
 
-The manually started marker benchmark automatically runs ten cases spanning
+The manually started marker benchmark offers a quick one-round check and a
+thorough three-round run. Both cover ten cases spanning
 100–10,000 markers, one versus four z buckets, CPU pulse updates, GPU Sprite FX
 pulse, visibility churn, and forced camera movement. Static and GPU-pulse cases
 exercise cached projection; the orbit case measures full reprojection plus the
-TextRenderer position batch. Its JSON report includes per-case
-mean/p50/p95/max update time, bucket counts, sprite counts, and draw calls.
+TextRenderer position batch.
 
-One reference run with Chrome 150 on Windows, DPR 1, and a 1669 x 953 canvas
+The version 3 JSON report separates application mutation from
+`updateAnnotationLayer()`, retains their combined CPU cost, and adds first-frame
+and preparation timing, frame cadence and dropped-frame counts, whole-frame GPU
+timestamps when Lite/device support is available, fast-path backend deltas,
+draw calls, environment information, and sampled correctness checks. The
+thorough profile uses 15 settling frames, 30 excluded warm-up frames, and three
+180-frame measured rounds, reporting the median of round summaries.
+
+One version 2 reference run with Chrome 150 on Windows, DPR 1, and a 1669 x 953 canvas
 measured 10,000 camera-orbit markers at 2.72 ms mean / 3.0 ms p95, down from
 7.85 ms / 8.6 ms before batching (about 65% lower). Static and GPU-pulse cases
 were about 0.40 ms. These are CPU annotation-update measurements from one
-machine, not total frame or GPU-render timings; use the bundled benchmark on
-the target hardware for capacity decisions.
+machine. Version 3 reports CPU annotation work and whole-frame GPU timing as
+separate scopes; use the bundled benchmark on target hardware for capacity
+decisions.
+
+A newer version 3 thorough run with Chrome 150 on Windows, DPR 1, and a
+1920 x 953 canvas measured the following 10,000-marker median results. CPU
+values are combined application mutation plus Annotator update; GPU values are
+asynchronous whole-frame Lite timestamps:
+
+| Workload | CPU mean / p95 | GPU mean / p95 | Result |
+| --- | ---: | ---: | --- |
+| Static, one bucket | 0.39 / 0.50 ms | 0.33 / 0.87 ms | No backend writes |
+| GPU pulse | 0.37 / 0.60 ms | 0.34 / 0.90 ms | No per-frame marker writes |
+| Visibility churn | 2.03 / 2.30 ms | 0.76 / 0.90 ms | 1,250 hide + 1,250 show writes/frame |
+| Camera orbit | 2.94 / 3.60 ms | 0.28 / 0.87 ms | About 10,000 batched positions/frame |
+| CPU pulse | 18.01 / 21.00 ms | 1.86 / 3.35 ms | Still exceeds 16.7 ms; use GPU pulse |
+
+Stable-workload correctness checksums matched across rounds; camera-orbit
+checksums changed with the camera while all 32 sampled markers remained
+rendered. This run exposed 14.7–41.9 ms first-frame costs among the 10,000-marker
+cases when thousands of definitions, z buckets, or animation-layer assignments
+changed together. Treat those as configuration work: prepare large sets before
+they become visible or spread application updates across frames. GPU p95 values
+vary more than CPU medians because asynchronous whole-frame timestamps include
+periodic renderer/device work; compare several runs before treating them as a
+regression.
+Version 2 and version 3 CPU results are not directly interchangeable because
+version 3 uses longer rounds, separated timers, GPU timing, and later camera
+positions.
+
+## Optional CPU interaction
+
+Import interaction separately so applications that only render annotations do
+not ship pointer management or the spatial index:
+
+```ts
+import {
+  createAnnotationInteractionManager,
+  registerInteractiveAnnotation,
+  onAnnotationInteraction,
+  disposeAnnotationInteractionManager
+} from "@litools/annotator/interaction";
+
+const interactions = createAnnotationInteractionManager({
+  layer,
+  canvas,
+  cellSize: 64,
+  hitSlop: 2
+});
+const target = registerInteractiveAnnotation(interactions, marker);
+onAnnotationInteraction(target, "click", ({ annotation }) => {
+  selectAnnotation(annotation);
+});
+
+disposeAnnotationInteractionManager(interactions);
+```
+
+Picking is synchronous CPU work in CSS-pixel space; it does not perform GPU
+readback. Core publishes final projected, clamped, and collision-resolved bounds
+directly to registered interaction managers without materializing every public
+snapshot. The manager synchronizes its uniform spatial hash lazily: small
+changes update only the affected targets' cells, while camera-wide or other
+large changes use one full rebuild. Hidden, occluded-hidden, collision-hidden,
+and disposed annotations are absent from the index.
+
+Labels use their measured box. Dot/ring, diamond, and triangle markers receive
+shape-aware tests; other built-in and custom markers use their rectangular
+bounds. Higher logical `zIndex` wins and later annotation creation wins ties.
+Mouse/pen hover keeps only the newest sample per animation frame. Clicks require
+down and up on the same target within pointer-specific movement/time thresholds.
+The entry also exposes global listeners, manual `pickInteractiveAnnotation()`,
+target/manager enable controls, hover/pressed queries, and frozen spatial-index
+diagnostics.
+
+This is pointer interaction only. It adds no DOM accessibility, keyboard focus,
+dragging, selection ownership, or automatic camera arbitration. The dedicated
+GPU interaction demo includes a manual 100/1,000/10,000-target benchmark with
+an excluded warm-up, three measured rounds, viewport-wide and center-dense
+query workloads, median throughput, and separate camera-wide and one-percent
+partial-movement index timings. It finishes with a 32/64/128 CSS-pixel cell-size
+sweep at 10,000 markers.
+
+One Chrome 150/Windows/DPR 1 interaction run produced these median results:
+
+| Targets | Viewport queries/s | Center-dense queries/s | Full camera index | 1% incremental index |
+| ---: | ---: | ---: | ---: | ---: |
+| 100 | 3.03 million | 3.77 million | 0.20 ms | 0.20 ms / 1 target |
+| 1,000 | 3.08 million | 1.67 million | 0.60 ms | 0.10 ms / 10 targets |
+| 10,000 | 568,000 | 168,000 | 6.00 ms | 0.20 ms / 100 targets |
+
+At 10,000 markers, 32 px cells reached about 338,000 center-dense queries/s
+with 49 average candidates, versus 179,000 and 136 candidates at 64 px, or
+84,000 and 419 candidates at 128 px. The 32 px index used 426 cells and took
+6.1 ms to build; 64 px used 119 cells and took 5.0 ms. Keep the balanced 64 px
+default for moving scenes. Prefer 32 px for a mostly static, densely interactive
+view with unusually frequent picks. Large 128 px cells trade a small build-time
+saving for substantially slower dense queries.
 
 The remaining useful GPU roadmap is marker presets, nine-slice label
-backgrounds, DynamicTexture icons, and CPU picking/interaction.
+backgrounds, and DynamicTexture icons.
 
 ## Clickable HTML labels
 

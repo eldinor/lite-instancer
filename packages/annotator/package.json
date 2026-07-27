@@ -54,6 +54,10 @@
       "types": "./dist/textrender.d.ts",
       "import": "./dist/textrender.js"
     },
+    "./interaction": {
+      "types": "./dist/interaction.d.ts",
+      "import": "./dist/interaction.js"
+    },
     "./instancer": {
       "types": "./dist/instancer.d.ts",
       "import": "./dist/instancer.js"

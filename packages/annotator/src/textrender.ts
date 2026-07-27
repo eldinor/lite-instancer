@@ -113,6 +113,12 @@ export interface TextRendererAnnotationBackendStats {
   readonly markerSprites: number;
   readonly markerDrawCalls: number;
   readonly animatedMarkerDrawCalls: number;
+  /** Lifetime count of full marker definition/update writes. */
+  readonly fullMarkerUpdates: number;
+  /** Lifetime count of position-only marker batches. */
+  readonly markerPositionBatches: number;
+  /** Lifetime marker count consumed by position-only batches. */
+  readonly batchedMarkerPositions: number;
 }
 
 export interface TextRendererAnnotationBackend extends AnnotationBackend {
@@ -220,6 +226,9 @@ interface MutableStats {
   liveMarkers: number;
   liveAnimatedMarkers: number;
   markerSprites: number;
+  fullMarkerUpdates: number;
+  markerPositionBatches: number;
+  batchedMarkerPositions: number;
 }
 
 interface ResolvedMarkerPulse {
@@ -281,7 +290,10 @@ export function createTextRendererAnnotationBackend(
     leaderLineSprites: 0,
     liveMarkers: 0,
     liveAnimatedMarkers: 0,
-    markerSprites: 0
+    markerSprites: 0,
+    fullMarkerUpdates: 0,
+    markerPositionBatches: 0,
+    batchedMarkerPositions: 0
   };
   let privateAvailable = requestedMode === "guarded-private";
   let disposed = false;
@@ -454,7 +466,10 @@ export function createTextRendererAnnotationBackend(
         liveAnimatedMarkers: stats.liveAnimatedMarkers,
         markerSprites: stats.markerSprites,
         markerDrawCalls: countMarkerDrawCalls(),
-        animatedMarkerDrawCalls: countAnimatedMarkerDrawCalls()
+        animatedMarkerDrawCalls: countAnimatedMarkerDrawCalls(),
+        fullMarkerUpdates: stats.fullMarkerUpdates,
+        markerPositionBatches: stats.markerPositionBatches,
+        batchedMarkerPositions: stats.batchedMarkerPositions
       });
     },
 
@@ -748,6 +763,7 @@ return texel * opacity * L.opacityMul;`
   }
 
   function updateMarkerResource(resource: MarkerResource, update: BackendAnnotationUpdate): void {
+    stats.fullMarkerUpdates++;
     if (update.type !== "marker") throw new AnnotatorError("Annotation resource type cannot be changed");
     const size = update.size ?? 12;
     const frame = update.definitionChanged ? resolveMarkerFrame(update, size) : resource.frame;
@@ -780,6 +796,8 @@ return texel * opacity * L.opacityMul;`
   }
 
   function updateMarkerPositions(updates: readonly BackendMarkerPositionUpdate[]): void {
+    stats.markerPositionBatches++;
+    stats.batchedMarkerPositions += updates.length;
     const position: [number, number] = [0, 0];
     const patch = { positionPx: position, visible: true };
     for (const update of updates) {
