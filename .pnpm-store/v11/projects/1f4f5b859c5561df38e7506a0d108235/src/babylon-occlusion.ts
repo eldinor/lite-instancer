@@ -1,8 +1,5 @@
 import {
-  addTask,
   addTaskAfter,
-  createGeometryRendererTask,
-  GeometryTextureType,
   type Camera,
   type EngineContext,
   type RenderTarget,
@@ -52,10 +49,20 @@ interface InternalEngine extends EngineContext {
 }
 
 interface InternalRenderTarget extends RenderTarget {
-  _colorTexture: GPUTexture | null;
-  _colorView: GPUTextureView | null;
+  _descriptor: {
+    samples?: number;
+  };
+  _depthTexture: GPUTexture | null;
+  _depthView: GPUTextureView | null;
   _width: number;
   _height: number;
+}
+
+interface InternalSceneRenderTask extends InternalTask {
+  _config: {
+    rt: InternalRenderTarget;
+    depth?: InternalRenderTarget;
+  };
 }
 
 interface InternalTask extends Task {
@@ -119,39 +126,31 @@ export function createBabylonDepthOcclusionProvider(
     throw new AnnotatorError("Babylon depth occlusion requires an initialized WebGPU device");
   }
 
-  const geometryTask = createGeometryRendererTask(
-    {
-      name: "annotator-occlusion-depth",
-      camera: options.camera,
-      size: options.scene.surface,
-      samples: 1,
-      textureDescriptions: [
-        {
-          type: GeometryTextureType.SCREENSPACE_DEPTH,
-          format: "r32float"
-        }
-      ]
-    },
-    engine,
-    options.scene
+  const scene = options.scene as InternalScene;
+  const sceneTask = scene._frameGraph._tasks.find(
+    (task): task is InternalSceneRenderTask =>
+      task.name === "scene" && "_config" in task
   );
-  const depthTarget = geometryTask.geometryScreenspaceDepthTexture as InternalRenderTarget | null;
-  if (!depthTarget) throw new AnnotatorError("Babylon geometry renderer did not create a depth output");
+  if (!sceneTask) {
+    throw new AnnotatorError("Babylon depth occlusion requires the default scene render task");
+  }
+  const depthTarget = sceneTask._config.depth ?? sceneTask._config.rt;
+  const samples = depthTarget._descriptor.samples ?? 1;
 
   const state = new BabylonDepthOcclusionState(
     engine,
-    options.scene as InternalScene,
+    scene,
     options.canvas,
     depthTarget,
+    samples,
     radius,
     threshold,
     enterHysteresis,
     exitHysteresis
   );
   const computeTask = state.task;
-  addTask(options.scene, geometryTask);
-  addTaskAfter(options.scene, computeTask, geometryTask);
-  state.attachTasks(geometryTask as unknown as InternalTask, computeTask);
+  addTaskAfter(options.scene, computeTask, sceneTask);
+  state.attachTask(computeTask);
   return state;
 }
 
@@ -162,6 +161,7 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
   readonly #scene: InternalScene;
   readonly #canvas: HTMLCanvasElement;
   readonly #depthTarget: InternalRenderTarget;
+  readonly #samples: number;
   readonly #radius: number;
   readonly #threshold: number;
   readonly #enterHysteresis: number;
@@ -171,7 +171,6 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
   readonly #inFlightReadbacks = new Set<GPUBuffer>();
   readonly #readbackSizes = new WeakMap<GPUBuffer, number>();
 
-  #geometryTask: InternalTask | undefined;
   #computeTask: InternalTask | undefined;
   #requests: readonly AnnotationOcclusionRequest[] = [];
   #generation = 0;
@@ -188,6 +187,8 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
   #pipeline: GPUComputePipeline | null = null;
   #bindGroup: GPUBindGroup | null = null;
   #boundView: GPUTextureView | null = null;
+  #sampledDepthTexture: GPUTexture | null = null;
+  #sampledDepthView: GPUTextureView | null = null;
   #disposed = false;
 
   constructor(
@@ -195,6 +196,7 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     scene: InternalScene,
     canvas: HTMLCanvasElement,
     depthTarget: InternalRenderTarget,
+    samples: number,
     radius: number,
     threshold: number,
     enterHysteresis: number,
@@ -204,6 +206,7 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     this.#scene = scene;
     this.#canvas = canvas;
     this.#depthTarget = depthTarget;
+    this.#samples = samples;
     this.#radius = radius;
     this.#threshold = threshold;
     this.#enterHysteresis = enterHysteresis;
@@ -217,14 +220,15 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
         this.#ensurePipeline();
         this.#bindGroup = null;
         this.#boundView = null;
+        this.#sampledDepthTexture = null;
+        this.#sampledDepthView = null;
       },
       execute: () => this.#execute(),
       dispose: () => this.#disposeGpuResources()
     };
   }
 
-  attachTasks(geometryTask: InternalTask, computeTask: InternalTask): void {
-    this.#geometryTask = geometryTask;
+  attachTask(computeTask: InternalTask): void {
     this.#computeTask = computeTask;
   }
 
@@ -261,14 +265,12 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     this.#requests = [];
     this.#results.clear();
     const tasks = this.#scene._frameGraph._tasks;
-    for (const owned of [this.#computeTask, this.#geometryTask]) {
-      if (!owned) continue;
-      const index = tasks.indexOf(owned);
+    if (this.#computeTask) {
+      const index = tasks.indexOf(this.#computeTask);
       if (index >= 0) tasks.splice(index, 1);
-      owned.dispose();
+      this.#computeTask.dispose();
     }
     this.#computeTask = undefined;
-    this.#geometryTask = undefined;
     this.#disposeGpuResources();
     for (const buffer of this.#freeReadbacks) buffer.destroy();
     this.#freeReadbacks.length = 0;
@@ -276,7 +278,7 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
 
   #execute(): number {
     if (this.#disposed || this.#requests.length === 0) return 0;
-    const view = this.#depthTarget._colorView;
+    const view = this.#getDepthOnlyView();
     const width = this.#depthTarget._width;
     const height = this.#depthTarget._height;
     if (!view || width <= 0 || height <= 0) return 0;
@@ -381,7 +383,7 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     const device = this.#engine._device;
     const module = device.createShaderModule({
       label: "annotator-occlusion-query",
-      code: OCCLUSION_SHADER
+      code: createOcclusionShader(this.#samples)
     });
     this.#pipeline = device.createComputePipeline({
       label: "annotator-occlusion-query",
@@ -467,6 +469,18 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     this.#boundView = view;
   }
 
+  #getDepthOnlyView(): GPUTextureView | null {
+    const texture = this.#depthTarget._depthTexture;
+    if (!texture) return null;
+    if (texture !== this.#sampledDepthTexture || !this.#sampledDepthView) {
+      this.#sampledDepthTexture = texture;
+      this.#sampledDepthView = texture.createView({ aspect: "depth-only" });
+      this.#bindGroup = null;
+      this.#boundView = null;
+    }
+    return this.#sampledDepthView;
+  }
+
   #takeReadback(byteLength: number): GPUBuffer | null {
     while (this.#freeReadbacks.length > 0) {
       const candidate = this.#freeReadbacks.pop()!;
@@ -493,6 +507,8 @@ class BabylonDepthOcclusionState implements BabylonDepthOcclusionProvider {
     this.#paramsBuffer = null;
     this.#bindGroup = null;
     this.#boundView = null;
+    this.#sampledDepthTexture = null;
+    this.#sampledDepthView = null;
     this.#pipeline = null;
     this.#capacity = 0;
   }
@@ -519,7 +535,15 @@ function now(): number {
   return globalThis.performance?.now() ?? Date.now();
 }
 
-const OCCLUSION_SHADER = /* wgsl */ `
+function createOcclusionShader(samples: number): string {
+  const textureType = samples > 1 ? "texture_depth_multisampled_2d" : "texture_depth_2d";
+  const loadDepth = samples > 1
+    ? `var sceneDepth = 0.0;
+  for (var sample = 0; sample < ${samples}; sample++) {
+    sceneDepth = max(sceneDepth, textureLoad(depthTexture, point, sample));
+  }`
+    : "let sceneDepth = textureLoad(depthTexture, point, 0);";
+  return /* wgsl */ `
 struct Query {
   pixel: vec2<u32>,
   depth: f32,
@@ -537,7 +561,7 @@ struct Params {
   _padding2: u32,
 };
 
-@group(0) @binding(0) var depthTexture: texture_2d<f32>;
+@group(0) @binding(0) var depthTexture: ${textureType};
 @group(0) @binding(1) var<storage, read> queries: array<Query>;
 @group(0) @binding(2) var<storage, read_write> results: array<u32>;
 @group(0) @binding(3) var<uniform> params: Params;
@@ -545,7 +569,7 @@ struct Params {
 fn isOccluding(pixel: vec2<i32>, query: Query) -> u32 {
   let maximum = vec2<i32>(i32(params.width) - 1, i32(params.height) - 1);
   let point = clamp(pixel, vec2<i32>(0), maximum);
-  let sceneDepth = textureLoad(depthTexture, point, 0).r;
+  ${loadDepth}
   return select(0u, 1u, sceneDepth > query.depth + query.bias);
 }
 
@@ -566,3 +590,4 @@ fn main(@builtin(global_invocation_id) globalId: vec3<u32>) {
   results[index] = select(1u, 2u, hits >= params.threshold);
 }
 `;
+}

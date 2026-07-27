@@ -76,7 +76,7 @@ const label = createLabel(layer, {
   hideWhenOffscreen: true,
   occlusion: "fade",
   occludedOpacity: 0.5,
-  occlusionBias: 0.0005,
+  occlusionBias: 0,
   clampToViewport: false,
   ariaLabel: "Pump A-12 status",
   role: "status",

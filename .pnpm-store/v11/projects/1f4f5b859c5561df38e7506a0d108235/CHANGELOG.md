@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Read Babylon occlusion samples from the default scene render task's private
+  live depth texture so the queries use the exact depth buffer shown on screen.
+
 All notable changes to `@litools/annotator` are documented here. The package
 follows semantic versioning.
 

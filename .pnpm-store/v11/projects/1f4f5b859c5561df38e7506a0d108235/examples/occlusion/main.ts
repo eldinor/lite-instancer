@@ -42,7 +42,7 @@ export function configureOcclusion(ctx: DemoContext): void {
       text: `Unit ${String.fromCharCode(65 + index)}`,
       occlusion: "fade",
       occludedOpacity: 0.25,
-      occlusionBias: 0.0005,
+      occlusionBias: 0,
       collision: "shift",
       collisionMaxShift: 48,
       leaderLine: true,

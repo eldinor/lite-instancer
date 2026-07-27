@@ -257,16 +257,20 @@ createLabel(layer, {
   text: "Pump A-12",
   occlusion: "fade",
   occludedOpacity: 0.5,
-  occlusionBias: 0.0005,
+  occlusionBias: 0,
   style: { opacityTransitionDuration: 180 }
 });
 ```
 
-The adapter renders one reverse-Z screen-depth attachment and evaluates all
+The adapter reads the scene render task's private live reverse-Z depth texture and evaluates all
 opted-in anchors in one compute dispatch. Results arrive asynchronously, so
 visibility normally trails the rendered scene by one or two frames. Manual
 layers must receive another `updateAnnotationLayer()` call to consume a
 completed result.
+
+`occlusionBias` is measured in reverse-Z normalized depth, not world units.
+Keep it small: perspective compression can make a valid wall/anchor separation
+smaller than a large bias at distant or oblique camera angles.
 
 `occlusion` supports `"none"`, `"hide"`, and `"fade"`. Fade multiplies
 `style.opacity` by `occludedOpacity` (default `0.5`) while keeping the
