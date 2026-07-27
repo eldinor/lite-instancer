@@ -97,7 +97,7 @@ or run the multi-page gallery from the repository root:
 npm run dev:annotator
 ```
 
-The unified gallery groups eight HTML-overlay and seven GPU TextRenderer demos.
+The unified gallery groups eight HTML-overlay and eight GPU TextRenderer demos.
 Every live page has breadcrumbs, previous/next controls, and an all-demos
 drawer, so the complete learning path stays reachable without returning to the
 catalog. It covers mesh labels, markers, live text, stable Instancer anchors,
@@ -151,8 +151,9 @@ pins, color, opacity, font size, visibility,
 clamping, clustering, every collision mode, hide/fade occlusion, and GPU
 Sprite2D leader lines. Markers use CSS-pixel size plus HTML-compatible fill,
 border color, and border width. Cached atlas frames keep every marker at one
-sprite; all markers share one layer and one draw call. Lines render below
-markers, and markers render below every text bucket. Square line caps are the
+sprite; markers sharing a `zIndex` share one layer and draw call. Lines render
+below markers in each Sprite2D bucket, and all sprites render below every text
+bucket. Square line caps are the
 one-sprite default; rounded caps are an explicit three-sprite option. Card
 styling, font weight, CSS classes, opacity transitions, interaction, and DOM
 accessibility remain HTML-only.
@@ -176,6 +177,46 @@ const backend = createTextRendererAnnotationBackend({
 
 Unknown identifiers and attempts to replace a built-in shape throw a clear
 `AnnotatorError`. Every built-in and registered shape remains one GPU sprite.
+
+Markers can pulse through Lite's public Sprite FX clock without per-frame API
+calls:
+
+```ts
+createMarker(layer, {
+  anchor,
+  shape: "diamond",
+  size: 18,
+  animation: {
+    type: "pulse",
+    frequency: 1.2,
+    phase: 0.25,
+    minOpacity: 0.35,
+    maxOpacity: 1
+  },
+  style: { color: "#72e6ff" }
+});
+```
+
+The pulse parameters occupy per-sprite instance tint fields and the GPU
+evaluates opacity from `fx.time`. Animated markers lazily use a separate layer,
+leaving the static pipeline unchanged. An all-animated z bucket is one draw
+call; mixing static and animated markers in the same bucket is two. The public
+Sprite FX bridge supports fragment animation, so pulse changes opacity rather
+than marker geometry.
+
+Unchanged markers reuse their latest projection and skip backend sprite writes
+when the camera, viewport, resolved anchor, visibility, definition, and
+occlusion inputs are stable. GPU pulse keeps running independently during this
+CPU fast path. Camera/target movement or any relevant marker mutation restores
+the full update automatically. Labels are intentionally excluded because
+measurement and collision layout can depend on other labels each frame.
+
+When the camera or viewport moves, the TextRenderer backend uses a marker-only
+position batch. Projection reuses layer-owned scratch objects, Sprite2D receives
+compact position/visibility writes, and immutable marker snapshots are created
+only when `getAnnotationSnapshot()` is called. Definition, style, z-bucket,
+animation, visibility, clamping, and occlusion changes automatically leave this
+path and use the full update contract. Applications do not need to opt in.
 
 The backend owns and disposes its renderer, text data, and shared glyph
 storage. The supplied surface and font remain caller-owned. Canvas backing
@@ -305,9 +346,28 @@ hundreds of SVG elements.
 
 ## Next GPU additions
 
-The remaining useful GPU roadmap is marker presets, optional z-indexed Sprite2D
-buckets, nine-slice label backgrounds, DynamicTexture icons, CPU
-picking/interaction, and a dedicated high-count marker benchmark.
+Sprite2D resources are batched by shared annotation `zIndex`. Each used value
+creates one line layer and one marker layer; lower values draw first, with lines
+behind markers inside the same bucket. Empty buckets are removed. Keep the
+number of distinct values small because each visible layer is one draw call.
+All Sprite2D buckets still render behind the later TextRenderer pass.
+
+The manually started marker benchmark automatically runs ten cases spanning
+100–10,000 markers, one versus four z buckets, CPU pulse updates, GPU Sprite FX
+pulse, visibility churn, and forced camera movement. Static and GPU-pulse cases
+exercise cached projection; the orbit case measures full reprojection plus the
+TextRenderer position batch. Its JSON report includes per-case
+mean/p50/p95/max update time, bucket counts, sprite counts, and draw calls.
+
+One reference run with Chrome 150 on Windows, DPR 1, and a 1669 x 953 canvas
+measured 10,000 camera-orbit markers at 2.72 ms mean / 3.0 ms p95, down from
+7.85 ms / 8.6 ms before batching (about 65% lower). Static and GPU-pulse cases
+were about 0.40 ms. These are CPU annotation-update measurements from one
+machine, not total frame or GPU-render timings; use the bundled benchmark on
+the target hardware for capacity decisions.
+
+The remaining useful GPU roadmap is marker presets, nine-slice label
+backgrounds, DynamicTexture icons, and CPU picking/interaction.
 
 ## Clickable HTML labels
 

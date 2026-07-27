@@ -15,6 +15,20 @@ export type MarkerShape =
   | "cross"
   | "pin"
   | (string & {});
+
+export interface MarkerPulseAnimation {
+  readonly type: "pulse";
+  /** Pulse cycles per second. @default 1 */
+  readonly frequency?: number;
+  /** Initial phase measured in cycles. @default 0 */
+  readonly phase?: number;
+  /** Lowest opacity multiplier. @default 0.35 */
+  readonly minOpacity?: number;
+  /** Highest opacity multiplier. @default 1 */
+  readonly maxOpacity?: number;
+}
+
+export type MarkerAnimationOptions = MarkerPulseAnimation;
 export type LabelCollisionMode =
   | "none"
   | "hide"
@@ -138,6 +152,8 @@ export interface MarkerOptions extends AnnotationVisibilityOptions {
   anchor: SupportedAnnotationAnchor;
   shape?: MarkerShape;
   size?: number;
+  /** Optional backend animation. GPU pulse animation runs in Sprite FX. */
+  animation?: MarkerAnimationOptions;
   zIndex?: number;
   worldOffset?: Vec3Like;
   screenOffset?: Vec2Like;
@@ -145,7 +161,11 @@ export interface MarkerOptions extends AnnotationVisibilityOptions {
 }
 
 export type LabelPatch = Partial<Omit<LabelOptions, "anchor">> & { anchor?: SupportedAnnotationAnchor };
-export type MarkerPatch = Partial<Omit<MarkerOptions, "anchor">> & { anchor?: SupportedAnnotationAnchor };
+export type MarkerPatch = Partial<Omit<MarkerOptions, "anchor" | "animation">> & {
+  anchor?: SupportedAnnotationAnchor;
+  /** Set to null to return the marker to the static rendering path. */
+  animation?: MarkerAnimationOptions | null;
+};
 
 export type AnnotationHiddenReason =
   | "none"
@@ -210,6 +230,7 @@ export interface BackendAnnotationDefinition {
   readonly text?: string;
   readonly shape?: MarkerShape;
   readonly size?: number;
+  readonly animation?: Readonly<MarkerAnimationOptions>;
   readonly zIndex: number;
   readonly style: Readonly<AnnotationStyle>;
   readonly leaderLine?: Readonly<LeaderLineOptions>;
@@ -237,9 +258,19 @@ export interface BackendBounds {
   readonly height: number;
 }
 
+/** A position-only marker update used by backends that can batch moving sprites. */
+export interface BackendMarkerPositionUpdate {
+  readonly resource: unknown;
+  readonly rendered: boolean;
+  readonly x: number;
+  readonly y: number;
+}
+
 export interface AnnotationBackend {
   create(definition: BackendAnnotationDefinition): unknown;
   update(resource: unknown, update: BackendAnnotationUpdate): void;
+  /** Optional fast path for clean markers whose only per-frame change is projection. */
+  updateMarkerPositions?(updates: readonly BackendMarkerPositionUpdate[]): void;
   measure(resource: unknown): BackendBounds | null;
   setViewport(viewport: AnnotationViewport): void;
   disposeResource(resource: unknown): void;
@@ -284,6 +315,8 @@ export interface ProjectionInput {
   readonly viewProjection: Mat4;
   readonly viewport: AnnotationViewport;
   readonly cameraPosition: Vec3Like;
+  /** Skip camera-distance calculation when distance filtering/output is not needed. @default true */
+  readonly calculateDistance?: boolean;
 }
 
 export interface ProjectionResult {

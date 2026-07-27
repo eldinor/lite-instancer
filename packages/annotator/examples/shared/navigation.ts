@@ -40,8 +40,9 @@ export const demos: readonly DemoEntry[] = Object.freeze([
   demo("occlusion", "Depth occlusion", "Fade or hide labels behind geometry and combine it with layout.", "html", "occlusion/", "occlusion: \"fade\""),
   demo("textrender-basic", "GPU labels & markers", "Explore batched text, dots, rings, clamping, and high-DPI placement.", "gpu", "textrender/basic/", "createTextRendererAnnotationBackend()"),
   demo("textrender-callouts", "GPU compound callouts", "Combine one anchor with a marker, offset label, and leader line.", "gpu", "textrender/callouts/", "leaderLine + screenOffset"),
-  demo("textrender-animated-markers", "Animated GPU markers", "Pulse and blink stable marker sprites without adding draw calls.", "gpu", "textrender/animated-markers/", "updateMarker()"),
+  demo("textrender-animated-markers", "Animated GPU markers", "Pulse stable marker sprites with Lite Sprite FX and no per-frame API calls.", "gpu", "textrender/animated-markers/", "animation: { type: \"pulse\" }"),
   demo("textrender-marker-shapes", "GPU marker shapes", "Compare every built-in shape with a registered application-defined star.", "gpu", "textrender/marker-shapes/", "markerShapes"),
+  demo("textrender-marker-benchmark", "GPU marker benchmark", "Run an automatic 100–10,000 marker scaling and update suite on demand.", "gpu", "textrender/marker-benchmark/", "getStats()"),
   demo("textrender-dynamic", "Dynamic GPU text", "Compare public and guarded-private shaping with live statistics.", "gpu", "textrender/dynamic/", "shapingMode"),
   demo("textrender-collisions", "GPU text collisions", "Combine GPU collision modes with fast Sprite2D leader lines.", "gpu", "textrender/collisions/", "leaderLine"),
   demo("textrender-stress", "GPU text stress test", "Profile moving 100–500 label workloads and shape caching.", "gpu", "textrender/stress/", "getStats()")

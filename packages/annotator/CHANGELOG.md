@@ -32,6 +32,23 @@ follows semantic versioning.
 - Add one-sprite square, diamond, triangle, cross, and pin GPU markers, an open
   `MarkerShape` string union, namespaced custom rasterizer registration, and a
   focused built-in/custom marker-shapes demo.
+- Add lifecycle-managed Sprite2D buckets per annotation `zIndex`, with lines
+  ordered behind markers, draw-call statistics, slot migration, and empty
+  bucket removal.
+- Add a manually started automatic GPU marker benchmark covering 100–10,000
+  markers, one/four z buckets, CPU/GPU pulsing, visibility churn, and JSON
+  timing reports.
+- Add opt-in GPU marker pulse animation through Lite's public Sprite FX clock,
+  with per-sprite phase/frequency/opacity parameters, lazy animated layers,
+  static-path isolation, animation statistics, and no per-frame marker calls.
+- Skip unchanged marker projection and backend sprite writes when camera,
+  viewport, resolved anchor, visibility, definition, and occlusion inputs are
+  stable; retain full invalidation for movement and add a forced-orbit
+  benchmark comparison.
+- Batch clean TextRenderer marker positions during camera/viewport movement,
+  reuse projection scratch storage, and lazily materialize immutable public
+  snapshots to reduce high-count moving-camera CPU and allocation overhead;
+  the 10,000-marker reference orbit benchmark dropped about 65%.
 
 ### Changed
 

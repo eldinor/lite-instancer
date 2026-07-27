@@ -163,11 +163,23 @@ const marker = createMarker(layer, {
   anchor: { kind: "world", position: [0, 1, 0] },
   shape: "ring",
   size: 14,
+  animation: {
+    type: "pulse",
+    frequency: 1.2,
+    phase: 0.25,
+    minOpacity: 0.35,
+    maxOpacity: 1
+  },
   style: { color: "#58e6bd", borderWidth: 2 }
 });
 ```
 
-Marker shapes are `"dot"` and `"ring"`. Sizes use CSS pixels.
+`MarkerShape` is an open string type with built-in `"dot"`, `"ring"`,
+`"square"`, `"diamond"`, `"triangle"`, `"cross"`, and `"pin"` identifiers.
+Sizes use CSS pixels. The optional `pulse` animation is implemented by the GPU
+TextRenderer backend; `frequency` is cycles per second and `phase` is measured
+in cycles. The HTML backend accepts but ignores this GPU presentation option.
+Use `updateMarker(marker, { animation: null })` to return to the static path.
 
 `occlusion` is `"none"` (default), `"hide"`, or `"fade"` and is active only
 when the layer has an `occlusionProvider`. Fade keeps the annotation rendered
@@ -345,6 +357,7 @@ interface TextRendererAnnotationBackendOptions {
   coverageGamma?: number;
   shapeCacheSize?: number;
   shapingMode?: TextRendererShapingMode;
+  markerShapes?: Readonly<Record<string, TextRendererMarkerShapeRasterizer>>;
 }
 
 interface TextRendererAnnotationBackendStats {
@@ -357,14 +370,18 @@ interface TextRendererAnnotationBackendStats {
   readonly privateFallbacks: number;
   readonly liveLabels: number;
   readonly spriteRendererActive: boolean;
+  readonly spriteBuckets: number;
+  readonly spriteDrawCalls: number;
   readonly textBuckets: number;
   readonly textDrawCalls: number;
   readonly liveLeaderLines: number;
   readonly leaderLineSprites: number;
   readonly leaderLineDrawCalls: number;
   readonly liveMarkers: number;
+  readonly liveAnimatedMarkers: number;
   readonly markerSprites: number;
   readonly markerDrawCalls: number;
+  readonly animatedMarkerDrawCalls: number;
 }
 ```
 
@@ -411,9 +428,43 @@ GPU markers support built-in `"dot"`, `"ring"`, `"square"`, `"diamond"`,
 background color, border color/width, visibility, clamping, distance
 limits, and hide/fade occlusion. Marker appearances are cached as
 premultiplied linear atlas frames, so each live marker uses exactly one sprite.
-All markers share one Sprite2D layer and at most one marker draw call. The fixed
-GPU order is leader lines, markers, then all text buckets; marker `zIndex`
-cannot interleave a marker between text buckets.
+Markers and leader lines share one Sprite2D bucket per distinct annotation
+`zIndex`. Each bucket owns a line layer followed by a marker layer; lower
+z-index buckets draw first and empty buckets are removed. A visible layer costs
+one draw call, so the omitted `zIndex: 0` path remains the fastest. Sprite2D
+buckets render before the TextRenderer pass and therefore cannot interleave a
+marker between text buckets. Stats expose `spriteBuckets`, `spriteDrawCalls`,
+`markerDrawCalls`, and `leaderLineDrawCalls`.
+
+GPU pulse animation lazily creates one Sprite FX marker layer per participating
+z bucket. Phase, frequency, and minimum/maximum opacity are stored in each
+sprite's instance tint and evaluated from Lite's public per-layer `fx.time`
+clock. No per-frame `updateMarker()` calls or atlas changes are required.
+Static markers keep the standard shader. Mixing static and animated markers in
+one z bucket uses two marker draw calls; an all-animated bucket uses one.
+
+After its first resolved frame, an unchanged marker skips projection and
+backend sprite writes while the camera matrix/position, camera viewport,
+resolved anchor position/visibility, requested visibility, definition, and
+relevant occlusion inputs remain stable. GPU pulse continues through `fx.time`
+during skipped CPU updates. Camera or target movement, viewport changes,
+`updateMarker`, anchor replacement, visibility changes, and active asynchronous
+occlusion invalidate the shortcut. Labels retain their normal measurement and
+collision-layout updates.
+
+During camera or viewport movement, a clean, unclamped marker can use the
+backend's optional `updateMarkerPositions()` batch. Core projection reuses
+scratch storage and defers allocation of the immutable public snapshot until
+`getAnnotationSnapshot()` is called. The TextRenderer backend implements this
+hook; other backends continue to receive ordinary `update()` calls. Any marker
+definition, style, z-order, animation, clamping, visibility, or relevant
+occlusion change automatically selects the full update path.
+
+`projectAnnotationPosition(input, output?)` accepts an optional previous result
+as reusable output storage for allocation-sensitive projection loops. Omitting
+it preserves the original allocating behavior. Set `calculateDistance: false`
+when distance output/filtering is not needed to skip the square-root operation;
+the returned `distance` is then `0`.
 
 `MarkerShape` is an open string union. `markerShapes` on
 `TextRendererAnnotationBackendOptions` registers application rasterizers by
@@ -477,5 +528,8 @@ and skew on the canvas are unsupported in 0.1.
 
 `AnnotationBackend`, `BackendAnnotationDefinition`,
 `BackendAnnotationUpdate`, and related types are exported for alternative
-backends. General pointer-event streams, arbitrary DOM content, and
-serialization remain outside this version.
+backends. `updateMarkerPositions()` is optional: core calls it only for clean,
+unclamped markers and passes reusable `BackendMarkerPositionUpdate` records.
+Implementations must consume each record synchronously and must not retain the
+record or the containing array. General pointer-event streams, arbitrary DOM
+content, and serialization remain outside this version.

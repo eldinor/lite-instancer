@@ -40,6 +40,7 @@ export default defineConfig({
         textRendererCallouts: resolve(examplesRoot, "textrender/callouts/index.html"),
         textRendererAnimatedMarkers: resolve(examplesRoot, "textrender/animated-markers/index.html"),
         textRendererMarkerShapes: resolve(examplesRoot, "textrender/marker-shapes/index.html"),
+        textRendererMarkerBenchmark: resolve(examplesRoot, "textrender/marker-benchmark/index.html"),
         textRendererDynamic: resolve(examplesRoot, "textrender/dynamic/index.html"),
         textRendererCollisions: resolve(examplesRoot, "textrender/collisions/index.html"),
         textRendererStress: resolve(examplesRoot, "textrender/stress/index.html")

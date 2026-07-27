@@ -58,4 +58,23 @@ describe("annotation projection", () => {
     if (original) Object.defineProperty(globalThis, "devicePixelRatio", original);
     else Reflect.deleteProperty(globalThis, "devicePixelRatio");
   });
+
+  it("reuses caller output and can skip distance calculation", () => {
+    const output = projectAnnotationPosition({
+      position: [0, 0, 0],
+      viewProjection: identity,
+      viewport: { left: 0, top: 0, width: 1, height: 1 },
+      cameraPosition: [0, 0, 0]
+    });
+    const reused = projectAnnotationPosition({
+      position: [0.5, 0, 0.5],
+      viewProjection: identity,
+      viewport: { left: 0, top: 0, width: 100, height: 80 },
+      cameraPosition: [10, 10, 10],
+      calculateDistance: false
+    }, output);
+    expect(reused).toBe(output);
+    expect(reused.screenPosition).toEqual({ x: 75, y: 40 });
+    expect(reused.distance).toBe(0);
+  });
 });

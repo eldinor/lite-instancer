@@ -156,6 +156,20 @@ describe("TextRenderer annotation backend", () => {
     backend.dispose();
   });
 
+  it("applies position-only marker batches without rebuilding marker definitions", () => {
+    const { backend } = fixture();
+    const definition = markerDefinition("dot", 18, { backgroundColor: "#58e6bd" });
+    const resource = backend.create(definition);
+    backend.update(resource, updateFor(definition, { x: 20, y: 20 }));
+    backend.updateMarkerPositions?.([{ resource, rendered: true, x: 75, y: 60 }]);
+    expect(Array.from(markerLayer(resource)._instanceData.slice(0, 4))).toEqual([75, 60, 18, 18]);
+    expect(backend.measure(resource)).toEqual({ x: 66, y: 51, width: 18, height: 18 });
+    backend.updateMarkerPositions?.([{ resource, rendered: false, x: 75, y: 60 }]);
+    expect(markerLayer(resource).visible).toBe(false);
+    expect(backend.measure(resource)).toBeNull();
+    backend.dispose();
+  });
+
   it.each(["dot", "ring", "square", "diamond", "triangle", "cross", "pin"] as const)(
     "renders the built-in %s marker as one sprite",
     (shape) => {
@@ -194,6 +208,96 @@ describe("TextRenderer annotation backend", () => {
     expect(() => fixture({ markerShapes: { dot: () => new Uint8Array() } })).toThrow(/cannot replace built-in/);
     const { backend } = fixture({ markerShapes: { "app/bad": () => new Uint8Array(4) } });
     expect(() => backend.create(markerDefinition("app/bad", 12))).toThrow(/Uint8Array of length/);
+    backend.dispose();
+  });
+
+  it("batches Sprite2D resources by z-index and removes empty buckets", () => {
+    const { backend } = fixture();
+    const low = markerDefinition("dot", 18);
+    const high = { ...markerDefinition("diamond", 18, {}, 2), zIndex: 10 };
+    const lowResource = backend.create(low);
+    const highResource = backend.create(high);
+    backend.update(lowResource, updateFor(low, { x: 20, y: 20 }));
+    backend.update(highResource, updateFor(high, { x: 30, y: 30 }));
+    expect(backend.getStats()).toMatchObject({
+      spriteBuckets: 2,
+      spriteDrawCalls: 2,
+      markerDrawCalls: 2,
+      markerSprites: 2
+    });
+
+    const moved = { ...low, zIndex: 10 };
+    backend.update(lowResource, updateFor(moved, { x: 20, y: 20 }));
+    expect(markerLayer(lowResource)).toBe(markerLayer(highResource));
+    expect(backend.getStats()).toMatchObject({ spriteBuckets: 1, spriteDrawCalls: 1, markerDrawCalls: 1 });
+
+    backend.disposeResource(lowResource);
+    backend.disposeResource(highResource);
+    expect(backend.getStats()).toMatchObject({ spriteBuckets: 0, spriteDrawCalls: 0 });
+    backend.dispose();
+  });
+
+  it("runs marker pulses in a lazy Sprite FX layer and returns to the static path", () => {
+    const { backend } = fixture();
+    const staticDefinition = markerDefinition("dot", 20);
+    const animatedDefinition = {
+      ...markerDefinition("diamond", 20, { opacity: 0.8 }, 2),
+      animation: { type: "pulse" as const, frequency: 2, phase: 0.25, minOpacity: 0.2, maxOpacity: 0.9 }
+    };
+    const staticResource = backend.create(staticDefinition);
+    const animatedResource = backend.create(animatedDefinition);
+    backend.update(staticResource, updateFor(staticDefinition, { x: 20, y: 20 }));
+    backend.update(animatedResource, updateFor(animatedDefinition, { x: 30, y: 30 }));
+    const animatedLayer = markerLayer(animatedResource) as ReturnType<typeof markerLayer> & { customShader?: unknown };
+    expect(animatedLayer).not.toBe(markerLayer(staticResource));
+    expect(animatedLayer.customShader).toBeDefined();
+    expect(Array.from(animatedLayer._instanceData.slice(9, 13))).toEqual([0.25, 2, expect.closeTo(0.16), expect.closeTo(0.72)]);
+    expect(backend.getStats()).toMatchObject({
+      liveAnimatedMarkers: 1,
+      spriteBuckets: 1,
+      markerDrawCalls: 2,
+      animatedMarkerDrawCalls: 1
+    });
+
+    const { animation: _animation, ...stoppedDefinition } = animatedDefinition;
+    backend.update(animatedResource, updateFor(stoppedDefinition, { x: 30, y: 30 }));
+    expect(markerLayer(animatedResource)).toBe(markerLayer(staticResource));
+    expect(backend.getStats()).toMatchObject({
+      liveAnimatedMarkers: 0,
+      markerDrawCalls: 1,
+      animatedMarkerDrawCalls: 0
+    });
+    backend.dispose();
+  });
+
+  it("keeps lines behind markers inside a shared z-index bucket", () => {
+    const { backend } = fixture();
+    const label = { ...labelDefinition("Callout"), zIndex: 4, leaderLine: { width: 2 } };
+    const marker = { ...markerDefinition("pin", 20, {}, 2), zIndex: 4 };
+    const labelResource = backend.create(label);
+    const markerResource = backend.create(marker);
+    backend.update(labelResource, {
+      ...updateFor(label, { x: 40, y: 40 }),
+      leaderLineGeometry: { start: { x: 10, y: 10 }, end: { x: 30, y: 30 } }
+    });
+    backend.update(markerResource, updateFor(marker, { x: 10, y: 10 }));
+    const line = lineLayer(labelResource) as { order?: number };
+    const markerSpriteLayer = markerLayer(markerResource) as { order?: number };
+    expect(line.order).toBe(4);
+    expect(markerSpriteLayer.order).toBe(4);
+    expect(backend.getStats()).toMatchObject({
+      spriteBuckets: 1,
+      spriteDrawCalls: 2,
+      leaderLineDrawCalls: 1,
+      markerDrawCalls: 1
+    });
+    const movedLabel = { ...label, zIndex: 9 };
+    backend.update(labelResource, {
+      ...updateFor(movedLabel, { x: 40, y: 40 }),
+      leaderLineGeometry: { start: { x: 10, y: 10 }, end: { x: 30, y: 30 } }
+    });
+    expect((lineLayer(labelResource) as { order?: number }).order).toBe(9);
+    expect(backend.getStats()).toMatchObject({ spriteBuckets: 2, spriteDrawCalls: 2 });
     backend.dispose();
   });
 

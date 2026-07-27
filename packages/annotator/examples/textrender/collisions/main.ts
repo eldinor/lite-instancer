@@ -149,6 +149,8 @@ export function configureTextCollisions(context: TextDemoContext): void {
         max: sorted.at(-1) ?? 0
       },
       renderer: {
+        spriteBuckets: stats.spriteBuckets,
+        spriteDrawCalls: stats.spriteDrawCalls,
         textBuckets: stats.textBuckets,
         textDrawCalls: stats.textDrawCalls,
         leaderLineDrawCalls: stats.leaderLineDrawCalls,

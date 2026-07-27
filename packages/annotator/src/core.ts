@@ -26,9 +26,12 @@ import type {
   LabelPatch,
   LeaderLineOptions,
   MarkerHandle,
+  MarkerAnimationOptions,
   MarkerOptions,
   MarkerPatch,
   MarkerShape,
+  ProjectionInput,
+  ProjectionResult,
   SupportedAnnotationAnchor
 } from "./types.js";
 
@@ -77,6 +80,30 @@ interface MarkerState extends CommonState {
   kind: "marker";
   shape: MarkerShape;
   size: number;
+  animation: Readonly<MarkerAnimationOptions> | undefined;
+  positionUpdate: MutableBackendMarkerPositionUpdate;
+  projectedSnapshot: MutableProjectedMarkerSnapshot;
+  projectedSnapshotPending: boolean;
+}
+
+interface MutableBackendMarkerPositionUpdate {
+  resource: unknown;
+  rendered: boolean;
+  x: number;
+  y: number;
+}
+
+interface MutableProjectedMarkerSnapshot {
+  worldX: number;
+  worldY: number;
+  worldZ: number;
+  screenX: number;
+  screenY: number;
+  depth: number;
+  boundsX: number;
+  boundsY: number;
+  boundsWidth: number;
+  boundsHeight: number;
 }
 
 type AnnotationState = LabelState | MarkerState;
@@ -93,6 +120,31 @@ interface LayerState {
   readonly cameraPositionScratch: Float64Array;
   readonly collisionCandidates: LabelState[];
   readonly occlusionRequests: AnnotationOcclusionRequest[];
+  backendViewportInitialized: boolean;
+  readonly backendViewportScratch: Float64Array;
+  projectionContextInitialized: boolean;
+  readonly previousViewProjection: Float64Array;
+  readonly previousCameraPosition: Float64Array;
+  readonly previousCameraViewport: Float64Array;
+  readonly markerPositionUpdates: MutableBackendMarkerPositionUpdate[];
+  readonly projectionInputScratch: MutableProjectionInput;
+  readonly projectionResultScratch: MutableProjectionResult;
+}
+
+interface MutableProjectionInput {
+  position: ArrayLike<number>;
+  viewProjection: ArrayLike<number>;
+  viewport: { left: number; top: number; width: number; height: number };
+  cameraPosition: ArrayLike<number>;
+  calculateDistance: boolean;
+}
+
+interface MutableProjectionResult {
+  behindCamera: boolean;
+  offscreen: boolean;
+  screenPosition: { x: number; y: number };
+  depth: number;
+  distance: number;
 }
 
 const layerStates = new WeakMap<AnnotationLayer, LayerState>();
@@ -114,7 +166,28 @@ export function createAnnotationLayer(options: AnnotationLayerOptions): Annotati
     resizeObserver: undefined,
     cameraPositionScratch: new Float64Array(3),
     collisionCandidates: [],
-    occlusionRequests: []
+    occlusionRequests: [],
+    backendViewportInitialized: false,
+    backendViewportScratch: new Float64Array(6),
+    projectionContextInitialized: false,
+    previousViewProjection: new Float64Array(16),
+    previousCameraPosition: new Float64Array(3),
+    previousCameraViewport: new Float64Array(4),
+    markerPositionUpdates: [],
+    projectionInputScratch: {
+      position: new Float32Array(3),
+      viewProjection: new Float64Array(16),
+      viewport: { left: 0, top: 0, width: 0, height: 0 },
+      cameraPosition: new Float64Array(3),
+      calculateDistance: true
+    },
+    projectionResultScratch: {
+      behindCamera: false,
+      offscreen: false,
+      screenPosition: { x: 0, y: 0 },
+      depth: 0,
+      distance: 0
+    }
   };
   layerStates.set(handle, state);
   if (typeof ResizeObserver === "function") {
@@ -168,12 +241,20 @@ export function createMarker(layer: AnnotationLayer, options: MarkerOptions): Ma
   const handle = Object.freeze({ id, type: "marker" as const }) as MarkerHandle;
   const shape = options.shape ?? "dot";
   const size = options.size ?? 12;
+  const animation = normalizeMarkerAnimation(options.animation);
   assertPositive(size, "Marker size");
-  const definition = createDefinition(id, "marker", options, { shape, size });
+  const definition = createDefinition(id, "marker", options, { shape, size, ...(animation ? { animation } : {}) });
   const state = createCommonState(layerState, handle, options, definition) as MarkerState;
   state.kind = "marker";
   state.shape = shape;
   state.size = size;
+  state.animation = animation;
+  state.positionUpdate = { resource: state.resource, rendered: false, x: 0, y: 0 };
+  state.projectedSnapshot = {
+    worldX: 0, worldY: 0, worldZ: 0, screenX: 0, screenY: 0, depth: 0,
+    boundsX: 0, boundsY: 0, boundsWidth: size, boundsHeight: size
+  };
+  state.projectedSnapshotPending = false;
   registerState(layerState, state);
   return handle;
 }
@@ -218,6 +299,10 @@ export function updateMarker(marker: MarkerHandle, patch: MarkerPatch): void {
     state.size = patch.size;
     state.definitionDirty = true;
   }
+  if ("animation" in patch) {
+    state.animation = normalizeMarkerAnimation(patch.animation ?? undefined);
+    state.definitionDirty = true;
+  }
 }
 
 export function setAnnotationVisible(annotation: AnnotationHandle, visible: boolean): void {
@@ -228,6 +313,7 @@ export function setAnnotationAnchor(annotation: AnnotationHandle, anchor: Suppor
   const state = requireAnnotation(annotation);
   state.anchor = storeAnchor(anchor);
   state.occlusionRevision++;
+  state.definitionDirty = true;
 }
 
 export function invalidateAnnotation(annotation: AnnotationHandle): void {
@@ -248,7 +334,9 @@ export function updateAnnotationLayer(layer: AnnotationLayer): void {
 }
 
 export function getAnnotationSnapshot(annotation: AnnotationHandle): AnnotationSnapshot {
-  return requireAnnotation(annotation).snapshot;
+  const state = requireAnnotation(annotation);
+  if (state.kind === "marker" && state.projectedSnapshotPending) materializeProjectedMarkerSnapshot(state);
+  return state.snapshot;
 }
 
 export function disposeAnnotation(annotation: AnnotationHandle): void {
@@ -323,7 +411,19 @@ function updateLayer(layer: LayerState): void {
   const canvasRect = layer.options.canvas.getBoundingClientRect();
   const width = canvasRect.width || layer.options.canvas.clientWidth || layer.options.canvas.width;
   const height = canvasRect.height || layer.options.canvas.clientHeight || layer.options.canvas.height;
-  layer.backend.setViewport({ left: canvasRect.left, top: canvasRect.top, width, height });
+  const backendViewport = [
+    canvasRect.left,
+    canvasRect.top,
+    width,
+    height,
+    layer.options.canvas.width,
+    layer.options.canvas.height
+  ] as const;
+  if (!layer.backendViewportInitialized || valuesChanged(layer.backendViewportScratch, backendViewport)) {
+    layer.backend.setViewport({ left: canvasRect.left, top: canvasRect.top, width, height });
+    copyValues(layer.backendViewportScratch, backendViewport);
+    layer.backendViewportInitialized = true;
+  }
   if (width <= 0 || height <= 0) {
     for (const annotation of layer.annotations.values()) hideAnnotation(annotation, "offscreen");
     layer.options.occlusionProvider?.update([]);
@@ -342,38 +442,70 @@ function updateLayer(layer: LayerState): void {
   layer.cameraPositionScratch[0] = camera.x;
   layer.cameraPositionScratch[1] = camera.y;
   layer.cameraPositionScratch[2] = camera.z;
+  const projectionContextChanged =
+    !layer.projectionContextInitialized ||
+    valuesChanged(layer.previousViewProjection, viewProjection) ||
+    valuesChanged(layer.previousCameraPosition, layer.cameraPositionScratch) ||
+    valuesChanged(layer.previousCameraViewport, [
+      cameraViewport.left,
+      cameraViewport.top,
+      cameraViewport.width,
+      cameraViewport.height
+    ]);
+  copyValues(layer.previousViewProjection, viewProjection);
+  copyValues(layer.previousCameraPosition, layer.cameraPositionScratch);
+  copyValues(layer.previousCameraViewport, [
+    cameraViewport.left,
+    cameraViewport.top,
+    cameraViewport.width,
+    cameraViewport.height
+  ]);
+  layer.projectionContextInitialized = true;
   const padding = layer.options.viewportPadding ?? 8;
   const occlusionRequests = layer.occlusionRequests;
   occlusionRequests.length = 0;
+  const markerPositionUpdates = layer.markerPositionUpdates;
+  markerPositionUpdates.length = 0;
+  const projectionInput = layer.projectionInputScratch;
+  projectionInput.viewProjection = viewProjection;
+  projectionInput.viewport = cameraViewport;
+  projectionInput.cameraPosition = layer.cameraPositionScratch;
+  let hasLabels = false;
 
   for (const annotation of layer.annotations.values()) {
     if (annotation.kind === "label") {
+      hasLabels = true;
       annotation.previousClusterCount = annotation.clusterCount;
       annotation.clusterCount = 1;
       annotation.clusterNeedsRefresh = annotation.definitionDirty;
     }
     if (!annotation.visible) {
+      if (canReuseRequestedHiddenMarker(annotation)) continue;
       hideAnnotation(annotation, "none");
       continue;
     }
+    if (canReuseStoredWorldMarker(annotation, projectionContextChanged)) continue;
     const resolution = resolveAnchor(annotation.anchor, annotation.positionScratch);
     if (!resolution.available || !resolution.position) {
+      if (canReuseResolvedHiddenMarker(annotation, "anchor-unavailable")) continue;
       hideAnnotation(annotation, "anchor-unavailable");
       continue;
     }
     if (!resolution.targetVisible) {
+      if (canReuseResolvedHiddenMarker(annotation, "target-hidden")) continue;
       hideAnnotation(annotation, "target-hidden");
       continue;
     }
     annotation.worldScratch[0] = (annotation.positionScratch[0] ?? 0) + annotation.worldOffset[0]!;
     annotation.worldScratch[1] = (annotation.positionScratch[1] ?? 0) + annotation.worldOffset[1]!;
     annotation.worldScratch[2] = (annotation.positionScratch[2] ?? 0) + annotation.worldOffset[2]!;
-    const projection = projectAnnotationPosition({
-      position: annotation.worldScratch,
-      viewProjection,
-      viewport: cameraViewport,
-      cameraPosition: layer.cameraPositionScratch
-    });
+    if (canReuseProjectedMarker(annotation, projectionContextChanged)) continue;
+    projectionInput.position = annotation.worldScratch;
+    projectionInput.calculateDistance = annotation.minDistance !== undefined || annotation.maxDistance !== undefined;
+    const projection = projectAnnotationPosition(
+      projectionInput as ProjectionInput,
+      layer.projectionResultScratch as ProjectionResult
+    );
     if (
       (annotation.minDistance !== undefined && projection.distance < annotation.minDistance) ||
       (annotation.maxDistance !== undefined && projection.distance > annotation.maxDistance)
@@ -411,10 +543,14 @@ function updateLayer(layer: LayerState): void {
       setOccluded(annotation, false);
     }
 
-    const raw = {
-      x: projection.screenPosition.x + annotation.screenOffset[0]!,
-      y: projection.screenPosition.y + annotation.screenOffset[1]!
-    };
+    const rawX = projection.screenPosition.x + annotation.screenOffset[0]!;
+    const rawY = projection.screenPosition.y + annotation.screenOffset[1]!;
+    if (annotation.kind === "marker" && canBatchProjectedMarker(annotation)) {
+      queueProjectedMarker(annotation, rawX, rawY, projection.depth, markerPositionUpdates);
+      annotation.definitionDirty = false;
+      continue;
+    }
+    const raw = { x: rawX, y: rawY };
     let final = raw;
     updateBackend(annotation, true, final);
     let measured = annotation.layer.backend.measure(annotation.resource);
@@ -450,10 +586,158 @@ function updateLayer(layer: LayerState): void {
       depth: projection.depth,
       bounds: measured ? createDomRect(measured.x, measured.y, measured.width, measured.height) : null
     });
+    if (annotation.kind === "marker") annotation.projectedSnapshotPending = false;
     annotation.definitionDirty = false;
   }
+  if (markerPositionUpdates.length > 0) layer.backend.updateMarkerPositions?.(markerPositionUpdates);
   layer.options.occlusionProvider?.update(occlusionRequests);
-  applyLabelCollisions(layer, cameraViewport, padding);
+  if (hasLabels) applyLabelCollisions(layer, cameraViewport, padding);
+}
+
+function canReuseRequestedHiddenMarker(annotation: AnnotationState): boolean {
+  return (
+    annotation.kind === "marker" &&
+    !annotation.definitionDirty &&
+    !latestRequestedVisible(annotation) &&
+    !latestRendered(annotation)
+  );
+}
+
+function canReuseResolvedHiddenMarker(
+  annotation: AnnotationState,
+  reason: "anchor-unavailable" | "target-hidden"
+): boolean {
+  return (
+    annotation.kind === "marker" &&
+    !annotation.definitionDirty &&
+    latestRequestedVisible(annotation) &&
+    !latestRendered(annotation) &&
+    latestHiddenReason(annotation) === reason
+  );
+}
+
+function canReuseProjectedMarker(annotation: AnnotationState, projectionContextChanged: boolean): boolean {
+  if (
+    annotation.kind !== "marker" ||
+    projectionContextChanged ||
+    annotation.definitionDirty ||
+    !latestRequestedVisible(annotation) ||
+    (annotation.occlusionMode !== "none" && annotation.layer.options.occlusionProvider)
+  ) {
+    return false;
+  }
+  if (annotation.projectedSnapshotPending) {
+    const previous = annotation.projectedSnapshot;
+    return previous.worldX === annotation.worldScratch[0] &&
+      previous.worldY === annotation.worldScratch[1] &&
+      previous.worldZ === annotation.worldScratch[2];
+  }
+  const previous = annotation.snapshot.worldPosition;
+  return Boolean(
+    previous &&
+    previous[0] === annotation.worldScratch[0] &&
+    previous[1] === annotation.worldScratch[1] &&
+    previous[2] === annotation.worldScratch[2]
+  );
+}
+
+function canReuseStoredWorldMarker(annotation: AnnotationState, projectionContextChanged: boolean): boolean {
+  return (
+    annotation.kind === "marker" &&
+    annotation.anchor.kind === "world" &&
+    !projectionContextChanged &&
+    !annotation.definitionDirty &&
+    latestRequestedVisible(annotation) &&
+    latestWorldPositionAvailable(annotation) &&
+    !(annotation.occlusionMode !== "none" && annotation.layer.options.occlusionProvider)
+  );
+}
+
+function canBatchProjectedMarker(annotation: MarkerState): boolean {
+  return !annotation.definitionDirty &&
+    !annotation.clampToViewport &&
+    annotation.layer.backend.updateMarkerPositions !== undefined;
+}
+
+function queueProjectedMarker(
+  marker: MarkerState,
+  x: number,
+  y: number,
+  depth: number,
+  updates: MutableBackendMarkerPositionUpdate[]
+): void {
+  const update = marker.positionUpdate;
+  update.rendered = true;
+  update.x = x;
+  update.y = y;
+  updates.push(update);
+  const projected = marker.projectedSnapshot;
+  projected.worldX = marker.worldScratch[0] ?? 0;
+  projected.worldY = marker.worldScratch[1] ?? 0;
+  projected.worldZ = marker.worldScratch[2] ?? 0;
+  projected.screenX = x;
+  projected.screenY = y;
+  projected.depth = depth;
+  projected.boundsWidth = marker.size;
+  projected.boundsHeight = marker.size;
+  projected.boundsX = x - marker.size * 0.5;
+  projected.boundsY = y - marker.size * 0.5;
+  marker.projectedSnapshotPending = true;
+}
+
+function materializeProjectedMarkerSnapshot(marker: MarkerState): void {
+  const projected = marker.projectedSnapshot;
+  marker.snapshot = Object.freeze({
+    id: marker.handle.id,
+    type: "marker",
+    requestedVisible: true,
+    rendered: true,
+    occluded: marker.occluded,
+    hiddenReason: "none",
+    worldPosition: Object.freeze([projected.worldX, projected.worldY, projected.worldZ]) as readonly [number, number, number],
+    screenPosition: Object.freeze({ x: projected.screenX, y: projected.screenY }),
+    unclampedScreenPosition: Object.freeze({ x: projected.screenX, y: projected.screenY }),
+    layoutOffset: Object.freeze({ x: 0, y: 0 }),
+    depth: projected.depth,
+    bounds: createDomRect(projected.boundsX, projected.boundsY, projected.boundsWidth, projected.boundsHeight)
+  });
+  marker.projectedSnapshotPending = false;
+}
+
+function latestRequestedVisible(annotation: AnnotationState): boolean {
+  return annotation.kind === "marker" && annotation.projectedSnapshotPending
+    ? true
+    : annotation.snapshot.requestedVisible;
+}
+
+function latestRendered(annotation: AnnotationState): boolean {
+  return annotation.kind === "marker" && annotation.projectedSnapshotPending
+    ? true
+    : annotation.snapshot.rendered;
+}
+
+function latestHiddenReason(annotation: AnnotationState): AnnotationHiddenReason {
+  return annotation.kind === "marker" && annotation.projectedSnapshotPending
+    ? "none"
+    : annotation.snapshot.hiddenReason;
+}
+
+function latestWorldPositionAvailable(annotation: AnnotationState): boolean {
+  return annotation.kind === "marker" && annotation.projectedSnapshotPending
+    ? true
+    : annotation.snapshot.worldPosition !== null;
+}
+
+function valuesChanged(previous: ArrayLike<number>, current: ArrayLike<number>): boolean {
+  if (previous.length !== current.length) return true;
+  for (let index = 0; index < current.length; index++) {
+    if (previous[index] !== current[index]) return true;
+  }
+  return false;
+}
+
+function copyValues(target: Float64Array, source: ArrayLike<number>): void {
+  for (let index = 0; index < target.length; index++) target[index] = source[index] ?? 0;
 }
 
 function applyLabelCollisions(
@@ -771,6 +1055,7 @@ function hideAnnotation(
   world?: ArrayLike<number>,
   occluded = false
 ): void {
+  if (annotation.kind === "marker") annotation.projectedSnapshotPending = false;
   setOccluded(annotation, occluded);
   updateBackend(annotation, false, null);
   annotation.snapshot = Object.freeze({
@@ -830,7 +1115,13 @@ function definitionForState(annotation: AnnotationState): BackendAnnotationDefin
         text: annotation.text,
         ...(annotation.leaderLine ? { leaderLine: annotation.leaderLine } : {})
       }
-    : { ...common, type: "marker", shape: annotation.shape, size: annotation.size };
+    : {
+        ...common,
+        type: "marker",
+        shape: annotation.shape,
+        size: annotation.size,
+        ...(annotation.animation ? { animation: annotation.animation } : {})
+      };
 }
 
 function createDefinition(
@@ -839,7 +1130,7 @@ function createDefinition(
   options: LabelOptions | MarkerOptions,
   specific:
     | { text: string; leaderLine?: Readonly<LeaderLineOptions> }
-    | { shape: MarkerShape; size: number }
+    | { shape: MarkerShape; size: number; animation?: Readonly<MarkerAnimationOptions> }
 ): BackendAnnotationDefinition {
   return {
     id,
@@ -956,6 +1247,25 @@ function normalizeLeaderLine(
     lineCap,
     minLength
   });
+}
+
+function normalizeMarkerAnimation(
+  value: MarkerAnimationOptions | undefined
+): Readonly<MarkerAnimationOptions> | undefined {
+  if (!value) return undefined;
+  if (value.type !== "pulse") throw new AnnotatorError(`Unknown marker animation "${String(value.type)}"`);
+  const frequency = value.frequency ?? 1;
+  const phase = value.phase ?? 0;
+  const minOpacity = value.minOpacity ?? 0.35;
+  const maxOpacity = value.maxOpacity ?? 1;
+  assertPositive(frequency, "Marker pulse frequency");
+  if (!Number.isFinite(phase)) throw new AnnotatorError("Marker pulse phase must be finite");
+  assertOpacity(minOpacity, "Marker pulse minimum opacity");
+  assertOpacity(maxOpacity, "Marker pulse maximum opacity");
+  if (minOpacity > maxOpacity) {
+    throw new AnnotatorError("Marker pulse minimum opacity cannot exceed maximum opacity");
+  }
+  return Object.freeze({ type: "pulse", frequency, phase, minOpacity, maxOpacity });
 }
 
 function validateDistances(minimum: number | undefined, maximum: number | undefined): void {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  BackendMarkerPositionUpdate,
   AnnotationOcclusionProvider,
   AnnotationOcclusionRequest,
   AnnotationOcclusionState
@@ -658,5 +659,149 @@ describe("annotation core", () => {
     api.disposeAnnotationLayer(layer);
     expect(backend.disposed).toBe(true);
     expect(() => api.updateAnnotationLayer(layer)).toThrow(/disposed/);
+  });
+
+  it("normalizes marker pulse animation and validates its opacity range", async () => {
+    const api = await import("../../src/index.js");
+    const backend = new FakeBackend();
+    const layer = api.createAnnotationLayer({
+      scene: {} as never,
+      camera: {} as never,
+      canvas: fakeCanvas(),
+      backend
+    });
+    const marker = api.createMarker(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      animation: { type: "pulse", frequency: 2, phase: 0.25 }
+    });
+    expect(backend.resources[0]?.definition.animation).toEqual({
+      type: "pulse",
+      frequency: 2,
+      phase: 0.25,
+      minOpacity: 0.35,
+      maxOpacity: 1
+    });
+    api.updateMarker(marker, { animation: null });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.update?.animation).toBeUndefined();
+    expect(() => api.createMarker(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      animation: { type: "pulse", minOpacity: 0.9, maxOpacity: 0.2 }
+    })).toThrow(/cannot exceed/);
+    api.disposeAnnotationLayer(layer);
+  });
+
+  it("skips unchanged marker projection writes and invalidates on anchor or definition changes", async () => {
+    const api = await import("../../src/index.js");
+    const backend = new FakeBackend();
+    const camera = { viewport: { x: 0, y: 0, width: 1, height: 1 } };
+    const layer = api.createAnnotationLayer({
+      scene: {} as never,
+      camera: camera as never,
+      canvas: fakeCanvas(),
+      backend
+    });
+    const marker = api.createMarker(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      animation: { type: "pulse" }
+    });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(1);
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(1);
+
+    camera.viewport.width = 0.9;
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(2);
+    api.setAnnotationAnchor(marker, { kind: "world", position: [0.25, 0, 0.5] });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(3);
+    api.updateMarker(marker, { style: { color: "#72e6ff" } });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(4);
+
+    api.setAnnotationVisible(marker, false);
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(5);
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(5);
+
+    const worldMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+    api.createMarker(layer, {
+      anchor: { kind: "mesh", mesh: { worldMatrix, visible: true } as never, point: [0, 0, 0.5] }
+    });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[1]?.updates).toBe(1);
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[1]?.updates).toBe(1);
+    worldMatrix[12] = 0.2;
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[1]?.updates).toBe(2);
+    api.disposeAnnotationLayer(layer);
+  });
+
+  it("keeps unchanged markers live while asynchronous occlusion is active", async () => {
+    const api = await import("../../src/index.js");
+    const backend = new FakeBackend();
+    const provider: AnnotationOcclusionProvider = {
+      getResult: () => "visible",
+      update() {},
+      dispose() {}
+    };
+    const layer = api.createAnnotationLayer({
+      scene: {} as never,
+      camera: {} as never,
+      canvas: fakeCanvas(),
+      backend,
+      occlusionProvider: provider
+    });
+    api.createMarker(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      occlusion: "fade"
+    });
+    api.updateAnnotationLayer(layer);
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(2);
+    api.disposeAnnotationLayer(layer);
+  });
+
+  it("batches clean camera-projected markers and materializes immutable snapshots on demand", async () => {
+    const api = await import("../../src/index.js");
+    class BatchBackend extends FakeBackend {
+      readonly batches: Array<Array<{ x: number; y: number; rendered: boolean }>> = [];
+      updateMarkerPositions(updates: readonly BackendMarkerPositionUpdate[]): void {
+        this.batches.push(updates.map(({ x, y, rendered }) => ({ x, y, rendered })));
+      }
+    }
+    const backend = new BatchBackend();
+    const camera = { viewport: { x: 0, y: 0, width: 1, height: 1 } };
+    const layer = api.createAnnotationLayer({
+      scene: {} as never,
+      camera: camera as never,
+      canvas: fakeCanvas(),
+      backend
+    });
+    const marker = api.createMarker(layer, {
+      anchor: { kind: "world", position: [0, 0, 0.5] },
+      size: 14
+    });
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(1);
+
+    camera.viewport.width = 0.8;
+    api.updateAnnotationLayer(layer);
+    expect(backend.resources[0]?.updates).toBe(1);
+    expect(backend.batches).toEqual([[{ x: 40, y: 50, rendered: true }]]);
+    const snapshot = api.getAnnotationSnapshot(marker);
+    expect(snapshot.screenPosition).toEqual({ x: 40, y: 50 });
+    expect(snapshot.bounds).toEqual(expect.objectContaining({ x: 33, y: 43, width: 14, height: 14 }));
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.screenPosition)).toBe(true);
+    api.disposeAnnotationLayer(layer);
   });
 });

@@ -1,10 +1,12 @@
 import {
   addSprite2D,
+  addSpriteRendererLayer,
   appendSpriteAtlasFrames,
   addTextRendererLayer,
   createDefaultTextData,
   createGlyphStorage,
   createSprite2DLayer,
+  createSprite2DCustomShader,
   createSpriteAtlasFromFrames,
   createSpriteRenderer,
   createTextData,
@@ -20,6 +22,7 @@ import {
   registerSpriteRenderer,
   registerTextRenderer,
   removeSprite2D,
+  removeSpriteRendererLayer,
   removeTextRendererLayer,
   srgbByteToLinear,
   spriteBlendPremultiplied,
@@ -35,6 +38,7 @@ import {
   type PlacedGlyph,
   type SurfaceContext,
   type Sprite2DHandle,
+  type Sprite2DCustomShader,
   type Sprite2DLayer,
   type SpriteAtlas,
   type SpriteRenderer,
@@ -48,7 +52,9 @@ import type {
   AnnotationViewport,
   BackendAnnotationDefinition,
   BackendAnnotationUpdate,
+  BackendMarkerPositionUpdate,
   BackendBounds,
+  MarkerAnimationOptions,
   MarkerShape
 } from "./types.js";
 import { guardedPrivateLayoutText, type PrivateTextLayoutResult } from "./textrender-private.js";
@@ -95,14 +101,18 @@ export interface TextRendererAnnotationBackendStats {
   readonly privateFallbacks: number;
   readonly liveLabels: number;
   readonly spriteRendererActive: boolean;
+  readonly spriteBuckets: number;
+  readonly spriteDrawCalls: number;
   readonly textBuckets: number;
   readonly textDrawCalls: number;
   readonly liveLeaderLines: number;
   readonly leaderLineSprites: number;
   readonly leaderLineDrawCalls: number;
   readonly liveMarkers: number;
+  readonly liveAnimatedMarkers: number;
   readonly markerSprites: number;
   readonly markerDrawCalls: number;
+  readonly animatedMarkerDrawCalls: number;
 }
 
 export interface TextRendererAnnotationBackend extends AnnotationBackend {
@@ -154,6 +164,7 @@ interface MarkerResource {
   readonly kind: "marker";
   disposed: boolean;
   sprite: Sprite2DHandle;
+  bucket: SpriteBucket;
   frame: number;
   size: number;
   opacity: number;
@@ -161,6 +172,8 @@ interface MarkerResource {
   screenX: number;
   screenY: number;
   bounds: BackendBounds | null;
+  zIndex: number;
+  animation: ResolvedMarkerPulse | null;
 }
 
 type AnnotationResource = TextResource | MarkerResource;
@@ -173,15 +186,26 @@ interface LeaderLineResource {
   color: readonly [number, number, number, number];
   width: number;
   visible: boolean;
+  bucket: SpriteBucket;
+  zIndex: number;
+}
+
+interface SpriteBucket {
+  readonly zIndex: number;
+  readonly lineLayer: Sprite2DLayer;
+  readonly markerLayer: Sprite2DLayer;
+  animatedMarkerLayer: Sprite2DLayer | null;
+  lineResources: number;
+  markerResources: number;
+  visibleLines: number;
+  visibleMarkers: number;
+  visibleAnimatedMarkers: number;
 }
 
 interface SpriteRendererState {
   readonly atlas: SpriteAtlas;
-  readonly lineLayer: Sprite2DLayer;
-  readonly markerLayer: Sprite2DLayer;
   readonly renderer: SpriteRenderer;
-  visibleLines: number;
-  visibleMarkers: number;
+  readonly buckets: Map<number, SpriteBucket>;
 }
 
 interface MutableStats {
@@ -194,7 +218,15 @@ interface MutableStats {
   liveLeaderLines: number;
   leaderLineSprites: number;
   liveMarkers: number;
+  liveAnimatedMarkers: number;
   markerSprites: number;
+}
+
+interface ResolvedMarkerPulse {
+  readonly frequency: number;
+  readonly phase: number;
+  readonly minOpacity: number;
+  readonly maxOpacity: number;
 }
 
 const CURVE_SET_ID: CurveSetId = "@litools/annotator/textrender";
@@ -248,12 +280,14 @@ export function createTextRendererAnnotationBackend(
     liveLeaderLines: 0,
     leaderLineSprites: 0,
     liveMarkers: 0,
+    liveAnimatedMarkers: 0,
     markerSprites: 0
   };
   let privateAvailable = requestedMode === "guarded-private";
   let disposed = false;
   let viewportScale = 1;
   let spriteState: SpriteRendererState | null = null;
+  let markerPulseShader: Sprite2DCustomShader | null = null;
   const markerFrameCache = new Map<string, number>();
   const defaultColor = resolveColor(options.defaultColor ?? "#ffffff");
 
@@ -336,6 +370,11 @@ export function createTextRendererAnnotationBackend(
       updateLeaderLineGeometry(target, rendered ? update.leaderLineGeometry ?? null : null);
     },
 
+    updateMarkerPositions(updates) {
+      assertUsable();
+      updateMarkerPositions(updates);
+    },
+
     measure(resource) {
       assertUsable();
       return requireResource(resource).bounds;
@@ -346,8 +385,11 @@ export function createTextRendererAnnotationBackend(
       viewportScale = resolveViewportScale(options.surface, viewport);
       for (const bucket of buckets.values()) bucket.layer.scale = viewportScale;
       if (spriteState) {
-        spriteState.lineLayer.view.zoom = viewportScale;
-        spriteState.markerLayer.view.zoom = viewportScale;
+        for (const bucket of spriteState.buckets.values()) {
+          bucket.lineLayer.view.zoom = viewportScale;
+          bucket.markerLayer.view.zoom = viewportScale;
+          if (bucket.animatedMarkerLayer) bucket.animatedMarkerLayer.view.zoom = viewportScale;
+        }
       }
     },
 
@@ -373,6 +415,7 @@ export function createTextRendererAnnotationBackend(
       stats.liveLeaderLines = 0;
       stats.leaderLineSprites = 0;
       stats.liveMarkers = 0;
+      stats.liveAnimatedMarkers = 0;
       stats.markerSprites = 0;
       disposeTextRenderer(renderer);
       if (spriteState) {
@@ -400,14 +443,18 @@ export function createTextRendererAnnotationBackend(
         privateFallbacks: stats.privateFallbacks,
         liveLabels: stats.liveLabels,
         spriteRendererActive: spriteState !== null,
+        spriteBuckets: spriteState?.buckets.size ?? 0,
+        spriteDrawCalls: countSpriteDrawCalls(),
         textBuckets: buckets.size,
         textDrawCalls: buckets.size,
         liveLeaderLines: stats.liveLeaderLines,
         leaderLineSprites: stats.leaderLineSprites,
-        leaderLineDrawCalls: spriteState && spriteState.visibleLines > 0 ? 1 : 0,
+        leaderLineDrawCalls: countVisibleSpriteBuckets("line"),
         liveMarkers: stats.liveMarkers,
+        liveAnimatedMarkers: stats.liveAnimatedMarkers,
         markerSprites: stats.markerSprites,
-        markerDrawCalls: spriteState && spriteState.visibleMarkers > 0 ? 1 : 0
+        markerDrawCalls: countMarkerDrawCalls(),
+        animatedMarkerDrawCalls: countAnimatedMarkerDrawCalls()
       });
     },
 
@@ -446,28 +493,106 @@ export function createTextRendererAnnotationBackend(
   function ensureSpriteRenderer(): SpriteRendererState {
     if (spriteState) return spriteState;
     const atlas = createSpriteAtlas(options.surface);
-    const lineLayer = createSprite2DLayer(atlas, {
-      capacity: 64,
-      blendMode: spriteBlendPremultiplied,
-      pivot: [0.5, 0.5],
-      order: 0,
-      visible: false,
-      view: { zoom: viewportScale }
-    });
-    const markerLayer = createSprite2DLayer(atlas, {
-      capacity: 64,
-      blendMode: spriteBlendPremultiplied,
-      pivot: [0.5, 0.5],
-      order: 1,
-      visible: false,
-      view: { zoom: viewportScale }
-    });
-    const spriteRenderer = createSpriteRenderer(options.surface, { layers: [lineLayer, markerLayer], clear: false });
+    const spriteRenderer = createSpriteRenderer(options.surface, { layers: [], clear: false });
     unregisterTextRenderer(renderer);
     registerSpriteRenderer(spriteRenderer);
     registerTextRenderer(renderer);
-    spriteState = { atlas, lineLayer, markerLayer, renderer: spriteRenderer, visibleLines: 0, visibleMarkers: 0 };
+    spriteState = { atlas, renderer: spriteRenderer, buckets: new Map() };
     return spriteState;
+  }
+
+  function getSpriteBucket(zIndex: number): SpriteBucket {
+    const state = ensureSpriteRenderer();
+    const existing = state.buckets.get(zIndex);
+    if (existing) return existing;
+    const lineLayer = createSprite2DLayer(state.atlas, {
+      capacity: 64,
+      blendMode: spriteBlendPremultiplied,
+      pivot: [0.5, 0.5],
+      order: zIndex,
+      visible: false,
+      view: { zoom: viewportScale }
+    });
+    const markerLayer = createSprite2DLayer(state.atlas, {
+      capacity: 64,
+      blendMode: spriteBlendPremultiplied,
+      pivot: [0.5, 0.5],
+      order: zIndex,
+      visible: false,
+      view: { zoom: viewportScale }
+    });
+    const bucket: SpriteBucket = {
+      zIndex,
+      lineLayer,
+      markerLayer,
+      animatedMarkerLayer: null,
+      lineResources: 0,
+      markerResources: 0,
+      visibleLines: 0,
+      visibleMarkers: 0,
+      visibleAnimatedMarkers: 0
+    };
+    state.buckets.set(zIndex, bucket);
+    addSpriteRendererLayer(state.renderer, lineLayer);
+    addSpriteRendererLayer(state.renderer, markerLayer);
+    return bucket;
+  }
+
+  function releaseSpriteBucket(bucket: SpriteBucket): void {
+    if (!spriteState || bucket.lineResources !== 0 || bucket.markerResources !== 0) return;
+    removeSpriteRendererLayer(spriteState.renderer, bucket.lineLayer);
+    removeSpriteRendererLayer(spriteState.renderer, bucket.markerLayer);
+    if (bucket.animatedMarkerLayer) removeSpriteRendererLayer(spriteState.renderer, bucket.animatedMarkerLayer);
+    spriteState.buckets.delete(bucket.zIndex);
+  }
+
+  function getAnimatedMarkerLayer(bucket: SpriteBucket): Sprite2DLayer {
+    if (bucket.animatedMarkerLayer) return bucket.animatedMarkerLayer;
+    markerPulseShader ??= createSprite2DCustomShader({
+      fragment: `
+let texel = textureSample(atlasTex, atlasSamp, in.uv);
+let wave = 0.5 + 0.5 * sin(6.28318530718 * (fx.time * in.tint.y + in.tint.x));
+let opacity = mix(in.tint.z, in.tint.w, wave);
+return texel * opacity * L.opacityMul;`
+    });
+    const layer = createSprite2DLayer(ensureSpriteRenderer().atlas, {
+      capacity: 64,
+      blendMode: spriteBlendPremultiplied,
+      pivot: [0.5, 0.5],
+      order: bucket.zIndex,
+      visible: false,
+      view: { zoom: viewportScale },
+      customShader: markerPulseShader
+    });
+    bucket.animatedMarkerLayer = layer;
+    addSpriteRendererLayer(ensureSpriteRenderer().renderer, layer);
+    return layer;
+  }
+
+  function countVisibleSpriteBuckets(kind: "line" | "marker"): number {
+    if (!spriteState) return 0;
+    let count = 0;
+    for (const bucket of spriteState.buckets.values()) {
+      if (kind === "line" ? bucket.visibleLines > 0 : bucket.visibleMarkers > 0) count++;
+    }
+    return count;
+  }
+
+  function countAnimatedMarkerDrawCalls(): number {
+    if (!spriteState) return 0;
+    let count = 0;
+    for (const bucket of spriteState.buckets.values()) {
+      if (bucket.visibleAnimatedMarkers > 0) count++;
+    }
+    return count;
+  }
+
+  function countMarkerDrawCalls(): number {
+    return countVisibleSpriteBuckets("marker") + countAnimatedMarkerDrawCalls();
+  }
+
+  function countSpriteDrawCalls(): number {
+    return countVisibleSpriteBuckets("line") + countMarkerDrawCalls();
   }
 
   function syncLeaderLineDefinition(
@@ -493,19 +618,20 @@ export function createTextRendererAnnotationBackend(
     const alpha = base[3] * opacity;
     const color = Object.freeze([base[0] * alpha, base[1] * alpha, base[2] * alpha, alpha] as const);
     let line = resource.leaderLine;
-    if (!line || line.cap !== cap) {
+    if (!line || line.cap !== cap || line.zIndex !== definition.zIndex) {
       removeLeaderLine(resource);
       const count = cap === "round" ? 3 : 1;
-      const state = ensureSpriteRenderer();
-      const sprites = Array.from({ length: count }, (_, index) => addSprite2D(state.lineLayer, {
+      const bucket = getSpriteBucket(definition.zIndex);
+      const sprites = Array.from({ length: count }, (_, index) => addSprite2D(bucket.lineLayer, {
         positionPx: [0, 0],
         sizePx: [0, 0],
         frame: cap === "round" && index > 0 ? 1 : 0,
         color: [...color],
         visible: false
       }));
-      line = { cap, sprites, color, width, visible: false };
+      line = { cap, sprites, color, width, visible: false, bucket, zIndex: definition.zIndex };
       resource.leaderLine = line;
+      bucket.lineResources++;
       stats.liveLeaderLines++;
       stats.leaderLineSprites += sprites.length;
     } else {
@@ -564,9 +690,9 @@ export function createTextRendererAnnotationBackend(
   }
 
   function setLeaderLineVisible(line: LeaderLineResource, visible: boolean): void {
-    if (line.visible !== visible && spriteState) spriteState.visibleLines += visible ? 1 : -1;
+    if (line.visible !== visible) line.bucket.visibleLines += visible ? 1 : -1;
     line.visible = visible;
-    if (spriteState) spriteState.lineLayer.visible = spriteState.visibleLines > 0;
+    line.bucket.lineLayer.visible = line.bucket.visibleLines > 0;
     if (!visible) {
       for (const sprite of line.sprites) updateSprite2D(sprite, { visible: false });
     }
@@ -575,40 +701,48 @@ export function createTextRendererAnnotationBackend(
   function removeLeaderLine(resource: TextResource): void {
     const line = resource.leaderLine;
     if (!line) return;
-    if (line.visible && spriteState) spriteState.visibleLines--;
+    if (line.visible) line.bucket.visibleLines--;
     for (const sprite of line.sprites) removeSprite2D(sprite);
+    line.bucket.lineResources--;
     stats.liveLeaderLines--;
     stats.leaderLineSprites -= line.sprites.length;
     resource.leaderLine = null;
-    if (spriteState) spriteState.lineLayer.visible = spriteState.visibleLines > 0;
+    line.bucket.lineLayer.visible = line.bucket.visibleLines > 0;
+    releaseSpriteBucket(line.bucket);
   }
 
   function createMarkerResource(definition: BackendAnnotationDefinition): MarkerResource {
     const size = definition.size ?? 12;
     const frame = resolveMarkerFrame(definition, size);
     const opacity = resolveMarkerOpacity(definition);
-    const state = ensureSpriteRenderer();
-    const sprite = addSprite2D(state.markerLayer, {
+    const animation = resolveMarkerAnimation(definition.animation);
+    const bucket = getSpriteBucket(definition.zIndex);
+    const sprite = addSprite2D(markerLayerFor(bucket, animation), {
       positionPx: [0, 0],
       sizePx: [size, size],
       frame,
-      color: [opacity, opacity, opacity, opacity],
+      color: markerSpriteColor(opacity, animation),
       visible: false
     });
     const resource: MarkerResource = {
       kind: "marker",
       disposed: false,
       sprite,
+      bucket,
       frame,
       size,
       opacity,
       rendered: false,
       screenX: 0,
       screenY: 0,
-      bounds: null
+      bounds: null,
+      zIndex: definition.zIndex,
+      animation
     };
+    bucket.markerResources++;
     resources.add(resource);
     stats.liveMarkers++;
+    if (animation) stats.liveAnimatedMarkers++;
     stats.markerSprites++;
     return resource;
   }
@@ -618,18 +752,22 @@ export function createTextRendererAnnotationBackend(
     const size = update.size ?? 12;
     const frame = update.definitionChanged ? resolveMarkerFrame(update, size) : resource.frame;
     const opacity = update.definitionChanged ? resolveMarkerOpacity(update) : resource.opacity;
+    const animation = update.definitionChanged ? resolveMarkerAnimation(update.animation) : resource.animation;
     const rendered = update.rendered && update.screenPosition !== null;
     const screenX = update.screenPosition?.x ?? resource.screenX;
     const screenY = update.screenPosition?.y ?? resource.screenY;
+    if (update.zIndex !== resource.zIndex || Boolean(animation) !== Boolean(resource.animation)) {
+      moveMarkerToBucket(resource, update.zIndex, animation);
+    }
     updateSprite2D(resource.sprite, {
       positionPx: [screenX, screenY],
       sizePx: [size, size],
       frame,
-      color: [opacity, opacity, opacity, opacity],
+      color: markerSpriteColor(opacity, animation),
       visible: rendered
     });
-    if (resource.rendered !== rendered && spriteState) spriteState.visibleMarkers += rendered ? 1 : -1;
-    if (spriteState) spriteState.markerLayer.visible = spriteState.visibleMarkers > 0;
+    if (resource.rendered !== rendered) adjustMarkerVisibility(resource, rendered ? 1 : -1);
+    syncMarkerLayerVisibility(resource.bucket);
     resource.frame = frame;
     resource.size = size;
     resource.opacity = opacity;
@@ -637,18 +775,100 @@ export function createTextRendererAnnotationBackend(
     resource.screenX = screenX;
     resource.screenY = screenY;
     resource.bounds = rendered ? centeredBounds(screenX, screenY, size, size) : null;
+    resource.zIndex = update.zIndex;
+    resource.animation = animation;
+  }
+
+  function updateMarkerPositions(updates: readonly BackendMarkerPositionUpdate[]): void {
+    const position: [number, number] = [0, 0];
+    const patch = { positionPx: position, visible: true };
+    for (const update of updates) {
+      const resource = requireResource(update.resource);
+      if (resource.kind !== "marker") throw new AnnotatorError("Position batches only accept marker resources");
+      position[0] = update.x;
+      position[1] = update.y;
+      patch.visible = update.rendered;
+      updateSprite2D(resource.sprite, patch);
+      if (resource.rendered !== update.rendered) adjustMarkerVisibility(resource, update.rendered ? 1 : -1);
+      resource.rendered = update.rendered;
+      resource.screenX = update.x;
+      resource.screenY = update.y;
+      resource.bounds = update.rendered
+        ? centeredBounds(update.x, update.y, resource.size, resource.size)
+        : null;
+    }
+    for (const bucket of spriteState?.buckets.values() ?? []) syncMarkerLayerVisibility(bucket);
+  }
+
+  function moveMarkerToBucket(
+    resource: MarkerResource,
+    zIndex: number,
+    animation: ResolvedMarkerPulse | null
+  ): void {
+    const previous = resource.bucket;
+    if (resource.rendered) adjustMarkerVisibility(resource, -1);
+    removeSprite2D(resource.sprite);
+    previous.markerResources--;
+    syncMarkerLayerVisibility(previous);
+    const next = getSpriteBucket(zIndex);
+    if (Boolean(resource.animation) !== Boolean(animation)) {
+      stats.liveAnimatedMarkers += animation ? 1 : -1;
+    }
+    resource.animation = animation;
+    resource.sprite = addSprite2D(markerLayerFor(next, animation), {
+      positionPx: [resource.screenX, resource.screenY],
+      sizePx: [resource.size, resource.size],
+      frame: resource.frame,
+      color: markerSpriteColor(resource.opacity, animation),
+      visible: false
+    });
+    resource.bucket = next;
+    resource.rendered = false;
+    resource.zIndex = zIndex;
+    next.markerResources++;
+    releaseSpriteBucket(previous);
   }
 
   function removeMarkerResource(resource: MarkerResource): void {
-    if (resource.rendered && spriteState) spriteState.visibleMarkers--;
+    if (resource.rendered) adjustMarkerVisibility(resource, -1);
     removeSprite2D(resource.sprite);
+    resource.bucket.markerResources--;
     resource.disposed = true;
     resource.rendered = false;
     resource.bounds = null;
     resources.delete(resource);
     stats.liveMarkers--;
+    if (resource.animation) stats.liveAnimatedMarkers--;
     stats.markerSprites--;
-    if (spriteState) spriteState.markerLayer.visible = spriteState.visibleMarkers > 0;
+    syncMarkerLayerVisibility(resource.bucket);
+    releaseSpriteBucket(resource.bucket);
+  }
+
+  function markerLayerFor(bucket: SpriteBucket, animation: ResolvedMarkerPulse | null): Sprite2DLayer {
+    return animation ? getAnimatedMarkerLayer(bucket) : bucket.markerLayer;
+  }
+
+  function adjustMarkerVisibility(resource: MarkerResource, delta: 1 | -1): void {
+    if (resource.animation) resource.bucket.visibleAnimatedMarkers += delta;
+    else resource.bucket.visibleMarkers += delta;
+  }
+
+  function syncMarkerLayerVisibility(bucket: SpriteBucket): void {
+    bucket.markerLayer.visible = bucket.visibleMarkers > 0;
+    if (bucket.animatedMarkerLayer) bucket.animatedMarkerLayer.visible = bucket.visibleAnimatedMarkers > 0;
+  }
+
+  function markerSpriteColor(
+    opacity: number,
+    animation: ResolvedMarkerPulse | null
+  ): [number, number, number, number] {
+    if (!animation) return [opacity, opacity, opacity, opacity];
+    return [
+      animation.phase,
+      animation.frequency,
+      animation.minOpacity * opacity,
+      animation.maxOpacity * opacity
+    ];
   }
 
   function resolveMarkerFrame(
@@ -694,6 +914,30 @@ export function createTextRendererAnnotationBackend(
       throw new AnnotatorError("Marker opacity must be between 0 and 1");
     }
     return opacity;
+  }
+
+  function resolveMarkerAnimation(
+    animation: Readonly<MarkerAnimationOptions> | undefined
+  ): ResolvedMarkerPulse | null {
+    if (!animation) return null;
+    if (animation.type !== "pulse") {
+      throw new AnnotatorError(`Unknown GPU marker animation "${String(animation.type)}"`);
+    }
+    const frequency = animation.frequency ?? 1;
+    const phase = animation.phase ?? 0;
+    const minOpacity = animation.minOpacity ?? 0.35;
+    const maxOpacity = animation.maxOpacity ?? 1;
+    assertPositiveFinite(frequency, "Marker pulse frequency");
+    if (!Number.isFinite(phase)) throw new AnnotatorError("Marker pulse phase must be finite");
+    for (const [name, value] of [["minimum", minOpacity], ["maximum", maxOpacity]] as const) {
+      if (!Number.isFinite(value) || value < 0 || value > 1) {
+        throw new AnnotatorError(`Marker pulse ${name} opacity must be between 0 and 1`);
+      }
+    }
+    if (minOpacity > maxOpacity) {
+      throw new AnnotatorError("Marker pulse minimum opacity cannot exceed maximum opacity");
+    }
+    return Object.freeze({ frequency, phase, minOpacity, maxOpacity });
   }
 
   function shape(text: string, fontSize: number): ShapedLabel {
