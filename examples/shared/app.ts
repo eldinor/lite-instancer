@@ -1,4 +1,3 @@
-import * as liteRuntime from "@babylonjs/lite";
 import {
   addToScene,
   attachControl,
@@ -19,8 +18,9 @@ import {
   type SceneNode,
   type StandardMaterialProps
 } from "@babylonjs/lite";
-import { showLiteExplorer, type LiteExplorerHandle } from "babylon-lite-explorer";
+import type { LiteExplorerHandle } from "babylon-lite-explorer";
 import { PickingRegistry, type InstancePick } from "../../src/index.js";
+import { examplePath, getExampleNeighbors, type ExampleCatalogEntry } from "./catalog.js";
 import "./styles.css";
 
 export interface ExampleContext {
@@ -93,7 +93,55 @@ export async function createExample(title: string, options: CreateExampleOptions
 
 export async function runExample(ctx: ExampleContext): Promise<void> {
   await registerScene(ctx.scene);
-  const explorer = showLiteExplorer(
+  attachExplorerButton(ctx);
+  ctx.panel.set("status", "running");
+  await startEngine(ctx.engine);
+}
+
+function attachExplorerButton(ctx: ExampleContext): void {
+  let explorer: LiteExplorerHandle | undefined;
+  let loading: Promise<LiteExplorerHandle> | undefined;
+  let open = false;
+  const button = ctx.panel.button("explorer", () => {
+    if (explorer) {
+      open = !open;
+      button.setAttribute("aria-pressed", String(open));
+      if (open) {
+        explorer.show();
+        void explorer.refresh();
+      } else {
+        explorer.hide();
+      }
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "loading explorer";
+    loading ??= createExplorer(ctx);
+    void loading.then((loaded) => {
+      explorer = loaded;
+      open = true;
+      button.disabled = false;
+      button.textContent = "explorer";
+      button.setAttribute("aria-pressed", "true");
+      explorer.show();
+      return explorer.refresh();
+    }).catch((error: unknown) => {
+      loading = undefined;
+      button.disabled = false;
+      button.textContent = "retry explorer";
+      ctx.panel.set("explorer", `failed: ${String(error)}`);
+    });
+  });
+  button.setAttribute("aria-pressed", "false");
+}
+
+async function createExplorer(ctx: ExampleContext): Promise<LiteExplorerHandle> {
+  const [{ showLiteExplorer }, liteRuntime] = await Promise.all([
+    import("babylon-lite-explorer"),
+    import("@babylonjs/lite")
+  ]);
+  return showLiteExplorer(
     { engine: ctx.engine, scene: ctx.scene, canvas: ctx.canvas, lite: liteRuntime },
     {
       mode: "overlay",
@@ -105,31 +153,12 @@ export async function runExample(ctx: ExampleContext): Promise<void> {
       title: "Lite Explorer"
     }
   );
-  attachExplorerButton(ctx.panel, explorer);
-  ctx.panel.set("status", "running");
-  await startEngine(ctx.engine);
-}
-
-function attachExplorerButton(panel: DebugPanel, explorer: LiteExplorerHandle): void {
-  let open = false;
-  panel.button("explorer", () => {
-    open = !open;
-    if (open) {
-      explorer.show();
-      void explorer.refresh();
-      return;
-    }
-    explorer.hide();
-  });
 }
 
 export function createPanel(title: string): DebugPanel {
   const root = document.createElement("section");
   root.className = "panel";
-  const homeLink = document.createElement("a");
-  homeLink.className = "panel-home";
-  homeLink.href = "/";
-  homeLink.textContent = "Examples";
+  const navigation = createExampleNavigation();
   const heading = document.createElement("h1");
   heading.textContent = title;
   const list = document.createElement("dl");
@@ -137,7 +166,7 @@ export function createPanel(title: string): DebugPanel {
   controls.className = "controls";
   const values = new Map<string, HTMLElement>();
 
-  root.append(homeLink, heading, list, controls);
+  root.append(navigation, heading, list, controls);
   root.addEventListener("pointerdown", (event) => event.stopPropagation());
   root.addEventListener("pointerup", (event) => event.stopPropagation());
   root.addEventListener("click", (event) => event.stopPropagation());
@@ -169,6 +198,59 @@ export function createPanel(title: string): DebugPanel {
       return button;
     }
   };
+}
+
+function createExampleNavigation(): HTMLElement {
+  const navigation = document.createElement("nav");
+  navigation.className = "panel-navigation";
+  navigation.setAttribute("aria-label", "Example navigation");
+
+  const homeLink = document.createElement("a");
+  homeLink.className = "panel-home";
+  homeLink.href = "/";
+  homeLink.textContent = "All examples";
+  navigation.append(homeLink);
+
+  const id = currentExampleId();
+  if (!id) return navigation;
+
+  const { previous, next } = getExampleNeighbors(id);
+  const steps = document.createElement("span");
+  steps.className = "panel-navigation__steps";
+  steps.append(
+    createNavigationStep(previous, "Previous example", "\u2190"),
+    createNavigationStep(next, "Next example", "\u2192")
+  );
+  navigation.append(steps);
+  return navigation;
+}
+
+function createNavigationStep(
+  entry: ExampleCatalogEntry | undefined,
+  label: string,
+  text: string
+): HTMLElement {
+  if (!entry) {
+    const unavailable = document.createElement("span");
+    unavailable.className = "panel-navigation__step is-unavailable";
+    unavailable.textContent = text;
+    unavailable.setAttribute("aria-hidden", "true");
+    return unavailable;
+  }
+
+  const link = document.createElement("a");
+  link.className = "panel-navigation__step";
+  link.href = examplePath(entry);
+  link.textContent = text;
+  link.setAttribute("aria-label", `${label}: ${entry.title}`);
+  link.title = entry.title;
+  return link;
+}
+
+function currentExampleId(): string | undefined {
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  const examplesIndex = segments.lastIndexOf("examples");
+  return examplesIndex >= 0 ? segments[examplesIndex + 1] : undefined;
 }
 
 export function material(color: readonly [number, number, number]): StandardMaterialProps {

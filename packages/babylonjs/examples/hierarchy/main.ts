@@ -6,6 +6,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Scene } from "@babylonjs/core/scene.js";
+import { addInspectorButton } from "../inspector.js";
 import {
   createHierarchyInstanceSet,
   createPickingRegistry,
@@ -15,6 +16,7 @@ import {
 const canvas = document.querySelector<HTMLCanvasElement>("#renderCanvas")!;
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
 const scene = new Scene(engine);
+addInspectorButton(scene);
 scene.clearColor = new Color4(0.025, 0.035, 0.06, 1);
 const camera = new ArcRotateCamera("camera", -Math.PI / 2, 1.08, 28, new Vector3(0, 0.4, 0), scene);
 camera.attachControl(canvas, true);

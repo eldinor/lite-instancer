@@ -1,0 +1,64 @@
+:root {
+  color: #eef7f4;
+  background: #07100f;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+  --surface: #0d1a18;
+  --surface-2: #13231f;
+  --line: #29413b;
+  --muted: #9baca7;
+  --mint: #5bf0bd;
+  --cyan: #71d7ff;
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; background: #07100f; }
+body { min-height: 100vh; margin: 0; background: radial-gradient(circle at 82% 4%, #153b32 0, transparent 34rem), #07100f; }
+button, input { font: inherit; }
+
+.catalog-shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 52px 0 90px; }
+.catalog-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 30px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+.catalog-kicker { margin: 0 0 12px; color: var(--mint); font: 700 12px/1 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; }
+.catalog-hero h1 { max-width: 780px; margin: 0; font-size: clamp(42px, 7vw, 78px); line-height: .94; letter-spacing: -.055em; }
+.catalog-hero h1 span { color: var(--mint); }
+.catalog-intro { max-width: 720px; margin: 22px 0 0; color: #b8c7c2; font-size: 18px; line-height: 1.55; }
+.catalog-links { display: flex; gap: 10px; }
+.catalog-links a { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; color: #dce9e5; text-decoration: none; }
+.catalog-links a:hover { border-color: var(--mint); color: var(--mint); }
+
+.catalog-toolbar { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: minmax(220px, 360px) 1fr auto; align-items: center; gap: 14px; padding: 18px 0; background: #07100fe8; backdrop-filter: blur(14px); }
+.catalog-search { width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 9px; outline: none; background: var(--surface); color: #f4fffb; }
+.catalog-search:focus-visible { border-color: var(--mint); box-shadow: 0 0 0 3px #5bf0bd24; }
+.catalog-filters { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.catalog-filter { flex: 0 0 auto; min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: #10201d; color: #aebdb8; cursor: pointer; }
+.catalog-filter:hover, .catalog-filter:focus-visible { border-color: #51746a; color: #fff; }
+.catalog-filter[aria-pressed="true"] { border-color: #5bf0bd66; background: #17392f; color: var(--mint); }
+.catalog-count { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+.catalog-group { margin-top: 34px; }
+.catalog-group h2 { margin: 0 0 13px; color: #cad8d3; font-size: 15px; letter-spacing: .02em; }
+.catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.catalog-card { display: flex; min-height: 210px; flex-direction: column; padding: 18px; border: 1px solid var(--line); border-radius: 13px; color: inherit; background: linear-gradient(145deg, var(--surface-2), #0b1614); text-decoration: none; transition: transform 150ms ease, border-color 150ms ease, background 150ms ease; }
+.catalog-card:hover, .catalog-card:focus-visible { outline: none; transform: translateY(-3px); border-color: #5bf0bd99; background: linear-gradient(145deg, #19322b, #0e1c19); }
+.catalog-card__eyebrow { color: var(--cyan); font: 700 10px/1 ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.catalog-card strong { margin-top: 17px; font-size: 21px; letter-spacing: -.025em; }
+.catalog-card__description { margin-top: 8px; color: var(--muted); line-height: 1.45; }
+.catalog-card__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 20px; }
+.catalog-card__tags small { padding: 4px 7px; border: 1px solid #ffffff12; border-radius: 5px; color: #91a39d; background: #07100f88; font-size: 10px; }
+[data-catalog][data-empty]::after { display: block; padding: 70px 0; color: var(--muted); content: "No examples match this search."; text-align: center; }
+
+@media (max-width: 860px) {
+  .catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .catalog-hero { grid-template-columns: 1fr; }
+  .catalog-toolbar { grid-template-columns: 1fr auto; }
+  .catalog-filters { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 560px) {
+  .catalog-shell { width: min(100% - 24px, 1180px); padding-top: 30px; }
+  .catalog-grid { grid-template-columns: 1fr; }
+  .catalog-card { min-height: 185px; }
+  .catalog-intro { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .catalog-card { transition: none; }
+}

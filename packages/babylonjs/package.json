@@ -59,8 +59,14 @@
     "@babylonjs/core": "^9.17.0"
   },
   "devDependencies": {
+    "@babylonjs/addons": "9.17.0",
     "@babylonjs/core": "^9.17.0",
+    "@babylonjs/gui": "9.17.0",
+    "@babylonjs/gui-editor": "9.17.0",
+    "@babylonjs/inspector": "9.17.0",
     "@babylonjs/loaders": "^9.17.0",
+    "@babylonjs/materials": "9.17.0",
+    "@babylonjs/serializers": "9.17.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "playwright": "^1.58.2",

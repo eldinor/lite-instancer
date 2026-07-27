@@ -7,6 +7,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { Scene } from "@babylonjs/core/scene.js";
+import { addInspectorButton } from "../inspector.js";
 import { registerBuiltInGLTFExtensions } from "@babylonjs/loaders/glTF/2.0/Extensions/dynamic.js";
 import { RegisterGLTF2Loader } from "@babylonjs/loaders/glTF/2.0/glTFLoader.pure.js";
 import { RegisterGLTFFileLoader } from "@babylonjs/loaders/glTF/glTFFileLoader.pure.js";
@@ -38,6 +39,7 @@ window.addEventListener("unhandledrejection", (event) => {
 
 const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
 const scene = new Scene(engine);
+addInspectorButton(scene);
 scene.clearColor = new Color4(0.09, 0.12, 0.17, 1);
 const camera = new ArcRotateCamera("camera", -Math.PI / 2, 1.12, 10, new Vector3(0, 0.9, 0), scene);
 camera.attachControl(canvas, true);

@@ -7,6 +7,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { createInstanceSet, createPickingRegistry, type InstanceId } from "@litools/instancer-babylonjs";
+import { addInspectorButton } from "../inspector.js";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#renderCanvas")!;
 const status = document.querySelector<HTMLParagraphElement>("#status")!;
@@ -28,6 +29,7 @@ const engine = await (async () => {
   return new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
 })();
 const scene = new Scene(engine);
+addInspectorButton(scene);
 scene.clearColor = new Color4(0.025, 0.035, 0.06, 1);
 const camera = new ArcRotateCamera("camera", -Math.PI / 2, 1.05, 24, Vector3.Zero(), scene);
 camera.attachControl(canvas, true);

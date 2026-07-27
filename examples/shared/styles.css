@@ -42,16 +42,41 @@ canvas {
   letter-spacing: 0;
 }
 
-.panel-home {
-  display: inline-block;
+.panel-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   margin: 0 0 8px;
-  color: #8bd3ff;
   font-size: 12px;
+}
+
+.panel-navigation a {
+  color: #8bd3ff;
   text-decoration: none;
 }
 
-.panel-home:hover {
+.panel-navigation a:hover {
   text-decoration: underline;
+}
+
+.panel-navigation__steps {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-navigation__step {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(139, 211, 255, 0.32);
+  border-radius: 5px;
+}
+
+.panel-navigation__step.is-unavailable {
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.24);
 }
 
 .panel dl {
