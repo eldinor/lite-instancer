@@ -4,6 +4,34 @@
 
 ## Unreleased
 
+- Clarify that `animation: { type: "pulse" }` always selects the GPU Sprite FX
+  path by default; CPU-driven per-frame pulse updates remain only as a
+  benchmark comparison workload.
+- Translate clean label position batches independently per z-index text bucket,
+  retaining the allocation-free glyph-slot fast path for mixed-z workloads.
+- Patch compatible changing label runs directly into existing Lite glyph slots,
+  avoiding replacement runs and positioned-glyph arrays for fixed-format
+  numeric churn, with lifetime patch/slot/fallback diagnostics.
+- Cache per-size ASCII digit glyph metrics and reflow proportional advances so
+  same-length numeric substitutions also bypass general text shaping.
+- Record the workload-version 2 thorough baseline: 500-label numeric churn
+  dropped from 46.295 ms to 4.633 ms mean with no samples over 16.7 ms, while
+  mixed-z movement dropped from 1.409 ms to 0.617 ms with zero translation
+  fallbacks.
+- Add opt-in `labelBackgroundMode: "rounded-card"` GPU backgrounds using one
+  analytic Sprite2D instance per label, while retaining nine-slice backgrounds
+  as the default. Rounded cards batch by z-index and visual style and expose
+  layer/draw-call statistics.
+- Add a side-by-side GPU background-mode example comparing identical nine-slice
+  and rounded-card labels with live sprite and draw-call statistics.
+- Add a deterministic GPU label benchmark with quick and three-round thorough
+  profiles, ten workloads through 1,000 labels, p50/p95/p99 CPU and frame
+  metrics, fast-path/cache counters, correctness checksums, and JSON export.
+- Add guarded Babylon Lite glyph-slot translation for clean same-bucket label
+  batches, avoiding replacement run and glyph-array allocations with a safe
+  public `replaceRun` fallback.
+- Cache extracted glyph curves per GPU backend and upload only previously unseen
+  glyphs, with installed-glyph and upload-batch statistics.
 - Read Babylon occlusion samples from the default scene render task's private
   live depth texture so the queries use the exact depth buffer shown on screen.
 
@@ -48,9 +76,10 @@ follows semantic versioning.
 - Add a manually started automatic GPU marker benchmark covering 100–10,000
   markers, one/four z buckets, CPU/GPU pulsing, visibility churn, and JSON
   timing reports.
-- Add opt-in GPU marker pulse animation through Lite's public Sprite FX clock,
+- Add GPU marker pulse animation through Lite's public Sprite FX clock,
   with per-sprite phase/frequency/opacity parameters, lazy animated layers,
   static-path isolation, animation statistics, and no per-frame marker calls.
+  Supplying a pulse animation selects this GPU path automatically.
 - Skip unchanged marker projection and backend sprite writes when camera,
   viewport, resolved anchor, visibility, definition, and occlusion inputs are
   stable; retain full invalidation for movement and add a forced-orbit

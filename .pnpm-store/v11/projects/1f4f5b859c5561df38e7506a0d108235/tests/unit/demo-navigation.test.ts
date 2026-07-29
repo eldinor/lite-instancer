@@ -9,8 +9,8 @@ import {
 } from "../../examples/shared/navigation.js";
 
 describe("Annotator demo navigation registry", () => {
-  it("contains eighteen uniquely identified, uniquely routed demos", () => {
-    expect(demos).toHaveLength(18);
+  it("contains twenty uniquely identified, uniquely routed demos", () => {
+    expect(demos).toHaveLength(20);
     expect(new Set(demos.map((entry) => entry.id)).size).toBe(demos.length);
     expect(new Set(demos.map((entry) => entry.route)).size).toBe(demos.length);
     for (const entry of demos) {
@@ -21,10 +21,10 @@ describe("Annotator demo navigation registry", () => {
     }
   });
 
-  it("groups eight HTML and ten GPU examples in learning order", () => {
+  it("groups eight HTML and twelve GPU examples in learning order", () => {
     expect(demoGroups.map((group) => group.id)).toEqual(["html", "gpu"]);
     expect(getGroupDemos("html")).toHaveLength(8);
-    expect(getGroupDemos("gpu")).toHaveLength(10);
+    expect(getGroupDemos("gpu")).toHaveLength(12);
     expect(demos.slice(0, 8).every((entry) => entry.group === "html")).toBe(true);
     expect(demos.slice(8).every((entry) => entry.group === "gpu")).toBe(true);
   });

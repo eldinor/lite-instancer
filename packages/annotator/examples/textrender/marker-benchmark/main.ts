@@ -121,7 +121,7 @@ const cases: readonly BenchmarkCase[] = [
 ];
 
 export function configureGpuMarkerBenchmark(context: TextDemoContext): void {
-  context.panel.describe("Run a quick check or a three-round benchmark. Reports separate application mutation, Annotator update, frame cadence, GPU frame time, fast-path work, and correctness samples through 10,000 markers.");
+  context.panel.describe("Run a quick check or a three-round benchmark through 10,000 markers. Pulse animations use GPU Sprite FX by default; the CPU-pulse workload deliberately rewrites every marker as an anti-pattern comparison.");
   let layer: AnnotationLayer = context.recreateLayer("public", "manual");
   const markers: MarkerHandle[] = [];
   const gpuTimingSupported = isGpuTimingSupported(context.engine);

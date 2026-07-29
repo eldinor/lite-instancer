@@ -19,6 +19,7 @@ import type {
   AnnotationStyle,
   BackendAnnotationDefinition,
   BackendAnnotationUpdate,
+  BackendLabelPositionUpdate,
   BackendLeaderLineGeometry,
   LabelHandle,
   LabelCollisionMode,
@@ -108,6 +109,7 @@ interface LabelState extends CommonState {
   previousClusterCount: number;
   clusterNeedsRefresh: boolean;
   leaderLine: Readonly<LeaderLineOptions> | undefined;
+  positionUpdate: MutableBackendPositionUpdate;
 }
 
 interface MarkerState extends CommonState {
@@ -115,12 +117,12 @@ interface MarkerState extends CommonState {
   shape: MarkerShape;
   size: number;
   animation: Readonly<MarkerAnimationOptions> | undefined;
-  positionUpdate: MutableBackendMarkerPositionUpdate;
+  positionUpdate: MutableBackendPositionUpdate;
   projectedSnapshot: MutableProjectedMarkerSnapshot;
   projectedSnapshotPending: boolean;
 }
 
-interface MutableBackendMarkerPositionUpdate {
+interface MutableBackendPositionUpdate {
   resource: unknown;
   rendered: boolean;
   x: number;
@@ -160,7 +162,8 @@ interface LayerState {
   readonly previousViewProjection: Float64Array;
   readonly previousCameraPosition: Float64Array;
   readonly previousCameraViewport: Float64Array;
-  readonly markerPositionUpdates: MutableBackendMarkerPositionUpdate[];
+  readonly markerPositionUpdates: MutableBackendPositionUpdate[];
+  readonly labelPositionUpdates: MutableBackendPositionUpdate[];
   readonly projectionInputScratch: MutableProjectionInput;
   readonly projectionResultScratch: MutableProjectionResult;
   readonly hitRegionObservers: Set<AnnotationHitRegionObserver>;
@@ -209,6 +212,7 @@ export function createAnnotationLayer(options: AnnotationLayerOptions): Annotati
     previousCameraPosition: new Float64Array(3),
     previousCameraViewport: new Float64Array(4),
     markerPositionUpdates: [],
+    labelPositionUpdates: [],
     projectionInputScratch: {
       position: new Float32Array(3),
       viewProjection: new Float64Array(16),
@@ -267,6 +271,7 @@ export function createLabel(layer: AnnotationLayer, options: LabelOptions): Labe
   state.previousClusterCount = 1;
   state.clusterNeedsRefresh = false;
   state.leaderLine = leaderLine;
+  state.positionUpdate = { resource: state.resource, rendered: false, x: 0, y: 0 };
   registerState(layerState, state);
   return handle;
 }
@@ -542,6 +547,8 @@ function updateLayer(layer: LayerState): void {
   occlusionRequests.length = 0;
   const markerPositionUpdates = layer.markerPositionUpdates;
   markerPositionUpdates.length = 0;
+  const labelPositionUpdates = layer.labelPositionUpdates;
+  labelPositionUpdates.length = 0;
   const projectionInput = layer.projectionInputScratch;
   projectionInput.viewProjection = viewProjection;
   projectionInput.viewport = cameraViewport;
@@ -626,6 +633,43 @@ function updateLayer(layer: LayerState): void {
       annotation.definitionDirty = false;
       continue;
     }
+    if (
+      annotation.kind === "label" &&
+      !annotation.definitionDirty &&
+      !annotation.clampToViewport &&
+      annotation.collision === "none" &&
+      !annotation.leaderLine &&
+      annotation.layer.backend.updateLabelPositions
+    ) {
+      const previousBounds = annotation.layer.backend.measure(annotation.resource);
+      if (previousBounds) {
+        const update = annotation.positionUpdate;
+        update.rendered = true;
+        update.x = rawX;
+        update.y = rawY;
+        labelPositionUpdates.push(update);
+        annotation.snapshot = Object.freeze({
+          id: annotation.handle.id,
+          type: "label",
+          requestedVisible: true,
+          rendered: true,
+          occluded: annotation.occluded,
+          hiddenReason: "none",
+          worldPosition: freezeVec3(annotation.worldScratch),
+          screenPosition: Object.freeze({ x: rawX, y: rawY }),
+          unclampedScreenPosition: Object.freeze({ x: rawX, y: rawY }),
+          layoutOffset: Object.freeze({ x: 0, y: 0 }),
+          depth: projection.depth,
+          bounds: createDomRect(
+            rawX - previousBounds.width * 0.5,
+            rawY - previousBounds.height * 0.5,
+            previousBounds.width,
+            previousBounds.height
+          )
+        });
+        continue;
+      }
+    }
     const raw = { x: rawX, y: rawY };
     let final = raw;
     updateBackend(annotation, true, final);
@@ -666,6 +710,9 @@ function updateLayer(layer: LayerState): void {
     annotation.definitionDirty = false;
   }
   if (markerPositionUpdates.length > 0) layer.backend.updateMarkerPositions?.(markerPositionUpdates);
+  if (labelPositionUpdates.length > 0) {
+    layer.backend.updateLabelPositions?.(labelPositionUpdates as readonly BackendLabelPositionUpdate[]);
+  }
   layer.options.occlusionProvider?.update(occlusionRequests);
   if (hasLabels) applyLabelCollisions(layer, cameraViewport, padding);
   publishHitRegions(layer);
@@ -812,7 +859,7 @@ function queueProjectedMarker(
   x: number,
   y: number,
   depth: number,
-  updates: MutableBackendMarkerPositionUpdate[]
+  updates: MutableBackendPositionUpdate[]
 ): void {
   const update = marker.positionUpdate;
   update.rendered = true;

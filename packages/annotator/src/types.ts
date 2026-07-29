@@ -18,6 +18,10 @@ export type MarkerShape =
 
 export interface MarkerPulseAnimation {
   readonly type: "pulse";
+  /**
+   * Pulse animation always runs through the TextRenderer backend's GPU Sprite
+   * FX path. Applications do not need to select a GPU execution mode.
+   */
   /** Pulse cycles per second. @default 1 */
   readonly frequency?: number;
   /** Initial phase measured in cycles. @default 0 */
@@ -152,7 +156,10 @@ export interface MarkerOptions extends AnnotationVisibilityOptions {
   anchor: SupportedAnnotationAnchor;
   shape?: MarkerShape;
   size?: number;
-  /** Optional backend animation. GPU pulse animation runs in Sprite FX. */
+  /**
+   * Optional backend animation. A pulse uses GPU Sprite FX by default and
+   * never requires per-frame `updateMarker()` calls.
+   */
   animation?: MarkerAnimationOptions;
   zIndex?: number;
   worldOffset?: Vec3Like;
@@ -266,11 +273,15 @@ export interface BackendMarkerPositionUpdate {
   readonly y: number;
 }
 
+export interface BackendLabelPositionUpdate extends BackendMarkerPositionUpdate {}
+
 export interface AnnotationBackend {
   create(definition: BackendAnnotationDefinition): unknown;
   update(resource: unknown, update: BackendAnnotationUpdate): void;
   /** Optional fast path for clean markers whose only per-frame change is projection. */
   updateMarkerPositions?(updates: readonly BackendMarkerPositionUpdate[]): void;
+  /** Optional fast path for clean labels whose glyph layout is unchanged. */
+  updateLabelPositions?(updates: readonly BackendLabelPositionUpdate[]): void;
   measure(resource: unknown): BackendBounds | null;
   setViewport(viewport: AnnotationViewport): void;
   disposeResource(resource: unknown): void;

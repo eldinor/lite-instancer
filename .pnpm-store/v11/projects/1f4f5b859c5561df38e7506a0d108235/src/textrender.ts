@@ -52,14 +52,22 @@ import type {
   AnnotationViewport,
   BackendAnnotationDefinition,
   BackendAnnotationUpdate,
+  BackendLabelPositionUpdate,
   BackendMarkerPositionUpdate,
   BackendBounds,
   MarkerAnimationOptions,
   MarkerShape
 } from "./types.js";
-import { guardedPrivateLayoutText, type PrivateTextLayoutResult } from "./textrender-private.js";
+import {
+  guardedPrivateLayoutText,
+  guardedPrivatePatchRun,
+  guardedPrivateTranslateRuns,
+  type PrivateRunTranslation,
+  type PrivateTextLayoutResult
+} from "./textrender-private.js";
 
 export type TextRendererShapingMode = "public" | "guarded-private";
+export type TextRendererLabelBackgroundMode = "nine-slice" | "rounded-card";
 
 export type TextRendererMarkerColor = readonly [number, number, number, number];
 
@@ -87,11 +95,14 @@ export interface TextRendererAnnotationBackendOptions {
   coverageGamma?: number;
   shapeCacheSize?: number;
   shapingMode?: TextRendererShapingMode;
+  /** GPU label background implementation. @default "nine-slice" */
+  labelBackgroundMode?: TextRendererLabelBackgroundMode;
   /** Application marker rasterizers keyed by namespaced shape identifier. */
   markerShapes?: Readonly<Record<string, TextRendererMarkerShapeRasterizer>>;
 }
 
 export interface TextRendererAnnotationBackendStats {
+  readonly labelBackgroundMode: TextRendererLabelBackgroundMode;
   readonly requestedShapingMode: TextRendererShapingMode;
   readonly privateAdapterAvailable: boolean;
   readonly cacheHits: number;
@@ -103,6 +114,8 @@ export interface TextRendererAnnotationBackendStats {
   readonly liveLabelBackgrounds: number;
   readonly labelBackgroundSprites: number;
   readonly labelBackgroundDrawCalls: number;
+  readonly roundedCardLayers: number;
+  readonly roundedCardDrawCalls: number;
   readonly spriteRendererActive: boolean;
   readonly spriteBuckets: number;
   readonly spriteDrawCalls: number;
@@ -122,6 +135,14 @@ export interface TextRendererAnnotationBackendStats {
   readonly markerPositionBatches: number;
   /** Lifetime marker count consumed by position-only batches. */
   readonly batchedMarkerPositions: number;
+  readonly installedGlyphs: number;
+  readonly glyphUploadBatches: number;
+  readonly labelTranslationBatches: number;
+  readonly translatedLabelRuns: number;
+  readonly labelTranslationFallbacks: number;
+  readonly compatibleLabelRunPatches: number;
+  readonly patchedLabelGlyphSlots: number;
+  readonly labelRunPatchFallbacks: number;
 }
 
 export interface TextRendererAnnotationBackend extends AnnotationBackend {
@@ -139,10 +160,18 @@ interface InkBounds {
 interface ShapedLabel {
   readonly glyphs: readonly PlacedGlyph[];
   readonly pixelsPerFontUnit: number;
+  readonly layoutWidth: number;
+  readonly layoutHeight: number;
   readonly width: number;
   readonly height: number;
   readonly centerX: number;
   readonly centerY: number;
+}
+
+interface NumericGlyphMetric {
+  readonly glyphId: number;
+  readonly offsetX: number;
+  readonly advance: number;
 }
 
 interface TextBucket {
@@ -224,12 +253,21 @@ interface LabelBackgroundResource {
   zIndex: number;
   opacity: number;
   visible: boolean;
+  roundedLayer: RoundedCardLayer | null;
+}
+
+interface RoundedCardLayer {
+  readonly layer: Sprite2DLayer;
+  readonly visualKey: string;
+  resources: number;
+  visible: number;
 }
 
 interface SpriteBucket {
   readonly zIndex: number;
   readonly lineLayer: Sprite2DLayer;
   readonly backgroundLayer: Sprite2DLayer;
+  readonly roundedCardLayers: Map<string, RoundedCardLayer>;
   readonly markerLayer: Sprite2DLayer;
   animatedMarkerLayer: Sprite2DLayer | null;
   lineResources: number;
@@ -237,6 +275,7 @@ interface SpriteBucket {
   markerResources: number;
   visibleLines: number;
   visibleBackgrounds: number;
+  visibleNineSliceBackgrounds: number;
   visibleMarkers: number;
   visibleAnimatedMarkers: number;
 }
@@ -264,6 +303,14 @@ interface MutableStats {
   fullMarkerUpdates: number;
   markerPositionBatches: number;
   batchedMarkerPositions: number;
+  installedGlyphs: number;
+  glyphUploadBatches: number;
+  labelTranslationBatches: number;
+  translatedLabelRuns: number;
+  labelTranslationFallbacks: number;
+  compatibleLabelRunPatches: number;
+  patchedLabelGlyphSlots: number;
+  labelRunPatchFallbacks: number;
 }
 
 interface ResolvedMarkerPulse {
@@ -300,6 +347,10 @@ export function createTextRendererAnnotationBackend(
   const coverageGamma = options.coverageGamma ?? 1;
   const cacheLimit = options.shapeCacheSize ?? DEFAULT_CACHE_SIZE;
   const requestedMode = options.shapingMode ?? "public";
+  const labelBackgroundMode = options.labelBackgroundMode ?? "nine-slice";
+  if (labelBackgroundMode !== "nine-slice" && labelBackgroundMode !== "rounded-card") {
+    throw new AnnotatorError(`Unknown TextRenderer label background mode "${String(labelBackgroundMode)}"`);
+  }
   const customMarkerShapes = createMarkerShapeRegistry(options.markerShapes);
   assertPositiveFinite(defaultFontSize, "Default font size");
   assertPositiveFinite(coverageGamma, "Coverage gamma");
@@ -313,6 +364,8 @@ export function createTextRendererAnnotationBackend(
   const buckets = new Map<number, TextBucket>();
   const resources = new Set<AnnotationResource>();
   const shapeCache = new Map<string, ShapedLabel>();
+  const glyphCurves = new Map<number, GlyphCurves>();
+  const numericGlyphTemplates = new Map<number, ReadonlyMap<string, NumericGlyphMetric> | null>();
   const colorCache = new Map<string, readonly [number, number, number, number]>();
   const stats: MutableStats = {
     cacheHits: 0,
@@ -330,7 +383,15 @@ export function createTextRendererAnnotationBackend(
     markerSprites: 0,
     fullMarkerUpdates: 0,
     markerPositionBatches: 0,
-    batchedMarkerPositions: 0
+    batchedMarkerPositions: 0,
+    installedGlyphs: 0,
+    glyphUploadBatches: 0,
+    labelTranslationBatches: 0,
+    translatedLabelRuns: 0,
+    labelTranslationFallbacks: 0,
+    compatibleLabelRunPatches: 0,
+    patchedLabelGlyphSlots: 0,
+    labelRunPatchFallbacks: 0
   };
   let privateAvailable = requestedMode === "guarded-private";
   let disposed = false;
@@ -392,26 +453,50 @@ export function createTextRendererAnnotationBackend(
       const text = update.text ?? "";
       const fontSize = resolveFontSize(update, defaultFontSize);
       const shaped = update.definitionChanged && (text !== target.text || fontSize !== target.fontSize)
-        ? shape(text, fontSize)
+        ? tryShapeCompatibleNumeric(target, text, fontSize) ?? shape(text, fontSize)
         : target.shaped;
       const color = update.definitionChanged ? resolveDefinitionColor(update) : target.color;
       const box = update.definitionChanged ? resolveLabelBox(update) : target.box;
       const rendered = update.rendered && update.screenPosition !== null;
       const screenX = update.screenPosition?.x ?? target.screenX;
       const screenY = update.screenPosition?.y ?? target.screenY;
-      const nextRun = createRun(shaped, screenX, screenY, color, rendered);
+      const textChanged = text !== target.text || fontSize !== target.fontSize;
+      let nextRun: GlyphRun | null = null;
+      let patchedRun = false;
 
       if (update.zIndex !== target.zIndex) {
+        nextRun = createRun(shaped, screenX, screenY, color, rendered);
         removeRun(target);
         const bucket = getBucket(update.zIndex);
         updateTextData(bucket.data, { update: "addRun", run: nextRun });
         bucket.resources++;
         target.bucket = bucket;
       } else {
-        updateTextData(target.bucket.data, { update: "replaceRun", previous: target.run, run: nextRun });
+        if (textChanged) {
+          const alpha = rendered ? color[3] : 0;
+          const patchedSlots = guardedPrivatePatchRun(target.bucket.data, {
+            run: target.run,
+            glyphs: shaped.glyphs,
+            pixelsPerFontUnit: shaped.pixelsPerFontUnit,
+            offsetX: screenX - shaped.centerX,
+            offsetY: -screenY - shaped.centerY,
+            color: [color[0] * alpha, color[1] * alpha, color[2] * alpha, alpha]
+          });
+          patchedRun = patchedSlots !== false;
+          if (patchedSlots !== false) {
+            stats.compatibleLabelRunPatches++;
+            stats.patchedLabelGlyphSlots += patchedSlots;
+          } else {
+            stats.labelRunPatchFallbacks++;
+          }
+        }
+        if (!patchedRun) {
+          nextRun = createRun(shaped, screenX, screenY, color, rendered);
+          updateTextData(target.bucket.data, { update: "replaceRun", previous: target.run, run: nextRun });
+        }
       }
 
-      target.run = nextRun;
+      if (nextRun) target.run = nextRun;
       target.shaped = shaped;
       target.text = text;
       target.fontSize = fontSize;
@@ -442,6 +527,73 @@ export function createTextRendererAnnotationBackend(
       updateMarkerPositions(updates);
     },
 
+    updateLabelPositions(updates: readonly BackendLabelPositionUpdate[]) {
+      assertUsable();
+      const targets: Array<{
+        target: TextResource;
+        update: BackendLabelPositionUpdate;
+        translated: boolean;
+      }> = [];
+      const translationsByData = new Map<
+        TextData,
+        {
+          entries: Array<(typeof targets)[number]>;
+          translations: PrivateRunTranslation[];
+        }
+      >();
+      for (const update of updates) {
+        const target = requireResource(update.resource);
+        if (target.kind !== "text") {
+          throw new AnnotatorError("Label position batches require text resources");
+        }
+        const entry = { target, update, translated: false };
+        targets.push(entry);
+        if (target.rendered && update.rendered) {
+          const data = target.bucket.data;
+          let bucket = translationsByData.get(data);
+          if (!bucket) {
+            bucket = { entries: [], translations: [] };
+            translationsByData.set(data, bucket);
+          }
+          bucket.entries.push(entry);
+          bucket.translations.push({
+            run: target.run,
+            dx: update.x - target.screenX,
+            dy: -(update.y - target.screenY)
+          });
+        }
+      }
+      if (targets.length === 0) return;
+      stats.labelTranslationBatches++;
+      let usedFallback = translationsByData.size === 0 ||
+        targets.some(({ target, update }) => !target.rendered || !update.rendered);
+      for (const [data, bucket] of translationsByData) {
+        if (guardedPrivateTranslateRuns(data, bucket.translations)) {
+          for (const entry of bucket.entries) entry.translated = true;
+          stats.translatedLabelRuns += bucket.entries.length;
+        } else {
+          usedFallback = true;
+        }
+      }
+      if (usedFallback) stats.labelTranslationFallbacks++;
+      for (const { target, update, translated } of targets) {
+        if (!translated) {
+          const nextRun = createRun(target.shaped, update.x, update.y, target.color, update.rendered);
+          updateTextData(target.bucket.data, { update: "replaceRun", previous: target.run, run: nextRun });
+          target.run = nextRun;
+        }
+        target.rendered = update.rendered;
+        target.screenX = update.x;
+        target.screenY = update.y;
+        if (target.bounds) {
+          target.bounds = update.rendered
+            ? centeredBounds(update.x, update.y, target.bounds.width, target.bounds.height)
+            : null;
+        }
+        updateLabelBackgroundGeometry(target);
+      }
+    },
+
     measure(resource) {
       assertUsable();
       return requireResource(resource).bounds;
@@ -455,6 +607,7 @@ export function createTextRendererAnnotationBackend(
         for (const bucket of spriteState.buckets.values()) {
           bucket.lineLayer.view.zoom = viewportScale;
           bucket.backgroundLayer.view.zoom = viewportScale;
+          for (const rounded of bucket.roundedCardLayers.values()) rounded.layer.view.zoom = viewportScale;
           bucket.markerLayer.view.zoom = viewportScale;
           if (bucket.animatedMarkerLayer) bucket.animatedMarkerLayer.view.zoom = viewportScale;
         }
@@ -498,6 +651,8 @@ export function createTextRendererAnnotationBackend(
       buckets.clear();
       disposeGlyphStorage(storage);
       shapeCache.clear();
+      glyphCurves.clear();
+      numericGlyphTemplates.clear();
       colorCache.clear();
       markerFrameCache.clear();
       labelBackgroundFrameCache.clear();
@@ -507,6 +662,7 @@ export function createTextRendererAnnotationBackend(
     getStats() {
       return Object.freeze({
         requestedShapingMode: requestedMode,
+        labelBackgroundMode,
         privateAdapterAvailable: privateAvailable,
         cacheHits: stats.cacheHits,
         cacheMisses: stats.cacheMisses,
@@ -516,7 +672,9 @@ export function createTextRendererAnnotationBackend(
         liveLabels: stats.liveLabels,
         liveLabelBackgrounds: stats.liveLabelBackgrounds,
         labelBackgroundSprites: stats.labelBackgroundSprites,
-        labelBackgroundDrawCalls: countVisibleSpriteBuckets("background"),
+        labelBackgroundDrawCalls: countVisibleSpriteBuckets("background") + countRoundedCardLayers(true),
+        roundedCardLayers: countRoundedCardLayers(false),
+        roundedCardDrawCalls: countRoundedCardLayers(true),
         spriteRendererActive: spriteState !== null,
         spriteBuckets: spriteState?.buckets.size ?? 0,
         spriteDrawCalls: countSpriteDrawCalls(),
@@ -532,7 +690,15 @@ export function createTextRendererAnnotationBackend(
         animatedMarkerDrawCalls: countAnimatedMarkerDrawCalls(),
         fullMarkerUpdates: stats.fullMarkerUpdates,
         markerPositionBatches: stats.markerPositionBatches,
-        batchedMarkerPositions: stats.batchedMarkerPositions
+        batchedMarkerPositions: stats.batchedMarkerPositions,
+        installedGlyphs: stats.installedGlyphs,
+        glyphUploadBatches: stats.glyphUploadBatches,
+        labelTranslationBatches: stats.labelTranslationBatches,
+        translatedLabelRuns: stats.translatedLabelRuns,
+        labelTranslationFallbacks: stats.labelTranslationFallbacks,
+        compatibleLabelRunPatches: stats.compatibleLabelRunPatches,
+        patchedLabelGlyphSlots: stats.patchedLabelGlyphSlots,
+        labelRunPatchFallbacks: stats.labelRunPatchFallbacks
       });
     },
 
@@ -611,6 +777,7 @@ export function createTextRendererAnnotationBackend(
       zIndex,
       lineLayer,
       backgroundLayer,
+      roundedCardLayers: new Map(),
       markerLayer,
       animatedMarkerLayer: null,
       lineResources: 0,
@@ -618,6 +785,7 @@ export function createTextRendererAnnotationBackend(
       markerResources: 0,
       visibleLines: 0,
       visibleBackgrounds: 0,
+      visibleNineSliceBackgrounds: 0,
       visibleMarkers: 0,
       visibleAnimatedMarkers: 0
     };
@@ -637,6 +805,9 @@ export function createTextRendererAnnotationBackend(
     ) return;
     removeSpriteRendererLayer(spriteState.renderer, bucket.lineLayer);
     removeSpriteRendererLayer(spriteState.renderer, bucket.backgroundLayer);
+    for (const rounded of bucket.roundedCardLayers.values()) {
+      removeSpriteRendererLayer(spriteState.renderer, rounded.layer);
+    }
     removeSpriteRendererLayer(spriteState.renderer, bucket.markerLayer);
     if (bucket.animatedMarkerLayer) removeSpriteRendererLayer(spriteState.renderer, bucket.animatedMarkerLayer);
     spriteState.buckets.delete(bucket.zIndex);
@@ -673,7 +844,7 @@ return texel * opacity * L.opacityMul;`
         kind === "line"
           ? bucket.visibleLines > 0
           : kind === "background"
-            ? bucket.visibleBackgrounds > 0
+            ? bucket.visibleNineSliceBackgrounds > 0
             : bucket.visibleMarkers > 0
       ) count++;
     }
@@ -694,7 +865,8 @@ return texel * opacity * L.opacityMul;`
   }
 
   function countSpriteDrawCalls(): number {
-    return countVisibleSpriteBuckets("line") + countVisibleSpriteBuckets("background") + countMarkerDrawCalls();
+    return countVisibleSpriteBuckets("line") + countVisibleSpriteBuckets("background") +
+      countRoundedCardLayers(true) + countMarkerDrawCalls();
   }
 
   function resolveLabelBox(
@@ -743,33 +915,80 @@ return texel * opacity * L.opacityMul;`
       return;
     }
     const existing = resource.background;
-    if (existing && existing.visualKey === box.visualKey && existing.zIndex === definition.zIndex) {
+    const backgroundKey = labelBackgroundMode === "rounded-card"
+      ? `${box.visualKey}|opacity:${box.opacity}`
+      : box.visualKey;
+    if (existing && existing.visualKey === backgroundKey && existing.zIndex === definition.zIndex) {
       existing.opacity = box.opacity;
       return;
     }
     removeLabelBackground(resource);
-    const resolved = resolveLabelBackgroundFrames(box);
     const bucket = getSpriteBucket(definition.zIndex);
-    const color = [box.opacity, box.opacity, box.opacity, box.opacity] as [number, number, number, number];
-    const sprites = resolved.frames.map((frame) => addSprite2D(bucket.backgroundLayer, {
-      positionPx: [0, 0],
-      sizePx: [0, 0],
-      frame,
-      color,
-      visible: false
-    }));
+    const roundedLayer = labelBackgroundMode === "rounded-card"
+      ? getRoundedCardLayer(bucket, box)
+      : null;
+    const resolved = roundedLayer ? null : resolveLabelBackgroundFrames(box);
+    const color = roundedLayer
+      ? [1, 1, 1, 1] as [number, number, number, number]
+      : [box.opacity, box.opacity, box.opacity, box.opacity] as [number, number, number, number];
+    const sprites = roundedLayer
+      ? [addSprite2D(roundedLayer.layer, {
+          positionPx: [0, 0], sizePx: [0, 0], frame: 0, color, visible: false
+        })]
+      : resolved!.frames.map((frame) => addSprite2D(bucket.backgroundLayer, {
+          positionPx: [0, 0], sizePx: [0, 0], frame, color, visible: false
+        }));
+    if (roundedLayer) roundedLayer.resources++;
     resource.background = {
       sprites,
-      visualKey: box.visualKey,
-      slice: resolved.slice,
+      visualKey: backgroundKey,
+      slice: resolved?.slice ?? 0,
       bucket,
       zIndex: definition.zIndex,
       opacity: box.opacity,
-      visible: false
+      visible: false,
+      roundedLayer
     };
     bucket.backgroundResources++;
     stats.liveLabelBackgrounds++;
     stats.labelBackgroundSprites += sprites.length;
+  }
+
+  function countRoundedCardLayers(visibleOnly: boolean): number {
+    if (!spriteState) return 0;
+    let count = 0;
+    for (const bucket of spriteState.buckets.values()) {
+      for (const rounded of bucket.roundedCardLayers.values()) {
+        if (!visibleOnly || rounded.visible > 0) count++;
+      }
+    }
+    return count;
+  }
+
+  function getRoundedCardLayer(bucket: SpriteBucket, box: ResolvedLabelBox): RoundedCardLayer {
+    const key = `${box.visualKey}|opacity:${box.opacity}`;
+    const existing = bucket.roundedCardLayers.get(key);
+    if (existing) return existing;
+    const layer = createSprite2DLayer(ensureSpriteRenderer().atlas, {
+      capacity: 64,
+      blendMode: spriteBlendPremultiplied,
+      pivot: [0.5, 0.5],
+      order: bucket.zIndex,
+      visible: false,
+      view: { zoom: viewportScale },
+      customShader: createRoundedCardShader(box)
+    });
+    const record: RoundedCardLayer = { layer, visualKey: key, resources: 0, visible: 0 };
+    bucket.roundedCardLayers.set(key, record);
+    const spriteRenderer = ensureSpriteRenderer().renderer;
+    addSpriteRendererLayer(spriteRenderer, layer);
+    // Rounded-card style layers are created lazily. Reappend marker layers so
+    // every card remains below markers at an equal z-index.
+    removeSpriteRendererLayer(spriteRenderer, bucket.markerLayer);
+    if (bucket.animatedMarkerLayer) removeSpriteRendererLayer(spriteRenderer, bucket.animatedMarkerLayer);
+    addSpriteRendererLayer(spriteRenderer, bucket.markerLayer);
+    if (bucket.animatedMarkerLayer) addSpriteRendererLayer(spriteRenderer, bucket.animatedMarkerLayer);
+    return record;
   }
 
   function resolveLabelBackgroundFrames(box: ResolvedLabelBox): LabelBackgroundFrames {
@@ -802,6 +1021,15 @@ return texel * opacity * L.opacityMul;`
       return;
     }
     const bounds = resource.bounds;
+    if (background.roundedLayer) {
+      updateSprite2D(background.sprites[0]!, {
+        positionPx: [bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5],
+        sizePx: [bounds.width, bounds.height],
+        visible: bounds.width > 0 && bounds.height > 0
+      });
+      setLabelBackgroundVisible(background, true);
+      return;
+    }
     const corner = Math.min(background.slice, bounds.width * 0.5, bounds.height * 0.5);
     const widths = [corner, Math.max(0, bounds.width - 2 * corner), corner];
     const heights = [corner, Math.max(0, bounds.height - 2 * corner), corner];
@@ -830,7 +1058,14 @@ return texel * opacity * L.opacityMul;`
     if (background.visible === visible) return;
     background.visible = visible;
     background.bucket.visibleBackgrounds += visible ? 1 : -1;
-    background.bucket.backgroundLayer.visible = background.bucket.visibleBackgrounds > 0;
+    if (!background.roundedLayer) {
+      background.bucket.visibleNineSliceBackgrounds += visible ? 1 : -1;
+    }
+    background.bucket.backgroundLayer.visible = background.bucket.visibleNineSliceBackgrounds > 0;
+    if (background.roundedLayer) {
+      background.roundedLayer.visible += visible ? 1 : -1;
+      background.roundedLayer.layer.visible = background.roundedLayer.visible > 0;
+    }
     if (!visible) {
       for (const sprite of background.sprites) updateSprite2D(sprite, { visible: false });
     }
@@ -841,6 +1076,14 @@ return texel * opacity * L.opacityMul;`
     if (!background) return;
     setLabelBackgroundVisible(background, false);
     for (const sprite of background.sprites) removeSprite2D(sprite);
+    if (background.roundedLayer) {
+      const rounded = background.roundedLayer;
+      rounded.resources--;
+      if (rounded.resources === 0) {
+        removeSpriteRendererLayer(ensureSpriteRenderer().renderer, rounded.layer);
+        background.bucket.roundedCardLayers.delete(rounded.visualKey);
+      }
+    }
     background.bucket.backgroundResources--;
     stats.liveLabelBackgrounds--;
     stats.labelBackgroundSprites -= background.sprites.length;
@@ -1230,6 +1473,82 @@ return texel * opacity * L.opacityMul;`
     return shaped;
   }
 
+  function tryShapeCompatibleNumeric(
+    target: TextResource,
+    text: string,
+    fontSize: number
+  ): ShapedLabel | null {
+    if (fontSize !== target.fontSize || text.length !== target.text.length ||
+        target.shaped.glyphs.length !== target.text.length) {
+      return null;
+    }
+    const template = numericGlyphTemplate(fontSize);
+    if (!template) return null;
+    let changed = false;
+    let advanceShift = 0;
+    const glyphs: PlacedGlyph[] = [];
+    for (let index = 0; index < text.length; index++) {
+      const previousCharacter = target.text[index]!;
+      const nextCharacter = text[index]!;
+      const previousGlyph = target.shaped.glyphs[index]!;
+      if (previousCharacter === nextCharacter) {
+        glyphs.push(advanceShift === 0
+          ? previousGlyph
+          : Object.freeze({ glyphId: previousGlyph.glyphId, x: previousGlyph.x + advanceShift, y: previousGlyph.y }));
+        continue;
+      }
+      const previousMetric = template.get(previousCharacter);
+      const nextMetric = template.get(nextCharacter);
+      if (!isAsciiDigit(previousCharacter) || !isAsciiDigit(nextCharacter) ||
+          !previousMetric || !nextMetric || previousGlyph.glyphId !== previousMetric.glyphId) {
+        return null;
+      }
+      glyphs.push(Object.freeze({
+        glyphId: nextMetric.glyphId,
+        x: previousGlyph.x + advanceShift + nextMetric.offsetX - previousMetric.offsetX,
+        y: previousGlyph.y
+      }));
+      advanceShift += nextMetric.advance - previousMetric.advance;
+      changed = true;
+    }
+    if (!changed) return null;
+    const ink = calculateInkBounds(glyphs, target.shaped.pixelsPerFontUnit, glyphCurves);
+    const inkWidth = ink ? ink.maxX - ink.minX : 0;
+    const inkHeight = ink ? ink.maxY - ink.minY : 0;
+    return Object.freeze({
+      glyphs: Object.freeze(glyphs),
+      pixelsPerFontUnit: target.shaped.pixelsPerFontUnit,
+      layoutWidth: target.shaped.layoutWidth + advanceShift,
+      layoutHeight: target.shaped.layoutHeight,
+      width: Math.max(target.shaped.layoutWidth + advanceShift, inkWidth),
+      height: Math.max(target.shaped.layoutHeight, inkHeight),
+      centerX: ink ? (ink.minX + ink.maxX) * 0.5 : (target.shaped.layoutWidth + advanceShift) * 0.5,
+      centerY: ink ? (ink.minY + ink.maxY) * 0.5 : 0
+    });
+  }
+
+  function numericGlyphTemplate(fontSize: number): ReadonlyMap<string, NumericGlyphMetric> | null {
+    if (numericGlyphTemplates.has(fontSize)) return numericGlyphTemplates.get(fontSize) ?? null;
+    const digits = "0123456789";
+    const mutable = new Map<string, NumericGlyphMetric>();
+    for (const digit of digits) {
+      const shaped = shape(digit, fontSize);
+      const glyph = shaped.glyphs[0];
+      if (shaped.glyphs.length !== 1 || !glyph || shaped.layoutWidth <= 0) {
+        numericGlyphTemplates.set(fontSize, null);
+        return null;
+      }
+      mutable.set(digit, Object.freeze({
+        glyphId: glyph.glyphId,
+        offsetX: glyph.x,
+        advance: shaped.layoutWidth
+      }));
+    }
+    const template: ReadonlyMap<string, NumericGlyphMetric> = mutable;
+    numericGlyphTemplates.set(fontSize, template);
+    return template;
+  }
+
   function publicShape(text: string, fontSize: number): ShapedLabel {
     const temporary = createDefaultTextData(options.font, fontSize, text);
     stats.publicShapes++;
@@ -1248,17 +1567,26 @@ return texel * opacity * L.opacityMul;`
   }
 
   function finishShape(layout: PrivateTextLayoutResult): ShapedLabel {
-    const ids = new Set<number>();
-    for (const glyph of layout.glyphs) ids.add(glyph.glyphId);
-    const curves = new Map<number, GlyphCurves>();
-    extractGlyphCurves(options.font, ids, curves);
-    updateGlyphStorage(storage, CURVE_SET_ID, curves);
-    const ink = calculateInkBounds(layout.glyphs, layout.pixelsPerFontUnit, curves);
+    const missingIds = new Set<number>();
+    for (const glyph of layout.glyphs) {
+      if (!glyphCurves.has(glyph.glyphId)) missingIds.add(glyph.glyphId);
+    }
+    if (missingIds.size > 0) {
+      const extracted = new Map<number, GlyphCurves>();
+      extractGlyphCurves(options.font, missingIds, extracted);
+      for (const [glyphId, curves] of extracted) glyphCurves.set(glyphId, curves);
+      updateGlyphStorage(storage, CURVE_SET_ID, extracted);
+      stats.installedGlyphs += extracted.size;
+      stats.glyphUploadBatches++;
+    }
+    const ink = calculateInkBounds(layout.glyphs, layout.pixelsPerFontUnit, glyphCurves);
     const inkWidth = ink ? ink.maxX - ink.minX : 0;
     const inkHeight = ink ? ink.maxY - ink.minY : 0;
     return Object.freeze({
       glyphs: Object.freeze(layout.glyphs.map(cloneGlyph)),
       pixelsPerFontUnit: layout.pixelsPerFontUnit,
+      layoutWidth: layout.width,
+      layoutHeight: layout.height,
       width: Math.max(layout.width, inkWidth),
       height: Math.max(layout.height, inkHeight),
       centerX: ink ? (ink.minX + ink.maxX) * 0.5 : layout.width * 0.5,
@@ -1344,6 +1672,38 @@ function validateDefinition(
   if ((definition.style.opacityTransitionDuration ?? 0) !== 0) {
     throw new AnnotatorError("TextRenderer annotation backend does not support opacity transitions");
   }
+}
+
+function createRoundedCardShader(box: ResolvedLabelBox): Sprite2DCustomShader {
+  const fill = box.backgroundColor;
+  const border = box.borderColor;
+  const fillAlpha = fill[3] * box.opacity;
+  const borderAlpha = border[3] * box.opacity;
+  const fillPremul = [fill[0] * fillAlpha, fill[1] * fillAlpha, fill[2] * fillAlpha, fillAlpha];
+  const borderPremul = [border[0] * borderAlpha, border[1] * borderAlpha, border[2] * borderAlpha, borderAlpha];
+  const f = (value: number) => Number.isInteger(value) ? `${value}.0` : String(value);
+  return createSprite2DCustomShader({
+    fragment: `
+let atlasSize = vec2f(textureDimensions(atlasTex));
+let local = fract(in.uv * atlasSize);
+let pixelSize = 1.0 / max(fwidth(local), vec2f(0.00001));
+let halfSize = pixelSize * 0.5;
+let p = (local - vec2f(0.5)) * pixelSize;
+let radius = min(${f(box.borderRadius)}, min(halfSize.x, halfSize.y));
+let q = abs(p) - max(halfSize - vec2f(radius), vec2f(0.0));
+let outerDistance = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+let aa = max(fwidth(outerDistance), 0.75);
+let outerCoverage = clamp(0.5 - outerDistance / aa, 0.0, 1.0);
+let innerHalf = max(halfSize - vec2f(${f(box.borderWidth)}), vec2f(0.0));
+let innerRadius = max(0.0, radius - ${f(box.borderWidth)});
+let iq = abs(p) - max(innerHalf - vec2f(innerRadius), vec2f(0.0));
+let innerDistance = length(max(iq, vec2f(0.0))) + min(max(iq.x, iq.y), 0.0) - innerRadius;
+let innerCoverage = clamp(0.5 - innerDistance / aa, 0.0, 1.0);
+let fillColor = vec4f(${fillPremul.map(f).join(", ")});
+let borderColor = vec4f(${borderPremul.map(f).join(", ")});
+return (borderColor * (outerCoverage - innerCoverage) + fillColor * innerCoverage) * L.opacityMul;
+`
+  });
 }
 
 function createSpriteAtlas(surface: SurfaceContext): SpriteAtlas {
@@ -1592,6 +1952,10 @@ function toColorByte(value: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function isAsciiDigit(value: string): boolean {
+  return value >= "0" && value <= "9";
 }
 
 function resolveFontSize(

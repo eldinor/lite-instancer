@@ -134,12 +134,36 @@ or run the multi-page gallery from the repository root:
 npm run dev:annotator
 ```
 
-The unified gallery groups eight HTML-overlay and eight GPU TextRenderer demos.
+The unified gallery groups eight HTML-overlay and twelve GPU TextRenderer demos.
 Every live page has breadcrumbs, previous/next controls, and an all-demos
 drawer, so the complete learning path stays reachable without returning to the
 catalog. It covers mesh labels, markers, live text, stable Instancer anchors,
 lifecycle, collisions, depth occlusion, GPU shaping, Sprite2D leader lines,
 manual JSON benchmarks, and selectable 100/250/500-label stress loads.
+The dedicated GPU label benchmark adds deterministic quick and three-round
+thorough suites across static, moving, numeric-text, collision, z-bucket,
+nine-slice, and rounded-card workloads through 1,000 labels. Its JSON report
+includes p50/p95/p99 CPU timings, frame cadence, dropped-frame counts, renderer
+statistics, fast-path counters, and correctness checksums.
+
+A workload-version 2 thorough reference run used Chrome 150 on Windows, DPR 1,
+a 1920 x 953 viewport, 45 warm-up frames, and three 240-frame measured rounds.
+The values below average the three per-round summaries:
+
+| 500-label workload | Update mean | Update p95 | Result |
+| --- | ---: | ---: | --- |
+| Numeric churn, original | 46.295 ms | 47.933 ms | 720/720 samples over 16.7 ms |
+| Numeric churn, slot patch only | 25.122 ms | 26.400 ms | 720/720 samples over 16.7 ms |
+| Numeric churn, digit metrics + slot patch | 4.633 ms | 4.967 ms | 0/720 samples over 16.7 ms |
+| Mixed-z movement before per-bucket translation | 1.409 ms | 1.533 ms | 720 translation fallbacks |
+| Mixed-z movement after per-bucket translation | 0.617 ms | 0.767 ms | 358,155 translated runs; no fallbacks |
+
+The final numeric run was about 90% faster than the original. It recorded
+358,832 compatible run patches and 4,557,707 in-place glyph-slot writes.
+Shape-cache misses fell from 359,744 to 197, with 1,168 safe run-patch
+fallbacks for incompatible format transitions. All 32 sampled labels remained
+correctly rendered. These are results from one machine; run the bundled suite
+on target hardware for capacity decisions.
 
 The collision stress scene exercises selectable 100, 250, and 500-label loads
 with moving anchors, changing text widths, and clamped edge labels. Its timing
@@ -191,9 +215,13 @@ border color, and border width. Cached atlas frames keep every marker at one
 sprite; markers sharing a `zIndex` share one layer and draw call. Lines render
 below markers in each Sprite2D bucket, and all sprites render below every text
 bucket. Square line caps are the one-sprite default; rounded caps are an
-explicit three-sprite option. Label background color, border color/width/radius,
-and padding use nine reusable atlas patches per card and one background draw
-call per visible z bucket. Font weight, CSS classes, opacity transitions, and
+explicit three-sprite option. By default, label background color, border
+color/width/radius, and padding use nine reusable atlas patches per card and
+one background draw call per visible z bucket. Set
+`labelBackgroundMode: "rounded-card"` to opt into one analytic Sprite2D card
+per label. Rounded cards batch by `zIndex` and visual style, so each distinct
+visible style adds a custom-shader layer and draw call. Font weight, CSS
+classes, opacity transitions, and
 DOM accessibility remain HTML-only. The optional interaction entry adds pointer
 hit testing to either backend without adding DOM semantics.
 
@@ -217,8 +245,9 @@ const backend = createTextRendererAnnotationBackend({
 Unknown identifiers and attempts to replace a built-in shape throw a clear
 `AnnotatorError`. Every built-in and registered shape remains one GPU sprite.
 
-Markers can pulse through Lite's public Sprite FX clock without per-frame API
-calls:
+Marker pulse requests use Lite's public GPU Sprite FX clock by default, without
+per-frame API calls. There is no CPU/GPU mode selector: specifying
+`animation: { type: "pulse" }` selects the GPU path automatically:
 
 ```ts
 createMarker(layer, {
@@ -241,14 +270,29 @@ evaluates opacity from `fx.time`. Animated markers lazily use a separate layer,
 leaving the static pipeline unchanged. An all-animated z bucket is one draw
 call; mixing static and animated markers in the same bucket is two. The public
 Sprite FX bridge supports fragment animation, so pulse changes opacity rather
-than marker geometry.
+than marker geometry. Do not simulate a pulse by changing marker size or
+opacity with `updateMarker()` every frame; that CPU-driven pattern exists in
+the benchmark only as a comparison workload.
 
 Unchanged markers reuse their latest projection and skip backend sprite writes
 when the camera, viewport, resolved anchor, visibility, definition, and
 occlusion inputs are stable. GPU pulse keeps running independently during this
 CPU fast path. Camera/target movement or any relevant marker mutation restores
-the full update automatically. Labels are intentionally excluded because
-measurement and collision layout can depend on other labels each frame.
+the full update automatically. Clean labels without clamping, collision layout,
+or leader lines use a position batch after their first measured update.
+Same-z GPU labels translate their existing Lite glyph slots in place without
+allocating replacement runs. Labels whose measurement or collision layout can
+change continue through the full update path.
+
+Changing fixed-format text, such as `Sensor 01: 10.0` to `Sensor 01: 10.1`,
+also patches compatible existing glyph slots in place. Compatibility requires
+the newly shaped run to retain the same glyph count and use installed atlas
+glyphs; otherwise the backend automatically uses the normal `replaceRun`
+fallback. Runtime statistics report compatible run patches, patched glyph
+slots, and fallbacks. Same-length ASCII digit substitutions additionally skip
+general reshaping through a one-time per-size cache of digit glyphs, bearings,
+and advances. Both tabular and proportional digits are supported; other text
+keeps the full shaping path.
 
 When the camera or viewport moves, the TextRenderer backend uses a marker-only
 position batch. Projection reuses layer-owned scratch objects, Sprite2D receives
@@ -429,7 +473,7 @@ asynchronous whole-frame Lite timestamps:
 | GPU pulse | 0.37 / 0.60 ms | 0.34 / 0.90 ms | No per-frame marker writes |
 | Visibility churn | 2.03 / 2.30 ms | 0.76 / 0.90 ms | 1,250 hide + 1,250 show writes/frame |
 | Camera orbit | 2.94 / 3.60 ms | 0.28 / 0.87 ms | About 10,000 batched positions/frame |
-| CPU pulse | 18.01 / 21.00 ms | 1.86 / 3.35 ms | Still exceeds 16.7 ms; use GPU pulse |
+| CPU-driven pulse comparison | 18.01 / 21.00 ms | 1.86 / 3.35 ms | Anti-pattern; use `animation: { type: "pulse" }` |
 
 Stable-workload correctness checksums matched across rounds; camera-orbit
 checksums changed with the camera while all 32 sampled markers remained

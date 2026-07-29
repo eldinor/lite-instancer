@@ -185,8 +185,11 @@ const marker = createMarker(layer, {
 `"square"`, `"diamond"`, `"triangle"`, `"cross"`, and `"pin"` identifiers.
 Sizes use CSS pixels. The optional `pulse` animation is implemented by the GPU
 TextRenderer backend; `frequency` is cycles per second and `phase` is measured
-in cycles. The HTML backend accepts but ignores this GPU presentation option.
-Use `updateMarker(marker, { animation: null })` to return to the static path.
+in cycles. GPU Sprite FX is the default and only TextRenderer execution path
+for a pulse; no CPU/GPU selector is needed. Do not call `updateMarker()` every
+frame to animate size or opacity. The HTML backend accepts but ignores this GPU
+presentation option. Use `updateMarker(marker, { animation: null })` to return
+to the static path.
 
 `occlusion` is `"none"` (default), `"hide"`, or `"fade"` and is active only
 when the layer has an `occlusionProvider`. Fade keeps the annotation rendered
@@ -355,6 +358,7 @@ const backend = createTextRendererAnnotationBackend({
 
 ```ts
 type TextRendererShapingMode = "public" | "guarded-private";
+type TextRendererLabelBackgroundMode = "nine-slice" | "rounded-card";
 
 interface TextRendererAnnotationBackendOptions {
   surface: SurfaceContext;
@@ -364,10 +368,12 @@ interface TextRendererAnnotationBackendOptions {
   coverageGamma?: number;
   shapeCacheSize?: number;
   shapingMode?: TextRendererShapingMode;
+  labelBackgroundMode?: TextRendererLabelBackgroundMode;
   markerShapes?: Readonly<Record<string, TextRendererMarkerShapeRasterizer>>;
 }
 
 interface TextRendererAnnotationBackendStats {
+  readonly labelBackgroundMode: TextRendererLabelBackgroundMode;
   readonly requestedShapingMode: TextRendererShapingMode;
   readonly privateAdapterAvailable: boolean;
   readonly cacheHits: number;
@@ -376,6 +382,11 @@ interface TextRendererAnnotationBackendStats {
   readonly privateShapes: number;
   readonly privateFallbacks: number;
   readonly liveLabels: number;
+  readonly liveLabelBackgrounds: number;
+  readonly labelBackgroundSprites: number;
+  readonly labelBackgroundDrawCalls: number;
+  readonly roundedCardLayers: number;
+  readonly roundedCardDrawCalls: number;
   readonly spriteRendererActive: boolean;
   readonly spriteBuckets: number;
   readonly spriteDrawCalls: number;
@@ -392,6 +403,14 @@ interface TextRendererAnnotationBackendStats {
   readonly fullMarkerUpdates: number;
   readonly markerPositionBatches: number;
   readonly batchedMarkerPositions: number;
+  readonly installedGlyphs: number;
+  readonly glyphUploadBatches: number;
+  readonly labelTranslationBatches: number;
+  readonly translatedLabelRuns: number;
+  readonly labelTranslationFallbacks: number;
+  readonly compatibleLabelRunPatches: number;
+  readonly patchedLabelGlyphSlots: number;
+  readonly labelRunPatchFallbacks: number;
 }
 ```
 
@@ -418,6 +437,60 @@ It validates the private font and layout structures before use. Any error or
 structural mismatch disables the adapter permanently for that backend instance
 and falls back to the public bridge; correctness never depends on private Lite
 structures. Use `getStats()` to observe both paths and the bounded shape cache.
+Glyph curves are installed incrementally; repeated characters reuse the
+backend's existing curve set. `installedGlyphs` and `glyphUploadBatches`
+expose that behavior.
+
+After their first measured update, clean labels without clamping, collision
+layout, or leader lines are collected into position batches. Each `zIndex`
+bucket uses a guarded Babylon Lite 1.14 bridge to translate existing glyph
+instance slots and publish one combined dirty range without allocating
+replacement `GlyphRun` objects. A structural mismatch or visibility transition
+falls back to public `replaceRun` updates. The translation counters expose use
+of both paths.
+
+Changing label text also reuses the existing run when the newly shaped text has
+the same glyph count and every glyph is installed in the shared atlas. The
+backend rewrites those instance slots in place, including glyph identity,
+position, scale, and color. Different glyph counts or incompatible private Lite
+structures safely fall back to `replaceRun`. `compatibleLabelRunPatches`,
+`patchedLabelGlyphSlots`, and `labelRunPatchFallbacks` expose this path. It is
+especially useful for fixed-format numeric values; no numeric-only public API
+or fixed-width-font requirement is imposed.
+
+For same-length ASCII digit-only substitutions, the backend builds a one-time
+per-font-size digit template containing glyph IDs, bearings, and advances.
+Both tabular and proportional digits then skip general reshaping; changed
+advances reflow the following glyph positions. Structurally incompatible text
+automatically retains full shaping, so complex-script correctness is
+unaffected.
+
+In one workload-version 2 thorough reference run (Chrome 150, Windows, DPR 1,
+1920 x 953), 500 changing numeric labels improved from 46.295 ms mean /
+47.933 ms p95 to 4.633 ms mean / 4.967 ms p95. Shape misses fell from 359,744
+to 197 and samples over 16.7 ms fell from 720/720 to 0/720. The same run's
+500-label mixed-z movement case improved from 1.409 ms to 0.617 ms mean after
+per-bucket translation, with 358,155 translated runs and no translation
+fallbacks. Treat these as a reproducible reference rather than a platform
+guarantee.
+
+`labelBackgroundMode` defaults to `"nine-slice"`. Opt into
+`"rounded-card"` to render each background as one analytic Sprite2D instance:
+
+```ts
+const backend = createTextRendererAnnotationBackend({
+  surface,
+  font,
+  labelBackgroundMode: "rounded-card"
+});
+```
+
+Rounded cards preserve the same fill, border, radius, opacity, padding,
+measurement, ordering, and lifecycle contract. They batch by `zIndex` and
+visual style because Lite custom-shader parameters are layer-scoped. Labels
+sharing a style use one draw call; each distinct visible style adds another
+rounded-card layer and draw call. Use `roundedCardLayers` and
+`roundedCardDrawCalls` to profile the chosen style set.
 
 TextRenderer labels support text, CSS color, opacity, font size, z-order,
 visibility, clamping, all collision modes, clustering, hide/fade occlusion,

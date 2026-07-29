@@ -81,6 +81,45 @@ describe("TextRenderer annotation backend", () => {
     backend.dispose();
   });
 
+  it("extracts and uploads only glyph curves not already installed", () => {
+    const { backend } = fixture({ shapeCacheSize: 0 });
+    backend.create(labelDefinition("ABBA", 1));
+    expect(backend.getStats()).toMatchObject({ installedGlyphs: 2, glyphUploadBatches: 1 });
+    backend.create(labelDefinition("BA", 2));
+    expect(backend.getStats()).toMatchObject({ installedGlyphs: 2, glyphUploadBatches: 1 });
+    backend.create(labelDefinition("CAB", 3));
+    expect(backend.getStats()).toMatchObject({ installedGlyphs: 3, glyphUploadBatches: 2 });
+    backend.dispose();
+  });
+
+  it("translates a same-bucket label batch without replacing glyph runs", () => {
+    const { backend } = fixture();
+    const firstDefinition = labelDefinition("Alpha", 1);
+    const secondDefinition = labelDefinition("Beta", 2);
+    const first = backend.create(firstDefinition) as { run: unknown };
+    const second = backend.create(secondDefinition) as { run: unknown };
+    backend.update(first, updateFor(firstDefinition, { x: 20, y: 30 }));
+    backend.update(second, updateFor(secondDefinition, { x: 40, y: 50 }));
+    const firstRun = first.run;
+    const secondRun = second.run;
+
+    backend.updateLabelPositions?.([
+      { resource: first, rendered: true, x: 70, y: 80 },
+      { resource: second, rendered: true, x: 90, y: 100 }
+    ]);
+
+    expect(first.run).toBe(firstRun);
+    expect(second.run).toBe(secondRun);
+    expect(backend.measure(first)!.x + backend.measure(first)!.width * 0.5).toBeCloseTo(70);
+    expect(backend.measure(second)!.y + backend.measure(second)!.height * 0.5).toBeCloseTo(100);
+    expect(backend.getStats()).toMatchObject({
+      labelTranslationBatches: 1,
+      translatedLabelRuns: 2,
+      labelTranslationFallbacks: 0
+    });
+    backend.dispose();
+  });
+
   it("supports CSS hex color, opacity, font size, and semantic metadata", () => {
     const { backend } = fixture();
     const definition = labelDefinition("Status", 1, {
@@ -158,6 +197,117 @@ describe("TextRenderer annotation backend", () => {
     });
     backend.disposeResource(plainResource);
     backend.dispose();
+  });
+
+  it("translates each z bucket in a mixed-bucket label batch", () => {
+    const { backend } = fixture();
+    const lowDefinition = labelDefinition("Low", 1);
+    const highDefinition = { ...labelDefinition("High", 2), zIndex: 4 };
+    const low = backend.create(lowDefinition) as { run: unknown };
+    const high = backend.create(highDefinition) as { run: unknown };
+    backend.update(low, updateFor(lowDefinition, { x: 20, y: 30 }));
+    backend.update(high, updateFor(highDefinition, { x: 40, y: 50 }));
+    const lowRun = low.run;
+    const highRun = high.run;
+
+    backend.updateLabelPositions?.([
+      { resource: low, rendered: true, x: 70, y: 80 },
+      { resource: high, rendered: true, x: 90, y: 100 }
+    ]);
+
+    expect(low.run).toBe(lowRun);
+    expect(high.run).toBe(highRun);
+    expect(backend.measure(low)!.x + backend.measure(low)!.width * 0.5).toBeCloseTo(70);
+    expect(backend.measure(high)!.y + backend.measure(high)!.height * 0.5).toBeCloseTo(100);
+    expect(backend.getStats()).toMatchObject({
+      labelTranslationBatches: 1,
+      translatedLabelRuns: 2,
+      labelTranslationFallbacks: 0
+    });
+    backend.dispose();
+  });
+
+  it("patches compatible changing text in existing glyph slots and safely falls back", () => {
+    const { backend } = fixture();
+    const initial = labelDefinition("Sensor 01: 10.0", 1);
+    const resource = backend.create(initial) as { run: unknown };
+    backend.update(resource, updateFor(initial, { x: 50, y: 60 }));
+    const originalRun = resource.run;
+    const compatible = { ...initial, text: "Sensor 01: 10.1" };
+
+    backend.update(resource, updateFor(compatible, { x: 50, y: 60 }));
+
+    expect(resource.run).toBe(originalRun);
+    expect(backend.getStats()).toMatchObject({
+      compatibleLabelRunPatches: 1,
+      patchedLabelGlyphSlots: 13,
+      labelRunPatchFallbacks: 0
+    });
+    const shapeMissesAfterTemplate = backend.getStats().cacheMisses;
+    const nextCompatible = { ...compatible, text: "Sensor 01: 10.2" };
+    backend.update(resource, updateFor(nextCompatible, { x: 50, y: 60 }));
+    expect(resource.run).toBe(originalRun);
+    expect(backend.getStats()).toMatchObject({
+      cacheMisses: shapeMissesAfterTemplate,
+      compatibleLabelRunPatches: 2,
+      patchedLabelGlyphSlots: 26,
+      labelRunPatchFallbacks: 0
+    });
+
+    const incompatible = { ...nextCompatible, text: "Sensor 01: 100.1" };
+    backend.update(resource, updateFor(incompatible, { x: 50, y: 60 }));
+    expect(resource.run).not.toBe(originalRun);
+    expect(backend.getStats()).toMatchObject({
+      compatibleLabelRunPatches: 2,
+      patchedLabelGlyphSlots: 26,
+      labelRunPatchFallbacks: 1
+    });
+    backend.dispose();
+  });
+
+  it("renders opt-in rounded-card backgrounds as one sprite per label", () => {
+    const { backend } = fixture({ labelBackgroundMode: "rounded-card" });
+    const style = {
+      backgroundColor: "#10251fcc",
+      borderColor: "#58e6bd",
+      borderWidth: 2,
+      borderRadius: 6,
+      padding: 8
+    };
+    const firstDefinition = labelDefinition("First", 1, style);
+    const secondDefinition = labelDefinition("Second", 2, style);
+    const first = backend.create(firstDefinition);
+    const second = backend.create(secondDefinition);
+    backend.update(first, updateFor(firstDefinition, { x: 30, y: 30 }));
+    backend.update(second, updateFor(secondDefinition, { x: 70, y: 60 }));
+
+    const firstBackground = (first as {
+      background: { sprites: unknown[]; roundedLayer: { layer: { count: number; visible: boolean; customShader?: unknown } } }
+    }).background;
+    expect(firstBackground.sprites).toHaveLength(1);
+    expect(firstBackground.roundedLayer.layer.count).toBe(2);
+    expect(firstBackground.roundedLayer.layer.visible).toBe(true);
+    expect(firstBackground.roundedLayer.layer.customShader).toBeDefined();
+    expect(backend.getStats()).toMatchObject({
+      labelBackgroundMode: "rounded-card",
+      liveLabelBackgrounds: 2,
+      labelBackgroundSprites: 2,
+      roundedCardLayers: 1,
+      roundedCardDrawCalls: 1,
+      labelBackgroundDrawCalls: 1
+    });
+
+    backend.disposeResource(first);
+    backend.disposeResource(second);
+    expect(backend.getStats()).toMatchObject({
+      roundedCardLayers: 0,
+      roundedCardDrawCalls: 0
+    });
+    backend.dispose();
+  });
+
+  it("rejects unknown label background modes", () => {
+    expect(() => fixture({ labelBackgroundMode: "auto" as never })).toThrow(/background mode/);
   });
 
   it("supports padding-only layout and validates label box dimensions", () => {
@@ -305,7 +455,7 @@ describe("TextRenderer annotation backend", () => {
     backend.dispose();
   });
 
-  it("runs marker pulses in a lazy Sprite FX layer and returns to the static path", () => {
+  it("runs marker pulses on GPU Sprite FX by default and returns to the static path", () => {
     const { backend } = fixture();
     const staticDefinition = markerDefinition("dot", 20);
     const animatedDefinition = {

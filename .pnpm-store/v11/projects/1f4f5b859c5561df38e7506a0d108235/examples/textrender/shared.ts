@@ -26,6 +26,7 @@ import {
 import {
   createTextRendererAnnotationBackend,
   type TextRendererAnnotationBackend,
+  type TextRendererLabelBackgroundMode,
   type TextRendererMarkerShapeRasterizer,
   type TextRendererShapingMode
 } from "@litools/annotator/textrender";
@@ -40,7 +41,15 @@ export interface TextDemoContext {
   readonly panel: TextDemoPanel;
   readonly layer: AnnotationLayer;
   readonly backend: TextRendererAnnotationBackend;
-  recreateLayer(mode?: TextRendererShapingMode, updateMode?: "scene" | "manual"): AnnotationLayer;
+  recreateLayer(
+    mode?: TextRendererShapingMode,
+    updateMode?: "scene" | "manual",
+    backgroundMode?: TextRendererLabelBackgroundMode
+  ): AnnotationLayer;
+  createAdditionalLayer(backgroundMode: TextRendererLabelBackgroundMode): {
+    readonly layer: AnnotationLayer;
+    readonly backend: TextRendererAnnotationBackend;
+  };
   addBox(name: string, position: readonly [number, number, number], color: readonly [number, number, number], size?: number): Mesh;
   frame(callback: (deltaMs: number) => void): void;
 }
@@ -94,8 +103,13 @@ if (engine) {
   let activeLayer: AnnotationLayer | undefined;
   let activeBackend: TextRendererAnnotationBackend | undefined;
   let sceneUpdatesLayer = true;
+  const additionalLayers: Array<{ layer: AnnotationLayer; backend: TextRendererAnnotationBackend }> = [];
 
-  const recreateLayer = (mode: TextRendererShapingMode = "public", updateMode: "scene" | "manual" = "scene") => {
+  const recreateLayer = (
+    mode: TextRendererShapingMode = "public",
+    updateMode: "scene" | "manual" = "scene",
+    backgroundMode: TextRendererLabelBackgroundMode = "nine-slice"
+  ) => {
     if (activeLayer) disposeAnnotationLayer(activeLayer);
     activeBackend = createTextRendererAnnotationBackend({
       surface: scene.surface,
@@ -103,6 +117,7 @@ if (engine) {
       shapingMode: mode,
       coverageGamma: 1.9,
       shapeCacheSize: 512,
+      labelBackgroundMode: backgroundMode,
       markerShapes: { "demo/star": rasterizeStar }
     });
     sceneUpdatesLayer = updateMode === "scene";
@@ -114,6 +129,7 @@ if (engine) {
   // update so GPU text and scene geometry use the exact same camera matrix.
   onBeforeRender(scene, () => {
     if (sceneUpdatesLayer && activeLayer) updateAnnotationLayer(activeLayer);
+    for (const entry of additionalLayers) updateAnnotationLayer(entry.layer);
   });
 
   const context: TextDemoContext = {
@@ -131,6 +147,22 @@ if (engine) {
       return activeBackend;
     },
     recreateLayer,
+    createAdditionalLayer(backgroundMode) {
+      const backend = createTextRendererAnnotationBackend({
+        surface: scene.surface,
+        font,
+        shapingMode: "public",
+        coverageGamma: 1.9,
+        shapeCacheSize: 512,
+        labelBackgroundMode: backgroundMode
+      });
+      const layer = createAnnotationLayer({
+        scene, camera, canvas, backend, updateMode: "manual", viewportPadding: 12
+      });
+      const entry = { layer, backend };
+      additionalLayers.push(entry);
+      return entry;
+    },
     addBox(name, position, color, size = 1.8) {
       const mesh = createBox(engine, size);
       mesh.name = name;
@@ -150,16 +182,19 @@ if (engine) {
   await startEngine(engine);
   window.addEventListener("beforeunload", () => {
     if (activeLayer) disposeAnnotationLayer(activeLayer);
+    for (const entry of additionalLayers) disposeAnnotationLayer(entry.layer);
   }, { once: true });
 }
 
 async function configureDemo(name: string, context: TextDemoContext): Promise<void> {
   if (name === "basic") return (await import("./basic/main.js")).configureBasicText(context);
   if (name === "backgrounds") return (await import("./backgrounds/main.js")).configureGpuBackgrounds(context);
+  if (name === "background-modes") return (await import("./background-modes/main.js")).configureBackgroundModes(context);
   if (name === "callouts") return (await import("./callouts/main.js")).configureGpuCallouts(context);
   if (name === "animated-markers") return (await import("./animated-markers/main.js")).configureAnimatedGpuMarkers(context);
   if (name === "marker-shapes") return (await import("./marker-shapes/main.js")).configureGpuMarkerShapes(context);
   if (name === "marker-benchmark") return (await import("./marker-benchmark/main.js")).configureGpuMarkerBenchmark(context);
+  if (name === "label-benchmark") return (await import("./label-benchmark/main.js")).configureLabelBenchmark(context);
   if (name === "interaction") return (await import("./interaction/main.js")).configureGpuInteraction(context);
   if (name === "dynamic") return (await import("./dynamic/main.js")).configureDynamicText(context);
   if (name === "collisions") return (await import("./collisions/main.js")).configureTextCollisions(context);
