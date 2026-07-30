@@ -140,35 +140,8 @@ drawer, so the complete learning path stays reachable without returning to the
 catalog. It covers mesh labels, markers, live text, stable Instancer anchors,
 lifecycle, collisions, depth occlusion, GPU shaping, Sprite2D leader lines,
 manual JSON benchmarks, and selectable 100/250/500-label stress loads.
-The dedicated GPU label benchmark adds deterministic quick and three-round
-thorough suites across static, moving, numeric-text, collision, z-bucket,
-nine-slice, and rounded-card workloads through 1,000 labels. Its JSON report
-includes p50/p95/p99 CPU timings, frame cadence, dropped-frame counts, renderer
-statistics, fast-path counters, and correctness checksums.
-
-A workload-version 2 thorough reference run used Chrome 150 on Windows, DPR 1,
-a 1920 x 953 viewport, 45 warm-up frames, and three 240-frame measured rounds.
-The values below average the three per-round summaries:
-
-| 500-label workload | Update mean | Update p95 | Result |
-| --- | ---: | ---: | --- |
-| Numeric churn, original | 46.295 ms | 47.933 ms | 720/720 samples over 16.7 ms |
-| Numeric churn, slot patch only | 25.122 ms | 26.400 ms | 720/720 samples over 16.7 ms |
-| Numeric churn, digit metrics + slot patch | 4.633 ms | 4.967 ms | 0/720 samples over 16.7 ms |
-| Mixed-z movement before per-bucket translation | 1.409 ms | 1.533 ms | 720 translation fallbacks |
-| Mixed-z movement after per-bucket translation | 0.617 ms | 0.767 ms | 358,155 translated runs; no fallbacks |
-
-The final numeric run was about 90% faster than the original. It recorded
-358,832 compatible run patches and 4,557,707 in-place glyph-slot writes.
-Shape-cache misses fell from 359,744 to 197, with 1,168 safe run-patch
-fallbacks for incompatible format transitions. All 32 sampled labels remained
-correctly rendered. These are results from one machine; run the bundled suite
-on target hardware for capacity decisions.
-
-The collision stress scene exercises selectable 100, 250, and 500-label loads
-with moving anchors, changing text widths, and clamped edge labels. Its timing
-panel reports the latest update, arithmetic mean, and p95. A p95 of `7.6 ms`
-means 95% of sampled annotation updates completed in `7.6 ms` or less.
+See [BENCHMARK.md](./BENCHMARK.md) for suite methodology, workload versions,
+cache-churn coverage, reference results, and interpretation guidance.
 
 ## GPU TextRenderer annotations
 
@@ -198,7 +171,29 @@ faster shaping. Runtime guards permanently disable that adapter for the
 backend instance after its first mismatch or error, then use the public path.
 `backend.getStats()` reports cache activity, shaping-path counts, private
 fallbacks, adapter availability, live labels, backgrounds and markers, text
-buckets/draw calls, and Sprite2D counts.
+buckets/draw calls, Sprite2D counts, bounded appearance-cache entries, atlas
+frames/bytes, evictions, and capacity misses.
+
+Long-running dynamic-style applications can tune independent cache limits:
+
+```ts
+const backend = createTextRendererAnnotationBackend({
+  surface,
+  font,
+  shapeCacheSize: 512,
+  colorCacheSize: 256,
+  markerFrameCacheSize: 256,
+  backgroundFrameCacheSize: 128,
+  spriteAtlasFrameLimit: 2048
+});
+```
+
+Colors use LRU eviction. Marker and nine-slice appearance records are
+reference-counted and only evicted when unused; live records may temporarily
+exceed a soft cache limit. The fixed 1024 x 1024 Sprite2D atlas is append-only
+in the current Babylon Lite API, so evicting a lookup record does not reclaim
+GPU pixels. The hard frame limit rejects new one-off appearances with a clear
+error before an incorrect visual can be reused.
 
 The default GPU path is already the fastest batching configuration. Labels
 that omit `zIndex` all use `0`, so they share one TextRenderer bucket and one
@@ -271,8 +266,8 @@ leaving the static pipeline unchanged. An all-animated z bucket is one draw
 call; mixing static and animated markers in the same bucket is two. The public
 Sprite FX bridge supports fragment animation, so pulse changes opacity rather
 than marker geometry. Do not simulate a pulse by changing marker size or
-opacity with `updateMarker()` every frame; that CPU-driven pattern exists in
-the benchmark only as a comparison workload.
+opacity with `updateMarker()` every frame; that CPU-driven pattern rewrites
+every marker and scales poorly.
 
 Unchanged markers reuse their latest projection and skip backend sprite writes
 when the camera, viewport, resolved anchor, visibility, definition, and
@@ -439,54 +434,8 @@ behind markers inside the same bucket. Empty buckets are removed. Keep the
 number of distinct values small because each visible layer is one draw call.
 All Sprite2D buckets still render behind the later TextRenderer pass.
 
-The manually started marker benchmark offers a quick one-round check and a
-thorough three-round run. Both cover ten cases spanning
-100–10,000 markers, one versus four z buckets, CPU pulse updates, GPU Sprite FX
-pulse, visibility churn, and forced camera movement. Static and GPU-pulse cases
-exercise cached projection; the orbit case measures full reprojection plus the
-TextRenderer position batch.
-
-The version 3 JSON report separates application mutation from
-`updateAnnotationLayer()`, retains their combined CPU cost, and adds first-frame
-and preparation timing, frame cadence and dropped-frame counts, whole-frame GPU
-timestamps when Lite/device support is available, fast-path backend deltas,
-draw calls, environment information, and sampled correctness checks. The
-thorough profile uses 15 settling frames, 30 excluded warm-up frames, and three
-180-frame measured rounds, reporting the median of round summaries.
-
-One version 2 reference run with Chrome 150 on Windows, DPR 1, and a 1669 x 953 canvas
-measured 10,000 camera-orbit markers at 2.72 ms mean / 3.0 ms p95, down from
-7.85 ms / 8.6 ms before batching (about 65% lower). Static and GPU-pulse cases
-were about 0.40 ms. These are CPU annotation-update measurements from one
-machine. Version 3 reports CPU annotation work and whole-frame GPU timing as
-separate scopes; use the bundled benchmark on target hardware for capacity
-decisions.
-
-A newer version 3 thorough run with Chrome 150 on Windows, DPR 1, and a
-1920 x 953 canvas measured the following 10,000-marker median results. CPU
-values are combined application mutation plus Annotator update; GPU values are
-asynchronous whole-frame Lite timestamps:
-
-| Workload | CPU mean / p95 | GPU mean / p95 | Result |
-| --- | ---: | ---: | --- |
-| Static, one bucket | 0.39 / 0.50 ms | 0.33 / 0.87 ms | No backend writes |
-| GPU pulse | 0.37 / 0.60 ms | 0.34 / 0.90 ms | No per-frame marker writes |
-| Visibility churn | 2.03 / 2.30 ms | 0.76 / 0.90 ms | 1,250 hide + 1,250 show writes/frame |
-| Camera orbit | 2.94 / 3.60 ms | 0.28 / 0.87 ms | About 10,000 batched positions/frame |
-| CPU-driven pulse comparison | 18.01 / 21.00 ms | 1.86 / 3.35 ms | Anti-pattern; use `animation: { type: "pulse" }` |
-
-Stable-workload correctness checksums matched across rounds; camera-orbit
-checksums changed with the camera while all 32 sampled markers remained
-rendered. This run exposed 14.7–41.9 ms first-frame costs among the 10,000-marker
-cases when thousands of definitions, z buckets, or animation-layer assignments
-changed together. Treat those as configuration work: prepare large sets before
-they become visible or spread application updates across frames. GPU p95 values
-vary more than CPU medians because asynchronous whole-frame timestamps include
-periodic renderer/device work; compare several runs before treating them as a
-regression.
-Version 2 and version 3 CPU results are not directly interchangeable because
-version 3 uses longer rounds, separated timers, GPU timing, and later camera
-positions.
+The manual label, marker, collision, cache-churn, and interaction benchmarks
+are documented in [BENCHMARK.md](./BENCHMARK.md).
 
 ## Optional CPU interaction
 
@@ -534,27 +483,8 @@ diagnostics.
 
 This is pointer interaction only. It adds no DOM accessibility, keyboard focus,
 dragging, selection ownership, or automatic camera arbitration. The dedicated
-GPU interaction demo includes a manual 100/1,000/10,000-target benchmark with
-an excluded warm-up, three measured rounds, viewport-wide and center-dense
-query workloads, median throughput, and separate camera-wide and one-percent
-partial-movement index timings. It finishes with a 32/64/128 CSS-pixel cell-size
-sweep at 10,000 markers.
-
-One Chrome 150/Windows/DPR 1 interaction run produced these median results:
-
-| Targets | Viewport queries/s | Center-dense queries/s | Full camera index | 1% incremental index |
-| ---: | ---: | ---: | ---: | ---: |
-| 100 | 3.03 million | 3.77 million | 0.20 ms | 0.20 ms / 1 target |
-| 1,000 | 3.08 million | 1.67 million | 0.60 ms | 0.10 ms / 10 targets |
-| 10,000 | 568,000 | 168,000 | 6.00 ms | 0.20 ms / 100 targets |
-
-At 10,000 markers, 32 px cells reached about 338,000 center-dense queries/s
-with 49 average candidates, versus 179,000 and 136 candidates at 64 px, or
-84,000 and 419 candidates at 128 px. The 32 px index used 426 cells and took
-6.1 ms to build; 64 px used 119 cells and took 5.0 ms. Keep the balanced 64 px
-default for moving scenes. Prefer 32 px for a mostly static, densely interactive
-view with unusually frequent picks. Large 128 px cells trade a small build-time
-saving for substantially slower dense queries.
+GPU interaction demo includes the workload documented in
+[BENCHMARK.md](./BENCHMARK.md).
 
 The remaining useful GPU roadmap is marker presets and DynamicTexture icons.
 

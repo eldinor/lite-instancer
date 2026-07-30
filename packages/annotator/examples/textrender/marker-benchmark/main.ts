@@ -17,7 +17,7 @@ import type { TextDemoContext } from "../shared.js";
 const shapes: readonly MarkerShape[] = ["dot", "square", "diamond", "triangle"];
 const colors = ["#5bf0bd", "#72e6ff", "#ffd166", "#ff8a65"] as const;
 
-type Workload = "static" | "cpu-pulse" | "gpu-pulse" | "visibility-churn" | "camera-orbit";
+type Workload = "static" | "cpu-pulse" | "gpu-pulse" | "visibility-churn" | "camera-orbit" | "appearance-churn";
 type BenchmarkMode = "quick" | "thorough";
 
 interface BenchmarkProfile {
@@ -46,6 +46,8 @@ interface BackendCounterSnapshot {
   readonly fullMarkerUpdates: number;
   readonly markerPositionBatches: number;
   readonly batchedMarkerPositions: number;
+  readonly evictions: number;
+  readonly capacityMisses: number;
 }
 
 interface CaseProgress {
@@ -117,7 +119,8 @@ const cases: readonly BenchmarkCase[] = [
   { count: 10_000, workload: "cpu-pulse", zBuckets: 1 },
   { count: 10_000, workload: "gpu-pulse", zBuckets: 1 },
   { count: 10_000, workload: "visibility-churn", zBuckets: 1 },
-  { count: 10_000, workload: "camera-orbit", zBuckets: 1 }
+  { count: 10_000, workload: "camera-orbit", zBuckets: 1 },
+  { count: 10_000, workload: "appearance-churn", zBuckets: 1 }
 ];
 
 export function configureGpuMarkerBenchmark(context: TextDemoContext): void {
@@ -261,6 +264,13 @@ export function configureGpuMarkerBenchmark(context: TextDemoContext): void {
       context.camera.alpha += 0.0025;
       return;
     }
+    if (current.workload === "appearance-churn") {
+      const index = frame % current.count;
+      updateMarker(markers[index]!, {
+        style: { backgroundColor: dynamicMarkerColor(frame % 128), borderColor: "#08120f", borderWidth: 1 }
+      });
+      return;
+    }
     for (let index = 0; index < current.count; index++) {
       const marker = markers[index]!;
       if (current.workload === "cpu-pulse") {
@@ -337,7 +347,7 @@ export function configureGpuMarkerBenchmark(context: TextDemoContext): void {
   function finishRun(completed: ActiveRun): void {
     const report = {
       benchmark: "annotator-textrender-high-count-markers",
-      workloadVersion: 3,
+      workloadVersion: 4,
       timestamp: new Date().toISOString(),
       environment: {
         userAgent: navigator.userAgent,
@@ -427,7 +437,9 @@ function medianRounds(rounds: readonly BenchmarkRoundResult[]): Omit<BenchmarkRo
     backendWork: {
       fullMarkerUpdates: median(rounds.map((round) => round.backendWork.fullMarkerUpdates)),
       markerPositionBatches: median(rounds.map((round) => round.backendWork.markerPositionBatches)),
-      batchedMarkerPositions: median(rounds.map((round) => round.backendWork.batchedMarkerPositions))
+      batchedMarkerPositions: median(rounds.map((round) => round.backendWork.batchedMarkerPositions)),
+      evictions: median(rounds.map((round) => round.backendWork.evictions)),
+      capacityMisses: median(rounds.map((round) => round.backendWork.capacityMisses))
     }
   };
 }
@@ -446,7 +458,9 @@ function backendCounters(stats: TextRendererAnnotationBackendStats): BackendCoun
   return {
     fullMarkerUpdates: stats.fullMarkerUpdates,
     markerPositionBatches: stats.markerPositionBatches,
-    batchedMarkerPositions: stats.batchedMarkerPositions
+    batchedMarkerPositions: stats.batchedMarkerPositions,
+    evictions: stats.evictions,
+    capacityMisses: stats.capacityMisses
   };
 }
 
@@ -454,7 +468,9 @@ function subtractCounters(current: BackendCounterSnapshot, baseline: BackendCoun
   return {
     fullMarkerUpdates: current.fullMarkerUpdates - baseline.fullMarkerUpdates,
     markerPositionBatches: current.markerPositionBatches - baseline.markerPositionBatches,
-    batchedMarkerPositions: current.batchedMarkerPositions - baseline.batchedMarkerPositions
+    batchedMarkerPositions: current.batchedMarkerPositions - baseline.batchedMarkerPositions,
+    evictions: current.evictions - baseline.evictions,
+    capacityMisses: current.capacityMisses - baseline.capacityMisses
   };
 }
 
@@ -486,8 +502,20 @@ function rendererStats(stats: TextRendererAnnotationBackendStats) {
     spriteBuckets: stats.spriteBuckets,
     spriteDrawCalls: stats.spriteDrawCalls,
     markerDrawCalls: stats.markerDrawCalls,
-    animatedMarkerDrawCalls: stats.animatedMarkerDrawCalls
+    animatedMarkerDrawCalls: stats.animatedMarkerDrawCalls,
+    colorCacheEntries: stats.colorCacheEntries,
+    markerFrameCacheEntries: stats.markerFrameCacheEntries,
+    backgroundFrameCacheEntries: stats.backgroundFrameCacheEntries,
+    atlasFrames: stats.atlasFrames,
+    atlasBytes: stats.atlasBytes,
+    evictions: stats.evictions,
+    capacityMisses: stats.capacityMisses
   };
+}
+
+function dynamicMarkerColor(seed: number): string {
+  const value = Math.imul(seed + 1, 0x45d9f3b) >>> 0;
+  return `#${(value & 0xffffff).toString(16).padStart(6, "0")}`;
 }
 
 function percentile(sorted: readonly number[], fraction: number): number {

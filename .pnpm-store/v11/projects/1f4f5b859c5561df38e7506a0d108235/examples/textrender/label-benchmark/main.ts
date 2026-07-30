@@ -2,6 +2,7 @@ import {
   createLabel,
   getAnnotationSnapshot,
   invalidateAnnotation,
+  updateLabel,
   updateAnnotationLayer,
   type AnnotationLayer,
   type LabelHandle,
@@ -13,7 +14,7 @@ import type {
 } from "@litools/annotator/textrender";
 import type { TextDemoContext } from "../shared.js";
 
-type Workload = "static" | "moving" | "numeric-text" | "collision-hide" | "backgrounds";
+type Workload = "static" | "moving" | "numeric-text" | "collision-hide" | "backgrounds" | "appearance-churn";
 type RunMode = "quick" | "thorough";
 
 interface BenchmarkCase {
@@ -49,6 +50,8 @@ interface CounterSnapshot {
   readonly runPatchFallbacks: number;
   readonly shapeHits: number;
   readonly shapeMisses: number;
+  readonly evictions: number;
+  readonly capacityMisses: number;
 }
 
 interface RoundResult {
@@ -107,14 +110,15 @@ const cases: readonly BenchmarkCase[] = [
   { name: "nine-slice-500", count: 500, workload: "backgrounds", backgroundMode: "nine-slice", zBuckets: 1 },
   { name: "rounded-card-500", count: 500, workload: "backgrounds", backgroundMode: "rounded-card", zBuckets: 1 },
   { name: "rounded-card-1000", count: 1_000, workload: "backgrounds", backgroundMode: "rounded-card", zBuckets: 1 },
-  { name: "z-buckets-500", count: 500, workload: "moving", backgroundMode: "nine-slice", zBuckets: 4 }
+  { name: "z-buckets-500", count: 500, workload: "moving", backgroundMode: "nine-slice", zBuckets: 4 },
+  { name: "appearance-churn-500", count: 500, workload: "appearance-churn", backgroundMode: "nine-slice", zBuckets: 1 }
 ];
 
 const colors = ["#5bf0bd", "#72e6ff", "#ffd166", "#ff8a65"] as const;
 
 export function configureLabelBenchmark(context: TextDemoContext): void {
   context.panel.describe(
-    "Deterministic TextRenderer label suite covering static projection, in-place translation, dynamic numeric shaping, collisions, z buckets, and 500/1,000-label nine-slice versus rounded-card backgrounds."
+    "Deterministic TextRenderer label suite covering projection, translation, numeric shaping, collisions, backgrounds, z buckets, and bounded appearance-cache churn."
   );
   let active: ActiveRun | null = null;
   let reportJson = "";
@@ -202,7 +206,7 @@ export function configureLabelBenchmark(context: TextDemoContext): void {
         kind: "resolver",
         resolve(out) { out.set(position); return { available: true, targetVisible: true, position: out }; }
       };
-      const background = configuration.workload === "backgrounds";
+      const background = configuration.workload === "backgrounds" || configuration.workload === "appearance-churn";
       labels.push(createLabel(layer, {
         anchor,
         text: () => configuration.workload === "numeric-text"
@@ -213,7 +217,7 @@ export function configureLabelBenchmark(context: TextDemoContext): void {
         style: {
           color: "#edf8f4",
           fontSize: 12,
-          ...(background ? {
+          ...(background ? configuration.workload === "appearance-churn" ? appearanceStyle(0) : {
             backgroundColor: "#102b3de6",
             borderColor: colors[index % colors.length]!,
             borderWidth: 1,
@@ -234,6 +238,11 @@ export function configureLabelBenchmark(context: TextDemoContext): void {
         run.values[index] = (run.values[index]! + 0.1 + index % 7 * 0.01) % 100;
         invalidateAnnotation(run.labels[index]!);
       }
+      return;
+    }
+    if (configuration.workload === "appearance-churn") {
+      const index = run.workloadFrame % run.labels.length;
+      updateLabel(run.labels[index]!, { style: { color: "#edf8f4", fontSize: 12, ...appearanceStyle(run.workloadFrame % 160) } });
       return;
     }
     const time = run.workloadFrame * 0.016;
@@ -301,7 +310,7 @@ export function configureLabelBenchmark(context: TextDemoContext): void {
   function finishRun(run: ActiveRun): void {
     reportJson = JSON.stringify({
       benchmark: "annotator-textrender-label-suite",
-      workloadVersion: 2,
+      workloadVersion: 3,
       timestamp: new Date().toISOString(),
       environment: {
         userAgent: navigator.userAgent,
@@ -372,6 +381,23 @@ function deterministicPosition(index: number, count: number): Float32Array {
   ]);
 }
 
+function appearanceStyle(index: number) {
+  const fill = dynamicColor(index * 2 + 17, 0xcc);
+  const border = dynamicColor(index * 2 + 41, 0xff);
+  return {
+    backgroundColor: fill,
+    borderColor: border,
+    borderWidth: 1 + index % 2,
+    borderRadius: 2 + index % 6,
+    padding: 4
+  };
+}
+
+function dynamicColor(seed: number, alpha: number): string {
+  const value = Math.imul(seed + 1, 0x45d9f3b) >>> 0;
+  return `#${(value & 0xffffff).toString(16).padStart(6, "0")}${alpha.toString(16).padStart(2, "0")}`;
+}
+
 function summarize(values: readonly number[]): TimingSummary {
   const sorted = [...values].sort((a, b) => a - b);
   const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
@@ -398,7 +424,9 @@ function counters(stats: TextRendererAnnotationBackendStats): CounterSnapshot {
     patchedGlyphSlots: stats.patchedLabelGlyphSlots,
     runPatchFallbacks: stats.labelRunPatchFallbacks,
     shapeHits: stats.cacheHits,
-    shapeMisses: stats.cacheMisses
+    shapeMisses: stats.cacheMisses,
+    evictions: stats.evictions,
+    capacityMisses: stats.capacityMisses
   };
 }
 
@@ -411,7 +439,9 @@ function subtract(current: CounterSnapshot, baseline: CounterSnapshot): CounterS
     patchedGlyphSlots: current.patchedGlyphSlots - baseline.patchedGlyphSlots,
     runPatchFallbacks: current.runPatchFallbacks - baseline.runPatchFallbacks,
     shapeHits: current.shapeHits - baseline.shapeHits,
-    shapeMisses: current.shapeMisses - baseline.shapeMisses
+    shapeMisses: current.shapeMisses - baseline.shapeMisses,
+    evictions: current.evictions - baseline.evictions,
+    capacityMisses: current.capacityMisses - baseline.capacityMisses
   };
 }
 
@@ -440,6 +470,13 @@ function rendererStats(stats: TextRendererAnnotationBackendStats) {
     roundedCardLayers: stats.roundedCardLayers,
     roundedCardDrawCalls: stats.roundedCardDrawCalls,
     installedGlyphs: stats.installedGlyphs,
-    glyphUploadBatches: stats.glyphUploadBatches
+    glyphUploadBatches: stats.glyphUploadBatches,
+    colorCacheEntries: stats.colorCacheEntries,
+    markerFrameCacheEntries: stats.markerFrameCacheEntries,
+    backgroundFrameCacheEntries: stats.backgroundFrameCacheEntries,
+    atlasFrames: stats.atlasFrames,
+    atlasBytes: stats.atlasBytes,
+    evictions: stats.evictions,
+    capacityMisses: stats.capacityMisses
   };
 }

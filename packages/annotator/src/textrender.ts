@@ -94,6 +94,14 @@ export interface TextRendererAnnotationBackendOptions {
   defaultColor?: string;
   coverageGamma?: number;
   shapeCacheSize?: number;
+  /** Parsed CSS color LRU entries. @default 256 */
+  colorCacheSize?: number;
+  /** Marker appearance records retained for reuse. @default 256 */
+  markerFrameCacheSize?: number;
+  /** Nine-slice appearance records retained for reuse. @default 128 */
+  backgroundFrameCacheSize?: number;
+  /** Hard logical frame limit, including two built-in frames. @default 2048 */
+  spriteAtlasFrameLimit?: number;
   shapingMode?: TextRendererShapingMode;
   /** GPU label background implementation. @default "nine-slice" */
   labelBackgroundMode?: TextRendererLabelBackgroundMode;
@@ -143,6 +151,13 @@ export interface TextRendererAnnotationBackendStats {
   readonly compatibleLabelRunPatches: number;
   readonly patchedLabelGlyphSlots: number;
   readonly labelRunPatchFallbacks: number;
+  readonly colorCacheEntries: number;
+  readonly markerFrameCacheEntries: number;
+  readonly backgroundFrameCacheEntries: number;
+  readonly atlasFrames: number;
+  readonly atlasBytes: number;
+  readonly evictions: number;
+  readonly capacityMisses: number;
 }
 
 export interface TextRendererAnnotationBackend extends AnnotationBackend {
@@ -206,6 +221,7 @@ interface MarkerResource {
   sprite: Sprite2DHandle;
   bucket: SpriteBucket;
   frame: number;
+  frameRecord: MarkerFrameRecord;
   size: number;
   opacity: number;
   rendered: boolean;
@@ -245,6 +261,17 @@ interface LabelBackgroundFrames {
   readonly slice: number;
 }
 
+interface MarkerFrameRecord {
+  readonly key: string;
+  readonly frame: number;
+  references: number;
+}
+
+interface LabelBackgroundFrameRecord extends LabelBackgroundFrames {
+  readonly key: string;
+  references: number;
+}
+
 interface LabelBackgroundResource {
   readonly sprites: Sprite2DHandle[];
   readonly visualKey: string;
@@ -254,6 +281,7 @@ interface LabelBackgroundResource {
   opacity: number;
   visible: boolean;
   roundedLayer: RoundedCardLayer | null;
+  frameRecord: LabelBackgroundFrameRecord | null;
 }
 
 interface RoundedCardLayer {
@@ -311,6 +339,8 @@ interface MutableStats {
   compatibleLabelRunPatches: number;
   patchedLabelGlyphSlots: number;
   labelRunPatchFallbacks: number;
+  evictions: number;
+  capacityMisses: number;
 }
 
 interface ResolvedMarkerPulse {
@@ -323,6 +353,10 @@ interface ResolvedMarkerPulse {
 const CURVE_SET_ID: CurveSetId = "@litools/annotator/textrender";
 const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_CACHE_SIZE = 512;
+const DEFAULT_COLOR_CACHE_SIZE = 256;
+const DEFAULT_MARKER_FRAME_CACHE_SIZE = 256;
+const DEFAULT_BACKGROUND_FRAME_CACHE_SIZE = 128;
+const DEFAULT_ATLAS_FRAME_LIMIT = 2048;
 const SCALE_EPSILON = 0.001;
 const MARKER_FRAME_SIZE = 64;
 const BUILTIN_MARKER_SHAPES = new Set<MarkerShape>([
@@ -346,6 +380,10 @@ export function createTextRendererAnnotationBackend(
   const defaultFontSize = options.defaultFontSize ?? DEFAULT_FONT_SIZE;
   const coverageGamma = options.coverageGamma ?? 1;
   const cacheLimit = options.shapeCacheSize ?? DEFAULT_CACHE_SIZE;
+  const colorCacheLimit = options.colorCacheSize ?? DEFAULT_COLOR_CACHE_SIZE;
+  const markerFrameCacheLimit = options.markerFrameCacheSize ?? DEFAULT_MARKER_FRAME_CACHE_SIZE;
+  const backgroundFrameCacheLimit = options.backgroundFrameCacheSize ?? DEFAULT_BACKGROUND_FRAME_CACHE_SIZE;
+  const atlasFrameLimit = options.spriteAtlasFrameLimit ?? DEFAULT_ATLAS_FRAME_LIMIT;
   const requestedMode = options.shapingMode ?? "public";
   const labelBackgroundMode = options.labelBackgroundMode ?? "nine-slice";
   if (labelBackgroundMode !== "nine-slice" && labelBackgroundMode !== "rounded-card") {
@@ -356,6 +394,18 @@ export function createTextRendererAnnotationBackend(
   assertPositiveFinite(coverageGamma, "Coverage gamma");
   if (!Number.isInteger(cacheLimit) || cacheLimit < 0) {
     throw new AnnotatorError("Text shape cache size must be a non-negative integer");
+  }
+  for (const [name, value] of [
+    ["Color cache size", colorCacheLimit],
+    ["Marker frame cache size", markerFrameCacheLimit],
+    ["Background frame cache size", backgroundFrameCacheLimit]
+  ] as const) {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new AnnotatorError(`${name} must be a non-negative integer`);
+    }
+  }
+  if (!Number.isInteger(atlasFrameLimit) || atlasFrameLimit < 2) {
+    throw new AnnotatorError("Sprite atlas frame limit must be an integer of at least 2");
   }
 
   const storage = createGlyphStorage();
@@ -391,15 +441,17 @@ export function createTextRendererAnnotationBackend(
     labelTranslationFallbacks: 0,
     compatibleLabelRunPatches: 0,
     patchedLabelGlyphSlots: 0,
-    labelRunPatchFallbacks: 0
+    labelRunPatchFallbacks: 0,
+    evictions: 0,
+    capacityMisses: 0
   };
   let privateAvailable = requestedMode === "guarded-private";
   let disposed = false;
   let viewportScale = 1;
   let spriteState: SpriteRendererState | null = null;
   let markerPulseShader: Sprite2DCustomShader | null = null;
-  const markerFrameCache = new Map<string, number>();
-  const labelBackgroundFrameCache = new Map<string, LabelBackgroundFrames>();
+  const markerFrameCache = new Map<string, MarkerFrameRecord>();
+  const labelBackgroundFrameCache = new Map<string, LabelBackgroundFrameRecord>();
   const defaultColor = resolveColor(options.defaultColor ?? "#ffffff");
 
   const backend: TextRendererAnnotationBackend = {
@@ -698,7 +750,16 @@ export function createTextRendererAnnotationBackend(
         labelTranslationFallbacks: stats.labelTranslationFallbacks,
         compatibleLabelRunPatches: stats.compatibleLabelRunPatches,
         patchedLabelGlyphSlots: stats.patchedLabelGlyphSlots,
-        labelRunPatchFallbacks: stats.labelRunPatchFallbacks
+        labelRunPatchFallbacks: stats.labelRunPatchFallbacks,
+        colorCacheEntries: colorCache.size,
+        markerFrameCacheEntries: markerFrameCache.size,
+        backgroundFrameCacheEntries: labelBackgroundFrameCache.size,
+        atlasFrames: spriteState?.atlas.frames.length ?? 0,
+        atlasBytes: spriteState
+          ? spriteState.atlas.textureSizePx[0] * spriteState.atlas.textureSizePx[1] * 4
+          : 0,
+        evictions: stats.evictions,
+        capacityMisses: stats.capacityMisses
       });
     },
 
@@ -947,7 +1008,8 @@ return texel * opacity * L.opacityMul;`
       zIndex: definition.zIndex,
       opacity: box.opacity,
       visible: false,
-      roundedLayer
+      roundedLayer,
+      frameRecord: resolved
     };
     bucket.backgroundResources++;
     stats.liveLabelBackgrounds++;
@@ -991,12 +1053,18 @@ return texel * opacity * L.opacityMul;`
     return record;
   }
 
-  function resolveLabelBackgroundFrames(box: ResolvedLabelBox): LabelBackgroundFrames {
+  function resolveLabelBackgroundFrames(box: ResolvedLabelBox): LabelBackgroundFrameRecord {
     const key = box.visualKey!;
     const cached = labelBackgroundFrameCache.get(key);
-    if (cached) return cached;
+    if (cached) {
+      cached.references++;
+      touchCacheEntry(labelBackgroundFrameCache, key, cached);
+      return cached;
+    }
     const source = createNineSlicePixels(box.backgroundColor, box.borderColor, box.borderWidth, box.borderRadius);
     const state = ensureSpriteRenderer();
+    assertAtlasCapacity(state.atlas, 9, "label background");
+    makeFrameCacheRoom(labelBackgroundFrameCache, backgroundFrameCacheLimit);
     let frames: readonly number[];
     try {
       frames = appendSpriteAtlasFrames(options.surface.engine, state.atlas, source.patches.map((patch, index) => ({
@@ -1006,11 +1074,18 @@ return texel * opacity * L.opacityMul;`
         name: `label-background-${labelBackgroundFrameCache.size}-${index}`
       })));
     } catch (error) {
+      stats.capacityMisses++;
       throw new AnnotatorError(`GPU label-background atlas capacity was exceeded: ${String(error)}`);
     }
     if (frames.length !== 9) throw new AnnotatorError("Babylon Lite did not append all nine label-background frames");
-    const resolved = Object.freeze({ frames: Object.freeze([...frames]), slice: source.slice });
-    labelBackgroundFrameCache.set(key, resolved);
+    const resolved: LabelBackgroundFrameRecord = {
+      key,
+      frames: Object.freeze([...frames]),
+      slice: source.slice,
+      references: 1
+    };
+    if (backgroundFrameCacheLimit > 0) labelBackgroundFrameCache.set(key, resolved);
+    else stats.capacityMisses++;
     return resolved;
   }
 
@@ -1084,6 +1159,7 @@ return texel * opacity * L.opacityMul;`
         background.bucket.roundedCardLayers.delete(rounded.visualKey);
       }
     }
+    releaseFrameRecord(labelBackgroundFrameCache, background.frameRecord, backgroundFrameCacheLimit);
     background.bucket.backgroundResources--;
     stats.liveLabelBackgrounds--;
     stats.labelBackgroundSprites -= background.sprites.length;
@@ -1209,7 +1285,8 @@ return texel * opacity * L.opacityMul;`
 
   function createMarkerResource(definition: BackendAnnotationDefinition): MarkerResource {
     const size = definition.size ?? 12;
-    const frame = resolveMarkerFrame(definition, size);
+    const frameRecord = resolveMarkerFrame(definition, size);
+    const frame = frameRecord.frame;
     const opacity = resolveMarkerOpacity(definition);
     const animation = resolveMarkerAnimation(definition.animation);
     const bucket = getSpriteBucket(definition.zIndex);
@@ -1226,6 +1303,7 @@ return texel * opacity * L.opacityMul;`
       sprite,
       bucket,
       frame,
+      frameRecord,
       size,
       opacity,
       rendered: false,
@@ -1247,7 +1325,8 @@ return texel * opacity * L.opacityMul;`
     stats.fullMarkerUpdates++;
     if (update.type !== "marker") throw new AnnotatorError("Annotation resource type cannot be changed");
     const size = update.size ?? 12;
-    const frame = update.definitionChanged ? resolveMarkerFrame(update, size) : resource.frame;
+    const frameRecord = update.definitionChanged ? resolveMarkerFrame(update, size) : resource.frameRecord;
+    const frame = frameRecord.frame;
     const opacity = update.definitionChanged ? resolveMarkerOpacity(update) : resource.opacity;
     const animation = update.definitionChanged ? resolveMarkerAnimation(update.animation) : resource.animation;
     const rendered = update.rendered && update.screenPosition !== null;
@@ -1263,9 +1342,11 @@ return texel * opacity * L.opacityMul;`
       color: markerSpriteColor(opacity, animation),
       visible: rendered
     });
+    if (update.definitionChanged) releaseFrameRecord(markerFrameCache, resource.frameRecord, markerFrameCacheLimit);
     if (resource.rendered !== rendered) adjustMarkerVisibility(resource, rendered ? 1 : -1);
     syncMarkerLayerVisibility(resource.bucket);
     resource.frame = frame;
+    resource.frameRecord = frameRecord;
     resource.size = size;
     resource.opacity = opacity;
     resource.rendered = rendered;
@@ -1331,6 +1412,7 @@ return texel * opacity * L.opacityMul;`
   function removeMarkerResource(resource: MarkerResource): void {
     if (resource.rendered) adjustMarkerVisibility(resource, -1);
     removeSprite2D(resource.sprite);
+    releaseFrameRecord(markerFrameCache, resource.frameRecord, markerFrameCacheLimit);
     resource.bucket.markerResources--;
     resource.disposed = true;
     resource.rendered = false;
@@ -1373,7 +1455,7 @@ return texel * opacity * L.opacityMul;`
   function resolveMarkerFrame(
     definition: BackendAnnotationDefinition | BackendAnnotationUpdate,
     size: number
-  ): number {
+  ): MarkerFrameRecord {
     const shape = definition.shape ?? "dot";
     const borderWidth = definition.style.borderWidth ?? (shape === "ring" ? 2 : 0);
     const fill = shape !== "ring"
@@ -1386,8 +1468,14 @@ return texel * opacity * L.opacityMul;`
     const rasterizer = customMarkerShapes.get(shape);
     const key = [shape, rasterizer ? size : "normalized", borderRatio, ...fill, ...border].join("|");
     const cached = markerFrameCache.get(key);
-    if (cached !== undefined) return cached;
+    if (cached) {
+      cached.references++;
+      touchCacheEntry(markerFrameCache, key, cached);
+      return cached;
+    }
     const state = ensureSpriteRenderer();
+    assertAtlasCapacity(state.atlas, 1, "marker");
+    makeFrameCacheRoom(markerFrameCache, markerFrameCacheLimit);
     const pixels = rasterizer
       ? rasterizeCustomMarker(shape, rasterizer, size, borderWidth, fill, border)
       : createMarkerPixels(shape, size, borderWidth, fill, border);
@@ -1400,11 +1488,14 @@ return texel * opacity * L.opacityMul;`
         name: `marker-${markerFrameCache.size}`
       }])[0];
     } catch (error) {
+      stats.capacityMisses++;
       throw new AnnotatorError(`GPU marker atlas capacity was exceeded: ${String(error)}`);
     }
     if (frame === undefined) throw new AnnotatorError("Babylon Lite did not append the GPU marker frame");
-    markerFrameCache.set(key, frame);
-    return frame;
+    const record: MarkerFrameRecord = { key, frame, references: 1 };
+    if (markerFrameCacheLimit > 0) markerFrameCache.set(key, record);
+    else stats.capacityMisses++;
+    return record;
   }
 
   function resolveMarkerOpacity(definition: BackendAnnotationDefinition | BackendAnnotationUpdate): number {
@@ -1605,11 +1696,74 @@ return texel * opacity * L.opacityMul;`
 
   function resolveColor(value: string): readonly [number, number, number, number] {
     const cached = colorCache.get(value);
-    if (cached) return cached;
+    if (cached) {
+      touchCacheEntry(colorCache, value, cached);
+      return cached;
+    }
     const parsed = parseCssColor(value);
-    colorCache.set(value, parsed);
+    if (colorCacheLimit > 0) {
+      colorCache.set(value, parsed);
+      while (colorCache.size > colorCacheLimit) {
+        const oldest = colorCache.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        colorCache.delete(oldest);
+        stats.evictions++;
+      }
+    } else {
+      stats.capacityMisses++;
+    }
     return parsed;
   }
+
+  function assertAtlasCapacity(atlas: SpriteAtlas, additionalFrames: number, kind: string): void {
+    if (atlas.frames.length + additionalFrames <= atlasFrameLimit) return;
+    stats.capacityMisses++;
+    throw new AnnotatorError(
+      `GPU sprite atlas frame limit ${atlasFrameLimit} would be exceeded by ${kind}`
+    );
+  }
+
+  function makeFrameCacheRoom<T extends { references: number }>(
+    cache: Map<string, T>,
+    limit: number
+  ): void {
+    if (limit === 0) return;
+    while (cache.size >= limit) {
+      let evicted = false;
+      for (const [key, record] of cache) {
+        if (record.references !== 0) continue;
+        cache.delete(key);
+        stats.evictions++;
+        evicted = true;
+        break;
+      }
+      if (!evicted) {
+        stats.capacityMisses++;
+        return;
+      }
+    }
+  }
+
+  function releaseFrameRecord<T extends { references: number }>(
+    cache: Map<string, T>,
+    record: T | null,
+    limit: number
+  ): void {
+    if (!record) return;
+    record.references = Math.max(0, record.references - 1);
+    if (limit === 0 || cache.size <= limit || record.references !== 0) return;
+    for (const [key, candidate] of cache) {
+      if (candidate.references !== 0) continue;
+      cache.delete(key);
+      stats.evictions++;
+      if (cache.size <= limit) break;
+    }
+  }
+}
+
+function touchCacheEntry<K, V>(cache: Map<K, V>, key: K, value: V): void {
+  cache.delete(key);
+  cache.set(key, value);
 }
 
 function validateDefinition(

@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Add stable-live-count label and marker appearance-churn benchmark cases with
+  cache/atlas statistics, and consolidate benchmark methodology and reference
+  results in `BENCHMARK.md`.
+- Bound parsed-color, marker-frame, and nine-slice background-frame caches with
+  configurable limits, LRU/reference-aware eviction, live-frame protection, a
+  hard logical atlas-frame cap, and cache/atlas/eviction diagnostics.
 - Clarify that `animation: { type: "pulse" }` always selects the GPU Sprite FX
   path by default; CPU-driven per-frame pulse updates remain only as a
   benchmark comparison workload.

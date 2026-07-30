@@ -536,6 +536,80 @@ describe("TextRenderer annotation backend", () => {
     backend.dispose();
   });
 
+  it("bounds parsed colors with least-recently-used eviction", () => {
+    const { backend } = fixture({ colorCacheSize: 2 });
+    backend.create(labelDefinition("A", 1, { color: "#ff0000" }));
+    backend.create(labelDefinition("B", 2, { color: "#00ff00" }));
+    backend.create(labelDefinition("C", 3, { color: "#0000ff" }));
+    expect(backend.getStats()).toMatchObject({
+      colorCacheEntries: 2,
+      evictions: 2,
+      capacityMisses: 0
+    });
+    backend.dispose();
+  });
+
+  it("evicts only unreferenced marker frames and reports fixed atlas storage", () => {
+    const { backend } = fixture({ markerFrameCacheSize: 1 });
+    const red = backend.create(markerDefinition("dot", 12, { color: "#ff0000" }));
+    expect(backend.getStats()).toMatchObject({
+      markerFrameCacheEntries: 1,
+      atlasFrames: 3,
+      atlasBytes: 4_194_304
+    });
+    backend.disposeResource(red);
+    const blue = backend.create(markerDefinition("dot", 12, { color: "#0000ff" }, 2));
+    expect(backend.getStats()).toMatchObject({
+      markerFrameCacheEntries: 1,
+      atlasFrames: 4,
+      evictions: 1,
+      capacityMisses: 0
+    });
+    backend.disposeResource(blue);
+    backend.dispose();
+  });
+
+  it("allows live frame records above a soft limit but enforces the hard atlas limit", () => {
+    const { backend } = fixture({ markerFrameCacheSize: 1, spriteAtlasFrameLimit: 4 });
+    const red = backend.create(markerDefinition("dot", 12, { color: "#ff0000" }));
+    const blue = backend.create(markerDefinition("dot", 12, { color: "#0000ff" }, 2));
+    expect(backend.getStats()).toMatchObject({
+      markerFrameCacheEntries: 2,
+      atlasFrames: 4,
+      capacityMisses: 1
+    });
+    expect(() => backend.create(markerDefinition("dot", 12, { color: "#00ff00" }, 3)))
+      .toThrow(/atlas frame limit 4/);
+    expect(backend.getStats().capacityMisses).toBe(2);
+    backend.disposeResource(red);
+    backend.disposeResource(blue);
+    backend.dispose();
+  });
+
+  it("bounds unreferenced nine-slice frame records", () => {
+    const { backend } = fixture({ backgroundFrameCacheSize: 1 });
+    const firstDefinition = labelDefinition("A", 1, {
+      backgroundColor: "#100000",
+      borderColor: "#ff0000",
+      borderWidth: 1
+    });
+    const first = backend.create(firstDefinition);
+    backend.disposeResource(first);
+    const secondDefinition = labelDefinition("B", 2, {
+      backgroundColor: "#001000",
+      borderColor: "#00ff00",
+      borderWidth: 1
+    });
+    backend.create(secondDefinition);
+    expect(backend.getStats()).toMatchObject({
+      backgroundFrameCacheEntries: 1,
+      atlasFrames: 20,
+      evictions: 1,
+      capacityMisses: 0
+    });
+    backend.dispose();
+  });
+
   it("reuses an unbordered dot frame across animated size and opacity updates", () => {
     const { backend } = fixture();
     const initial = markerDefinition("dot", 14, { color: "#72e6ff", opacity: 0.5 });

@@ -367,6 +367,10 @@ interface TextRendererAnnotationBackendOptions {
   defaultColor?: string;
   coverageGamma?: number;
   shapeCacheSize?: number;
+  colorCacheSize?: number;
+  markerFrameCacheSize?: number;
+  backgroundFrameCacheSize?: number;
+  spriteAtlasFrameLimit?: number;
   shapingMode?: TextRendererShapingMode;
   labelBackgroundMode?: TextRendererLabelBackgroundMode;
   markerShapes?: Readonly<Record<string, TextRendererMarkerShapeRasterizer>>;
@@ -411,6 +415,13 @@ interface TextRendererAnnotationBackendStats {
   readonly compatibleLabelRunPatches: number;
   readonly patchedLabelGlyphSlots: number;
   readonly labelRunPatchFallbacks: number;
+  readonly colorCacheEntries: number;
+  readonly markerFrameCacheEntries: number;
+  readonly backgroundFrameCacheEntries: number;
+  readonly atlasFrames: number;
+  readonly atlasBytes: number;
+  readonly evictions: number;
+  readonly capacityMisses: number;
 }
 ```
 
@@ -440,6 +451,23 @@ structures. Use `getStats()` to observe both paths and the bounded shape cache.
 Glyph curves are installed incrementally; repeated characters reuse the
 backend's existing curve set. `installedGlyphs` and `glyphUploadBatches`
 expose that behavior.
+
+Appearance caches are bounded independently. `colorCacheSize` defaults to 256
+LRU entries, `markerFrameCacheSize` to 256 records, and
+`backgroundFrameCacheSize` to 128 records. Marker and nine-slice records carry
+live reference counts; only zero-reference records are evicted. If all records
+at a soft limit remain live, the cache temporarily grows to preserve correct
+visuals and increments `capacityMisses`.
+
+The shared Sprite2D atlas is a fixed 1024 x 1024 RGBA texture in this backend.
+Babylon Lite currently supports appending frames but not reclaiming their pixel
+regions, so soft-cache eviction reduces retained lookup metadata but does not
+reduce `atlasBytes` or `atlasFrames`. `spriteAtlasFrameLimit` is the independent
+hard logical append limit and defaults to 2048, including the two built-in line
+frames. A request beyond that limit throws `AnnotatorError` instead of reusing
+an incorrect frame. Physical packing exhaustion is reported the same way.
+`colorCacheEntries`, frame-cache entry counts, `atlasFrames`, `atlasBytes`,
+`evictions`, and `capacityMisses` make these policies observable.
 
 After their first measured update, clean labels without clamping, collision
 layout, or leader lines are collected into position batches. Each `zIndex`
