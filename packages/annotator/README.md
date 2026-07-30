@@ -27,8 +27,11 @@ Babylon Lite renders the scene. `@litools/annotator` explains the scene.
 
 [Annotator website](https://annotator.babylonpress.org)
 
+Current release: **0.2.0**.
+
 [Examples](https://github.com/eldinor/lite-instancer/tree/main/packages/annotator/examples)
 · [API reference](./API.md)
+· [Benchmarks](./BENCHMARK.md)
 · [Changelog](./CHANGELOG.md)
 
 ## Rendering backends
@@ -44,7 +47,7 @@ and is the better choice for dense or frequently changing 3D scenes.
 ## Install
 
 ```sh
-npm install @litools/annotator @babylonjs/lite
+npm install @litools/annotator@^0.2.0 @babylonjs/lite@^1.14.0
 ```
 
 Install `@litools/instancer` as well when using stable instance anchors.

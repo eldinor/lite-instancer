@@ -2,7 +2,16 @@
 
 [Annotator website](https://annotator.babylonpress.org)
 
+All notable changes to `@litools/annotator` are documented here. The package
+follows semantic versioning.
+
 ## Unreleased
+
+No unreleased changes.
+
+## 0.2.0 - 2026-07-30
+
+### Highlights
 
 - Add stable-live-count label and marker appearance-churn benchmark cases with
   cache/atlas statistics, and consolidate benchmark methodology and reference
@@ -40,11 +49,6 @@
   glyphs, with installed-glyph and upload-batch statistics.
 - Read Babylon occlusion samples from the default scene render task's private
   live depth texture so the queries use the exact depth buffer shown on screen.
-
-All notable changes to `@litools/annotator` are documented here. The package
-follows semantic versioning.
-
-## Unreleased
 
 ### Added
 

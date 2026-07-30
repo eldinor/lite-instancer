@@ -1,6 +1,6 @@
 {
   "name": "@litools/annotator",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Spatial HTML annotations and GPU text labels for Babylon Lite meshes and stable Instancer IDs.",
   "homepage": "https://annotator.babylonpress.org",
   "repository": {

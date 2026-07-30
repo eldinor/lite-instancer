@@ -1,0 +1,82 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\Fiolent23\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.2
+2 info using node@v22.20.0
+3 silly config load:file:C:\Users\Fiolent23\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\Fiolent23\literepos\lite-cloner\.npmrc
+5 silly config load:file:C:\Users\Fiolent23\.npmrc
+6 silly config load:file:C:\Users\Fiolent23\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm pack
+8 verbose argv "pack" "--workspace" "@litools/annotator" "--dry-run" "--ignore-scripts"
+9 verbose logfile logs-max:10 dir:C:\Users\Fiolent23\literepos\lite-cloner\.npm-cache\_logs\2026-07-30T07_14_11_904Z-
+10 verbose logfile C:\Users\Fiolent23\literepos\lite-cloner\.npm-cache\_logs\2026-07-30T07_14_11_904Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 notice
+14 notice 📦  @litools/annotator@0.2.0
+15 notice Tarball Contents
+16 notice 29.7kB API.md
+16 notice 5.7kB BENCHMARK.md
+16 notice 12.5kB CHANGELOG.md
+16 notice 1.1kB LICENSE
+16 notice 21.3kB README.md
+16 notice 454B THIRD_PARTY_NOTICES.md
+16 notice 2.0kB dist/anchors-DqVK51zl.js
+16 notice 6.3kB dist/anchors-DqVK51zl.js.map
+16 notice 1.3kB dist/anchors.d.ts
+16 notice 1.3kB dist/anchors.d.ts.map
+16 notice 1.6kB dist/babylon-occlusion.d.ts
+16 notice 1.0kB dist/babylon-occlusion.d.ts.map
+16 notice 10.5kB dist/babylon-occlusion.js
+16 notice 30.5kB dist/babylon-occlusion.js.map
+16 notice 31.6kB dist/core-DDwkB6w3.js
+16 notice 97.2kB dist/core-DDwkB6w3.js.map
+16 notice 2.4kB dist/core.d.ts
+16 notice 1.8kB dist/core.d.ts.map
+16 notice 194B dist/error-DAgpTgRt.js
+16 notice 351B dist/error-DAgpTgRt.js.map
+16 notice 123B dist/error.d.ts
+16 notice 157B dist/error.d.ts.map
+16 notice 579B dist/html.d.ts
+16 notice 420B dist/html.d.ts.map
+16 notice 7.3kB dist/html.js
+16 notice 18.9kB dist/html.js.map
+16 notice 410B dist/index.d.ts
+16 notice 355B dist/index.d.ts.map
+16 notice 582B dist/index.js
+16 notice 1.2kB dist/instancer.d.ts
+16 notice 861B dist/instancer.d.ts.map
+16 notice 1.1kB dist/instancer.js
+16 notice 3.5kB dist/instancer.js.map
+16 notice 4.7kB dist/interaction.d.ts
+16 notice 3.6kB dist/interaction.d.ts.map
+16 notice 14.8kB dist/interaction.js
+16 notice 43.8kB dist/interaction.js.map
+16 notice 510B dist/occlusion-hysteresis.d.ts
+16 notice 483B dist/occlusion-hysteresis.d.ts.map
+16 notice 305B dist/projection.d.ts
+16 notice 269B dist/projection.d.ts.map
+16 notice 1.4kB dist/textrender-private.d.ts
+16 notice 1.2kB dist/textrender-private.d.ts.map
+16 notice 4.7kB dist/textrender.d.ts
+16 notice 3.3kB dist/textrender.d.ts.map
+16 notice 176.2kB dist/textrender.js
+16 notice 979.8kB dist/textrender.js.map
+16 notice 11.1kB dist/types.d.ts
+16 notice 8.4kB dist/types.d.ts.map
+16 notice 2.8kB package.json
+17 notice Tarball Details
+18 notice name: @litools/annotator
+19 notice version: 0.2.0
+20 notice filename: litools-annotator-0.2.0.tgz
+21 notice package size: 347.0 kB
+22 notice unpacked size: 1.6 MB
+23 notice shasum: c2bedcf8d86800e54cd68b8378d4e2a0e39f86c8
+24 notice integrity: sha512-2fxmJ6D+Qqp5s[...]aEUPgoWn2dHCA==
+25 notice total files: 50
+26 notice
+27 verbose cwd C:\Users\Fiolent23\literepos\lite-cloner
+28 verbose os Windows_NT 10.0.19044
+29 verbose node v22.20.0
+30 verbose npm  v11.6.2
+31 verbose exit 0
+32 info ok
