@@ -90,22 +90,27 @@ export type TextRendererMarkerShapeRasterizer = (context: TextRendererMarkerRast
 export interface TextRendererAnnotationBackendOptions {
   surface: SurfaceContext;
   font: Font;
+  /** Default label font size in CSS pixels. @defaultValue `16` */
   defaultFontSize?: number;
+  /** Default text, marker, and line color. @defaultValue `"#ffffff"` */
   defaultColor?: string;
+  /** Glyph coverage correction exponent. @defaultValue `1` */
   coverageGamma?: number;
+  /** Maximum number of retained shaped-text records. @defaultValue `512` */
   shapeCacheSize?: number;
-  /** Parsed CSS color LRU entries. @default 256 */
+  /** Parsed CSS color LRU entries. @defaultValue `256` */
   colorCacheSize?: number;
-  /** Marker appearance records retained for reuse. @default 256 */
+  /** Marker appearance records retained for reuse. @defaultValue `256` */
   markerFrameCacheSize?: number;
-  /** Nine-slice appearance records retained for reuse. @default 128 */
+  /** Nine-slice appearance records retained for reuse. @defaultValue `128` */
   backgroundFrameCacheSize?: number;
-  /** Hard logical frame limit, including two built-in frames. @default 2048 */
+  /** Hard logical frame limit, including two built-in frames. @defaultValue `2048` */
   spriteAtlasFrameLimit?: number;
+  /** Text shaping implementation. @defaultValue `"public"` */
   shapingMode?: TextRendererShapingMode;
-  /** GPU label background implementation. @default "nine-slice" */
+  /** GPU label background implementation. @defaultValue `"nine-slice"` */
   labelBackgroundMode?: TextRendererLabelBackgroundMode;
-  /** Application marker rasterizers keyed by namespaced shape identifier. */
+  /** Application marker rasterizers keyed by namespaced shape identifier. @defaultValue `{}` */
   markerShapes?: Readonly<Record<string, TextRendererMarkerShapeRasterizer>>;
 }
 
@@ -161,7 +166,9 @@ export interface TextRendererAnnotationBackendStats {
 }
 
 export interface TextRendererAnnotationBackend extends AnnotationBackend {
+  /** Returns a frozen snapshot of current batching, cache, and fast-path counters. */
   getStats(): TextRendererAnnotationBackendStats;
+  /** Reports whether a built-in or registered marker shape can be rasterized. */
   supportsMarkerShape(shape: MarkerShape): boolean;
 }
 

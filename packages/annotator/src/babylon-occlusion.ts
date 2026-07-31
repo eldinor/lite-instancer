@@ -19,13 +19,13 @@ export interface BabylonDepthOcclusionOptions {
   scene: SceneContext;
   camera: Camera;
   canvas: HTMLCanvasElement;
-  /** Neighbor distance in backing-store pixels. @default 1 */
+  /** Neighbor distance in backing-store pixels. @defaultValue `1` */
   sampleRadius?: number;
-  /** Required occluding samples out of the five-point cross. @default 3 */
+  /** Required occluding samples out of the five-point cross. @defaultValue `3` */
   minimumOccludingSamples?: 1 | 2 | 3 | 4 | 5;
-  /** Consecutive occluded readbacks required before entering occlusion. @default 2 */
+  /** Consecutive occluded readbacks required before entering occlusion. @defaultValue `2` */
   enterHysteresis?: number;
-  /** Consecutive visible readbacks required before leaving occlusion. @default 2 */
+  /** Consecutive visible readbacks required before leaving occlusion. @defaultValue `2` */
   exitHysteresis?: number;
 }
 
@@ -40,6 +40,7 @@ export interface BabylonDepthOcclusionStats {
 }
 
 export interface BabylonDepthOcclusionProvider extends AnnotationOcclusionProvider {
+  /** Returns current query, readback, and timing statistics. */
   getStats(): Readonly<BabylonDepthOcclusionStats>;
 }
 

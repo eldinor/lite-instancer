@@ -19,32 +19,46 @@ export type AnnotationInteractionEventType =
 export type AnnotationPointerType = "mouse" | "touch" | "pen";
 
 export interface AnnotationClickThreshold {
+  /**
+   * Maximum pointer travel in CSS pixels. Defaults to `4` for mouse/pen and
+   * `12` for touch.
+   */
   readonly maxDistance?: number;
+  /**
+   * Maximum press duration in milliseconds. Defaults to `500` for mouse/pen
+   * and `700` for touch.
+   */
   readonly maxDuration?: number;
 }
 
 export interface AnnotationInteractionManagerOptions {
   readonly layer: AnnotationLayer;
   readonly canvas: HTMLCanvasElement;
-  /** Coalesce mouse/pen hover to the newest pointer sample per frame. @default true */
+  /** Coalesce mouse/pen hover to the newest pointer sample per frame. @defaultValue `true` */
   readonly hover?: boolean;
-  /** Uniform spatial-hash cell size in CSS pixels. @default 64 */
+  /** Uniform spatial-hash cell size in CSS pixels. @defaultValue `64` */
   readonly cellSize?: number;
-  /** Default target hit expansion in CSS pixels. @default 0 */
+  /** Default target hit expansion in CSS pixels. @defaultValue `0` */
   readonly hitSlop?: number;
   readonly click?: {
     readonly mouse?: AnnotationClickThreshold;
     readonly touch?: AnnotationClickThreshold;
     readonly pen?: AnnotationClickThreshold;
   };
+  /** Maximum interval between clicks in milliseconds. @defaultValue `400` */
   readonly doubleClickDelay?: number;
+  /** Call `preventDefault()` for handled pointer events. @defaultValue `false` */
   readonly preventPointerDefault?: boolean;
+  /** Call `preventDefault()` for context-menu events. @defaultValue `false` */
   readonly preventContextMenu?: boolean;
+  /** Receives listener exceptions after dispatch continues to other listeners. @defaultValue `undefined` */
   readonly onError?: (error: unknown, context: AnnotationInteractionErrorContext) => void;
 }
 
 export interface InteractiveAnnotationOptions {
+  /** Initial target state. @defaultValue `true` */
   readonly enabled?: boolean;
+  /** Target-specific hit expansion; otherwise uses the manager default. */
   readonly hitSlop?: number;
 }
 
@@ -68,9 +82,11 @@ export interface AnnotationInteractionEvent {
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
   readonly shiftKey: boolean;
+  /** Stops delivery to remaining target and manager listeners for this event. */
   stopPropagation(): void;
 }
 
+/** Listener invoked synchronously for one annotation interaction event. */
 export type AnnotationInteractionListener = (event: AnnotationInteractionEvent) => void;
 
 export interface AnnotationInteractionDiagnostics {
@@ -615,6 +631,10 @@ class ManagerImpl {
 const managers = new WeakMap<AnnotationInteractionManager, ManagerImpl>();
 const targets = new WeakMap<InteractiveAnnotationTarget, TargetImpl>();
 
+/**
+ * Creates a CPU interaction manager attached to an annotation layer and canvas.
+ * The manager listens for pointer events until disposed.
+ */
 export function createAnnotationInteractionManager(
   options: AnnotationInteractionManagerOptions
 ): AnnotationInteractionManager {
@@ -623,6 +643,7 @@ export function createAnnotationInteractionManager(
   return handle;
 }
 
+/** Adds an annotation to the manager's spatial index and interaction dispatch. */
 export function registerInteractiveAnnotation(
   manager: AnnotationInteractionManager,
   annotation: AnnotationHandle,
@@ -635,6 +656,10 @@ export function registerInteractiveAnnotation(
   return handle;
 }
 
+/**
+ * Subscribes to one target and event type.
+ * @returns A function that removes the listener.
+ */
 export function onAnnotationInteraction(
   target: InteractiveAnnotationTarget,
   type: AnnotationInteractionEventType,
@@ -646,6 +671,10 @@ export function onAnnotationInteraction(
   return () => listeners.delete(listener);
 }
 
+/**
+ * Subscribes at manager scope after target listeners.
+ * @returns A function that removes the listener.
+ */
 export function onAnnotationInteractionEvent(
   manager: AnnotationInteractionManager,
   type: AnnotationInteractionEventType,
@@ -657,6 +686,7 @@ export function onAnnotationInteractionEvent(
   return () => listeners.delete(listener);
 }
 
+/** Synchronously picks the topmost enabled target at CSS-canvas coordinates. */
 export function pickInteractiveAnnotation(
   manager: AnnotationInteractionManager,
   canvasX: number,
@@ -668,19 +698,23 @@ export function pickInteractiveAnnotation(
   return target ? requirePublicTarget(target) : null;
 }
 
+/** Enables or disables event handling and picking for the whole manager. */
 export function setAnnotationInteractionEnabled(manager: AnnotationInteractionManager, enabled: boolean): void {
   requireManager(manager).setEnabled(enabled);
 }
 
+/** Enables or disables one registered target without disposing it. */
 export function setInteractiveAnnotationEnabled(target: InteractiveAnnotationTarget, enabled: boolean): void {
   const internal = requireTarget(target);
   internal.manager.setTargetEnabled(internal, enabled);
 }
 
+/** Returns the currently hovered annotation, if any. */
 export function getHoveredAnnotation(manager: AnnotationInteractionManager): AnnotationHandle | null {
   return requireManager(manager).hovered?.target.annotation ?? null;
 }
 
+/** Returns the annotation pressed by a pointer that has not yet been released. */
 export function getPressedAnnotation(
   manager: AnnotationInteractionManager,
   pointerId: number
@@ -688,18 +722,21 @@ export function getPressedAnnotation(
   return requireManager(manager).pointers.get(pointerId)?.downTarget?.annotation ?? null;
 }
 
+/** Returns a frozen snapshot of spatial-index and picking counters. */
 export function getAnnotationInteractionDiagnostics(
   manager: AnnotationInteractionManager
 ): AnnotationInteractionDiagnostics {
   return requireManager(manager).getDiagnostics();
 }
 
+/** Unregisters one target. Safe to call repeatedly. */
 export function disposeInteractiveAnnotation(target: InteractiveAnnotationTarget): void {
   const internal = targets.get(target);
   if (!internal || !internal.active) return;
   internal.manager.disposeTarget(internal);
 }
 
+/** Removes listeners and disposes every target owned by the manager. */
 export function disposeAnnotationInteractionManager(manager: AnnotationInteractionManager): void {
   const internal = managers.get(manager);
   if (!internal) return;

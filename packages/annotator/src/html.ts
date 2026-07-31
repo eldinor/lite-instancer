@@ -11,8 +11,9 @@ import type {
 
 export interface HtmlAnnotationBackendOptions {
   container: HTMLElement;
+  /** Additional class applied to the generated backend root. @defaultValue `undefined` */
   rootClassName?: string;
-  /** Makes label elements pointer/keyboard activatable in the HTML backend. */
+  /** Makes label elements pointer/keyboard activatable in the HTML backend. @defaultValue `undefined` */
   onLabelActivate?: (
     annotationId: AnnotationId,
     event: MouseEvent | KeyboardEvent

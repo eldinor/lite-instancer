@@ -9,12 +9,15 @@ export interface InstanceLocalBounds {
 }
 
 export interface InstanceAnchorOptions {
+  /** Explicit local-space anchor point. @defaultValue `[0, 0, 0]` */
   readonly localPoint?: Vec3Like;
+  /** Bounds-derived point used when `localBounds` is supplied. @defaultValue `"center"` */
   readonly preset?: AnchorPreset;
   /**
    * Local geometry bounds used by presets. Babylon Lite exposes only aggregate
    * world bounds for thin-instance meshes, so callers must provide reusable
    * local bounds when a preset other than the instance origin is required.
+   * @defaultValue `undefined`
    */
   readonly localBounds?: InstanceLocalBounds;
 }

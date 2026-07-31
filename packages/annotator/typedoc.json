@@ -1,0 +1,29 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/index.ts",
+    "src/html.ts",
+    "src/textrender.ts",
+    "src/interaction.ts",
+    "src/instancer.ts",
+    "src/babylon-occlusion.ts"
+  ],
+  "out": "docs/api",
+  "readme": "README.md",
+  "name": "@litools/annotator",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "sort": ["source-order"],
+  "requiredToBeDocumented": ["Function"],
+  "validation": {
+    "notDocumented": true,
+    "invalidLink": true
+  },
+  "navigationLinks": {
+    "Examples": "https://annotator.babylonpress.org/",
+    "Repository": "https://github.com/eldinor/lite-instancer/tree/main/packages/annotator"
+  }
+}

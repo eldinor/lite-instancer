@@ -4,6 +4,7 @@ node_modules/
 dist/
 examples-dist/
 docs/api/
+packages/annotator/docs/
 test-results/
 coverage/
 playwright-report/

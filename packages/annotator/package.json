@@ -78,6 +78,7 @@
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json && node scripts/verify-exports.mjs",
+    "docs": "typedoc --options typedoc.json",
     "examples:dev": "vite --config vite.examples.config.ts --host 0.0.0.0",
     "examples:build": "vite build --config vite.examples.config.ts",
     "examples:preview": "vite preview --config vite.examples.config.ts --host 0.0.0.0",
@@ -99,6 +100,7 @@
     "@babylonjs/lite": "1.14.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
+    "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
     "vite": "^8.1.4",
     "vitest": "^4.1.10"

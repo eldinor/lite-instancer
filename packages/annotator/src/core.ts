@@ -188,6 +188,10 @@ interface MutableProjectionResult {
 const layerStates = new WeakMap<AnnotationLayer, LayerState>();
 const annotationStates = new WeakMap<AnnotationHandle, AnnotationState>();
 
+/**
+ * Creates an annotation layer and adopts its backend and optional occlusion
+ * provider. Dispose the returned layer to release all owned resources.
+ */
 export function createAnnotationLayer(options: AnnotationLayerOptions): AnnotationLayer {
   if (options.updateMode === "raf" && typeof requestAnimationFrame !== "function") {
     throw new AnnotatorError("RAF update mode requires requestAnimationFrame");
@@ -247,6 +251,7 @@ export function createAnnotationLayer(options: AnnotationLayerOptions): Annotati
   return handle;
 }
 
+/** Creates a label in `layer`. It becomes visible on the next layer update. */
 export function createLabel(layer: AnnotationLayer, options: LabelOptions): LabelHandle {
   const layerState = requireLayer(layer);
   assertCollisionMode(options.collision);
@@ -276,6 +281,7 @@ export function createLabel(layer: AnnotationLayer, options: LabelOptions): Labe
   return handle;
 }
 
+/** Creates a marker in `layer`. It becomes visible on the next layer update. */
 export function createMarker(layer: AnnotationLayer, options: MarkerOptions): MarkerHandle {
   const layerState = requireLayer(layer);
   const id = nextId(layerState);
@@ -300,6 +306,7 @@ export function createMarker(layer: AnnotationLayer, options: MarkerOptions): Ma
   return handle;
 }
 
+/** Applies a partial label definition without replacing its stable handle. */
 export function updateLabel(label: LabelHandle, patch: LabelPatch): void {
   const state = requireAnnotation(label, "label");
   applyCommonPatch(state, patch);
@@ -328,6 +335,7 @@ export function updateLabel(label: LabelHandle, patch: LabelPatch): void {
   }
 }
 
+/** Applies a partial marker definition without replacing its stable handle. */
 export function updateMarker(marker: MarkerHandle, patch: MarkerPatch): void {
   const state = requireAnnotation(marker, "marker");
   applyCommonPatch(state, patch);
@@ -346,10 +354,12 @@ export function updateMarker(marker: MarkerHandle, patch: MarkerPatch): void {
   }
 }
 
+/** Changes an annotation's requested visibility. */
 export function setAnnotationVisible(annotation: AnnotationHandle, visible: boolean): void {
   requireAnnotation(annotation).visible = visible;
 }
 
+/** Replaces an annotation's anchor and invalidates its occlusion result. */
 export function setAnnotationAnchor(annotation: AnnotationHandle, anchor: SupportedAnnotationAnchor): void {
   const state = requireAnnotation(annotation);
   state.anchor = storeAnchor(anchor);
@@ -357,6 +367,10 @@ export function setAnnotationAnchor(annotation: AnnotationHandle, anchor: Suppor
   state.definitionDirty = true;
 }
 
+/**
+ * Forces definition refresh on the next update, including reevaluation of a
+ * label whose text is supplied by a callback.
+ */
 export function invalidateAnnotation(annotation: AnnotationHandle): void {
   const state = requireAnnotation(annotation);
   if (state.kind === "label" && typeof state.textSource === "function") {
@@ -365,21 +379,25 @@ export function invalidateAnnotation(annotation: AnnotationHandle): void {
   state.definitionDirty = true;
 }
 
+/** Invalidates every annotation in a layer. */
 export function invalidateAnnotationLayer(layer: AnnotationLayer): void {
   const state = requireLayer(layer);
   for (const annotation of state.annotations.values()) invalidateAnnotation(annotation.handle);
 }
 
+/** Projects, lays out, and submits one layer update immediately. */
 export function updateAnnotationLayer(layer: AnnotationLayer): void {
   updateLayer(requireLayer(layer));
 }
 
+/** Returns the annotation's latest immutable public state. */
 export function getAnnotationSnapshot(annotation: AnnotationHandle): AnnotationSnapshot {
   const state = requireAnnotation(annotation);
   if (state.kind === "marker" && state.projectedSnapshotPending) materializeProjectedMarkerSnapshot(state);
   return state.snapshot;
 }
 
+/** Removes an annotation and releases its backend resource. Safe to call repeatedly. */
 export function disposeAnnotation(annotation: AnnotationHandle): void {
   const state = annotationStates.get(annotation);
   if (!state || state.disposed) return;
@@ -389,6 +407,7 @@ export function disposeAnnotation(annotation: AnnotationHandle): void {
   publishRemovedHitRegion(state);
 }
 
+/** Disposes a layer, all its annotations, and its adopted resources. */
 export function disposeAnnotationLayer(layer: AnnotationLayer): void {
   const state = layerStates.get(layer);
   if (!state || state.disposed) return;
