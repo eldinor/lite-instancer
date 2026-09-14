@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@babylonjs/lite", () => ({
-  mat4Compose: (x: number, y: number, z: number, _qx: number, _qy: number, _qz: number, _qw: number, sx: number, sy: number, sz: number) => {
+  composeMat4: (x: number, y: number, z: number, _qx: number, _qy: number, _qz: number, _qw: number, sx: number, sy: number, sz: number) => {
     const matrix = new Float32Array(16);
     matrix[0] = sx;
     matrix[5] = sy;
@@ -12,7 +12,7 @@ vi.mock("@babylonjs/lite", () => ({
     matrix[15] = 1;
     return matrix;
   },
-  mat4Multiply: (a: Float32Array, b: Float32Array) => {
+  multiplyMat4: (a: Float32Array, b: Float32Array) => {
     const matrix = new Float32Array(a);
     matrix[12] = (matrix[12] ?? 0) + (b[12] ?? 0);
     matrix[13] = (matrix[13] ?? 0) + (b[13] ?? 0);

@@ -1,4 +1,4 @@
-import { mat4Compose, mat4Multiply, type Mat4 } from "@babylonjs/lite";
+import { composeMat4, multiplyMat4, type Mat4 } from "@babylonjs/lite";
 import type { BaseInstanceSet } from "./types.js";
 import type { InstanceId } from "./types.js";
 import { createVatSocketTransform, sampleVatSocket, type VatSocketAsset } from "./vat-socket-asset.js";
@@ -93,7 +93,7 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
           if (!socket) {
             continue;
           }
-          const socketMatrix = mat4Compose(
+          const socketMatrix = composeMat4(
             socket.translation[0] ?? 0,
             socket.translation[1] ?? 0,
             socket.translation[2] ?? 0,
@@ -105,8 +105,8 @@ export function createVatAttachmentController<TCharacter = unknown, TAttachment 
             socket.scale[1] ?? 1,
             socket.scale[2] ?? 1
           );
-          const socketWithGrip = mat4Multiply(mat4Multiply(options.socketAsset.basis as Mat4, socketMatrix), binding.gripOffset);
-          const world = mat4Multiply(options.characters.getMatrix(characterId, characterMatrix), socketWithGrip);
+          const socketWithGrip = multiplyMat4(multiplyMat4(options.socketAsset.basis as Mat4, socketMatrix), binding.gripOffset);
+          const world = multiplyMat4(options.characters.getMatrix(characterId, characterMatrix), socketWithGrip);
           writer.setMatrix(binding.attachmentId, world);
           if (hideWithCharacter && hiddenByCharacter.delete(binding.attachmentId)) {
             writer.setVisible(binding.attachmentId, true);

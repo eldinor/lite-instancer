@@ -39,10 +39,10 @@
     "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.14.0"
+    "@babylonjs/lite": "^1.29.0"
   },
   "devDependencies": {
-    "@babylonjs/lite": "1.14.0",
+    "@babylonjs/lite": "1.29.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typescript": "^6.0.3",

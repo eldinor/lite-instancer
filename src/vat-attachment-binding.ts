@@ -1,4 +1,4 @@
-import { mat4Compose, mat4Multiply, type EngineContext, type Mat4, type SceneNode } from "@babylonjs/lite";
+import { composeMat4, multiplyMat4, type EngineContext, type Mat4, type SceneNode } from "@babylonjs/lite";
 import { createHierarchyInstanceSet, type HierarchyInstanceSet } from "./hierarchy-instance-set.js";
 import type { HierarchyInstanceSetOptions, InstanceId, InstanceTransformInput } from "./types.js";
 import { createVatAttachmentController, type VatAttachmentController } from "./vat-attachment-controller.js";
@@ -86,8 +86,8 @@ export function createPresetGripOffset(preset: VatAttachmentPreset, attachmentRo
   const [qx, qy, qz, qw] = quaternionFromEulerDegrees(pitch, yaw, roll);
   const [x, y, z] = preset.grip.translation;
   const [sx, sy, sz] = preset.grip.scale;
-  const userGrip = mat4Compose(x, y, z, qx, qy, qz, qw, sx, sy, sz);
-  return mat4Multiply(userGrip, attachmentRootMatrix);
+  const userGrip = composeMat4(x, y, z, qx, qy, qz, qw, sx, sy, sz);
+  return multiplyMat4(userGrip, attachmentRootMatrix);
 }
 
 function assertSocketTracks(socketAsset: VatSocketAsset, preset: VatAttachmentPreset): void {

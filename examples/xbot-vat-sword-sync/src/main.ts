@@ -5,7 +5,7 @@ import {
   createPbrMaterial,
   loadEnvironment,
   loadGltf,
-  mat4Compose,
+  composeMat4,
   onBeforeRender,
   type ArcRotateCamera,
   type Mesh,
@@ -62,11 +62,11 @@ const secondaryVatSets = vatMeshes.map((mesh) => {
 });
 
 const characterMatrices = [
-  mat4Compose(-2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(0, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(-1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9),
-  mat4Compose(1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9)
+  composeMat4(-2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
+  composeMat4(0, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
+  composeMat4(2.1, 0, -1.8, 0, 0, 0, 1, 0.9, 0.9, 0.9),
+  composeMat4(-1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9),
+  composeMat4(1.05, 0, 1.1, 0, 0, 0, 1, 0.9, 0.9, 0.9)
 ];
 const characterIds = characterMatrices.map((matrix) => characters.create({ transform: matrix, offset: 0 }));
 for (const vatSet of secondaryVatSets) {
@@ -92,7 +92,7 @@ const swordSync = createVatAttachmentController({
   socketAsset: sockets,
   socket: "sword"
 });
-const gripOffset = mat4Compose(-0.03, 0.39, 0.01, 0.0610485, 0, 0, 0.9981348, 1, 1, 1);
+const gripOffset = composeMat4(-0.03, 0.39, 0.01, 0.0610485, 0, 0, 0.9981348, 1, 1, 1);
 for (let index = 0; index < characterIds.length; index++) {
   const characterId = characterIds[index];
   const swordId = swordIds[index];
