@@ -1,5 +1,9 @@
 # Feature request: expose the Babylon Lite text-layout API
 
+> Historical record: this proposal predates Annotator 0.3 and its Babylon Lite
+> 1.31 guarded bundled adapter. The implementation details below describe the
+> original integration that motivated the request.
+
 ## Summary
 
 Please expose Babylon Lite's text-layout function through a supported public

@@ -1,8 +1,8 @@
 # @litools/annotator
 
 Annotator is a lightweight annotation system for Babylon Lite that provides
-world-space labels, dimensions, callouts, markers, and stable annotations for
-regular meshes and `@litools/instancer` instances.
+world-space labels, markers, compound leader-line callouts, and stable
+annotations for regular meshes and `@litools/instancer` instances.
 
 Babylon Lite provides the rendering foundation required for interactive 3D
 applications, but application developers still need higher-level tools for
@@ -11,8 +11,7 @@ presenting spatial information.
 Common use cases include:
 
 - Displaying labels above objects.
-- Showing dimensions between points.
-- Attaching callouts to parts.
+- Attaching labels and leader-line callouts to parts.
 - Placing markers in world space.
 - Keeping annotations readable on screen.
 - Hiding labels behind geometry.
@@ -116,13 +115,15 @@ or `localBounds`, an instance anchor uses the instance origin.
 - Public positions, offsets, sizes, bounds, and clamping use canvas-local CSS pixels.
 - Device pixel ratio and backing-store size do not change public coordinates.
 - One layer represents one camera viewport.
-- CSS rotation and skew on the canvas are not supported in 0.1.
+- CSS rotation and skew on the canvas are not supported.
 - Layer and annotation disposal are idempotent.
 - Other operations on disposed handles throw `AnnotatorError`.
-- The 0.1 model is runtime-only and is not serializable.
+- The current model is runtime-only and is not serializable.
 
-Dimensions, arbitrary callouts, general pointer-event APIs, custom DOM content,
-and React bindings are intentionally deferred.
+Dedicated dimension annotations, arbitrary custom DOM content, and React
+bindings are outside the current API. Compound callouts are built from markers,
+offset labels, and leader lines. Optional pointer interaction is available from
+the separate `@litools/annotator/interaction` entry point.
 
 ## Examples
 
@@ -429,7 +430,7 @@ marker and offset label at the same anchor form a compound callout. Pass
 example leaves lines disabled so its timings measure layout rather than
 hundreds of SVG elements.
 
-## Next GPU additions
+## GPU layer ordering
 
 Sprite2D resources are batched by shared annotation `zIndex`. Each used value
 creates one line layer and one marker layer; lower values draw first, with lines
@@ -489,7 +490,7 @@ dragging, selection ownership, or automatic camera arbitration. The dedicated
 GPU interaction demo includes the workload documented in
 [BENCHMARK.md](./BENCHMARK.md).
 
-The remaining useful GPU roadmap is marker presets and DynamicTexture icons.
+Potential future GPU additions include marker presets and DynamicTexture icons.
 
 ## Clickable HTML labels
 

@@ -1,5 +1,9 @@
 # Feature request: expose text layout as a public API for shared `GlyphStorage` batching
 
+> Historical record: this proposal was written against Babylon Lite 1.14.0.
+> Annotator 0.3 targets Lite 1.31 and uses a guarded bundled adapter while a
+> supported public text-layout API remains unavailable.
+
 ## Summary
 
 Babylon Lite's public text APIs currently make the convenient path
@@ -174,4 +178,3 @@ existing public storage APIs and does not impose storage ownership policy.
 - Renderer: WebGPU `TextRenderer`
 - Consumer: a tree-shakable optional GPU-text backend for
   `@litools/annotator`
-

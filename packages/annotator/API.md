@@ -4,7 +4,7 @@
 [Package README](./README.md) |
 [Examples](https://annotator.babylonpress.org)
 
-Version 0.1.2 exposes six ESM entry points:
+Version 0.3.0 exposes six ESM entry points:
 
 - `@litools/annotator` — layers, annotations, anchors, lifecycle, snapshots,
   projection, and backend contracts.
@@ -13,7 +13,6 @@ Version 0.1.2 exposes six ESM entry points:
 - `@litools/annotator/babylon-occlusion` — experimental batched depth
   occlusion for Babylon Lite.
 - `@litools/annotator/textrender` — optional GPU text and marker backend.
-
 - `@litools/annotator/interaction` — optional synchronous CPU picking and
   pointer interaction for either backend.
 
@@ -703,7 +702,7 @@ const result = projectAnnotationPosition({
 
 It returns `screenPosition`, normalized `depth`, camera `distance`,
 `behindCamera`, and `offscreen`. All screen units are CSS pixels. CSS rotation
-and skew on the canvas are unsupported in 0.1.
+and skew on the canvas are unsupported.
 
 ## Backend contract
 

@@ -19,6 +19,7 @@ No unreleased changes.
 
 - Raise the Babylon Lite peer and development baseline to 1.31.
 - Update the guarded private text adapter for Lite 1.31's compact glyph-instance storage, style palette, underscored run records, and private layout result while retaining in-place text patch and translation fast paths.
+- Refresh the README and API reference for the 0.3 release, clarify compound callout support and dedicated dimension scope, and replace stale 0.1 and roadmap wording.
 
 ## 0.2.0 - 2026-07-30
 
