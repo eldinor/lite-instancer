@@ -99,7 +99,7 @@ export interface InteractionTargetOptions {
 export interface InteractionManagerOptions {
   scene: SceneContext;
   canvas: HTMLCanvasElement;
-  /** Enable Lite 1.14 exact details independently for discrete, drag, and hover work. */
+  /** Enable Lite 1.31 exact details independently for discrete, drag, and hover work. */
   detailedPicking?: InteractionDetailedPickingPolicy;
   /** Additional Lite pick options, optionally selected per interaction. */
   pickOptions?: InteractionPickOptions | InteractionPickOptionsProvider;

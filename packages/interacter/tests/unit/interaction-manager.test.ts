@@ -217,7 +217,7 @@ async function settle(): Promise<void> {
 }
 
 describe("interaction manager", () => {
-  it("preserves Lite 1.14 barycentric coordinates for detailed VAT picks", () => {
+  it("preserves Lite 1.31 barycentric coordinates for detailed VAT picks", () => {
     const result = {
       hit: true,
       faceId: 7,

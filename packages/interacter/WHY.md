@@ -77,7 +77,7 @@ The goal is that an application can treat cleanup as a normal lifecycle operatio
 
 ## Why this is separate from Instancer
 
-`@litools/interacter` is deliberately an independent package. Version 0.2 supports stable thin-instance ID resolvers while still importing or modifying neither `@litools/instancer` nor application state. The optional concrete adapter remains owned by `@litools/instancer/interacter`.
+`@litools/interacter` is deliberately an independent package. Version 0.3 supports stable thin-instance ID resolvers while still importing or modifying neither `@litools/instancer` nor application state. The optional concrete adapter remains owned by `@litools/instancer/interacter`.
 
 The mesh interaction model needs to be reliable before another target-resolution system is added. Keeping the first version focused lets scheduling, click recognition, hover transitions, propagation, and disposal be tested without coupling those semantics to instance-slot resolution.
 

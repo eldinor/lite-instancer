@@ -14,6 +14,10 @@ npm install @litools/interacter @babylonjs/lite
 
 The package is ESM-only and has no dependency on `@litools/instancer`.
 
+## Compatibility
+
+Interacter 0.3.x requires Babylon Lite 1.31 or newer within the 1.x release line. Interacter 0.2.x targets the earlier Babylon Lite 1.14 baseline.
+
 ## Quick start
 
 ```ts
@@ -38,7 +42,7 @@ disposeInteractionTarget(target);
 disposeInteractionManager(interactions);
 ```
 
-Babylon Lite 1.14 exact surface details are opt-in because they add a GPU attachment and readback data. Enable them independently for discrete, drag, and hover work:
+Babylon Lite 1.31 exact surface details are opt-in because they add a GPU attachment and readback data. Enable them independently for discrete, drag, and hover work:
 
 ```ts
 const interactions = createInteractionManager({
@@ -100,7 +104,7 @@ onInteraction(target, "click", (event) => {
 
 ### Lite pick options
 
-`pickOptions` forwards Lite 1.14 `ignore`, `discard`, and `debugLabel` settings. It can be a fixed object or a function selected by interaction kind and event type:
+`pickOptions` forwards Lite 1.31 `ignore`, `discard`, and `debugLabel` settings. It can be a fixed object or a function selected by interaction kind and event type:
 
 ```ts
 const interactions = createInteractionManager({
@@ -189,9 +193,9 @@ attachControl(camera, canvas, scene, {
 
 Use one manager for a scene/canvas pair. Registering the same mesh twice with one manager throws.
 
-## Version 0.2 public API
+## Version 0.3 public API
 
-Version 0.2 exposes the package root, `@litools/interacter`. This is the complete supported runtime API:
+Version 0.3 exposes the package root, `@litools/interacter`. This is the complete supported runtime API:
 
 - `createInteractionManager` and `disposeInteractionManager`
 - `registerMesh` and `disposeInteractionTarget`
@@ -205,7 +209,7 @@ Version 0.2 exposes the package root, `@litools/interacter`. This is the complet
 
 The root also exports the TypeScript types for manager, target, discriminated events, drag-end reasons, detailed-pick policy, filtering, and listener configuration.
 
-Deep imports and internal picker, scheduler, and registration modules are not public API. Version 0.2 exposes the target-level stable-ID resolver contract but no concrete Instancer dependency; use the optional `@litools/instancer/interacter` adapter for Instancer targets.
+Deep imports and internal picker, scheduler, and registration modules are not public API. Version 0.3 exposes the target-level stable-ID resolver contract but no concrete Instancer dependency; use the optional `@litools/instancer/interacter` adapter for Instancer targets.
 
 ### Diagnostics
 
@@ -334,7 +338,7 @@ The index also links to focused click, hover, pointer/context-menu, global-dispa
 
 ## Release verification
 
-Run the complete version 0.1 release audit with:
+Run the complete release audit with:
 
 ```sh
 npm run release:check --workspace @litools/interacter

@@ -1,6 +1,6 @@
 {
   "name": "@litools/interacter",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pointer, click, hover, and drag interaction utilities for Babylon Lite meshes.",
   "type": "module",
   "license": "MIT",

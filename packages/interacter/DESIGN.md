@@ -1,8 +1,8 @@
 # Interacter Design: Current Core and Next Evolution
 
 Status: active design; stages 1 through 5 complete  
-Baseline: `@litools/interacter` 0.2 with the Babylon Lite 1.14 stages implemented  
-Updated: 2026-07-26
+Baseline: `@litools/interacter` 0.3 with the Babylon Lite 1.31 stages implemented
+Updated: 2026-09-24
 
 ## Purpose
 
@@ -142,7 +142,7 @@ Applications that require visually zero-latency planar movement may render an ap
 
 ## Detailed picking and VAT
 
-Babylon Lite 1.14 detailed picking provides primitive ID and barycentric data. Interacter exposes it as an optional capability, not a universal event cost.
+Babylon Lite 1.31 detailed picking provides primitive ID and barycentric data. Interacter exposes it as an optional capability, not a universal event cost.
 
 ### Required detailed result contract
 

@@ -4,6 +4,12 @@
 
 No unreleased changes.
 
+## 0.3.1 - 2026-09-24
+
+### Fixed
+
+- Update the README, design guide, package rationale, API documentation, test description, and VAT example copy to describe the Babylon Lite 1.31 and Interacter 0.3 baselines accurately.
+
 ## 0.3.0 - 2026-09-22
 
 ### Breaking changes

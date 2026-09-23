@@ -32,7 +32,7 @@ panel.className = "panel";
 panel.innerHTML = `
   <a class="home" href="../">← Interaction examples</a>
   <h1>VAT detailed picking</h1>
-  <p>Click the animated shark to verify Lite 1.14 face and barycentric results.</p>
+  <p>Click the animated shark to verify Lite 1.31 face and barycentric results.</p>
   <div>Status: <strong class="status">loading</strong></div>
   <pre class="log" aria-live="polite">Waiting for a VAT pick.</pre>
 `;
