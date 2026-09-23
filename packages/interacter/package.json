@@ -1,6 +1,6 @@
 {
   "name": "@litools/interacter",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Pointer, click, hover, and drag interaction utilities for Babylon Lite meshes.",
   "type": "module",
   "license": "MIT",
@@ -39,10 +39,10 @@
     "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.14.0"
+    "@babylonjs/lite": "^1.31.0"
   },
   "devDependencies": {
-    "@babylonjs/lite": "1.14.0",
+    "@babylonjs/lite": "1.31.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typescript": "^6.0.3",

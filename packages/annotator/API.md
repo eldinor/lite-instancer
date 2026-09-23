@@ -443,7 +443,7 @@ sample to obtain workload-local deltas.
 
 The default public bridge shapes with temporary `DefaultTextData` and copies
 its public run and metrics into shared storage. `"guarded-private"` is an
-experimental opt-in that bundles Lite 1.14's internal layout implementation.
+experimental opt-in that bundles Lite 1.31's internal layout implementation.
 It validates the private font and layout structures before use. Any error or
 structural mismatch disables the adapter permanently for that backend instance
 and falls back to the public bridge; correctness never depends on private Lite
@@ -471,7 +471,7 @@ an incorrect frame. Physical packing exhaustion is reported the same way.
 
 After their first measured update, clean labels without clamping, collision
 layout, or leader lines are collected into position batches. Each `zIndex`
-bucket uses a guarded Babylon Lite 1.14 bridge to translate existing glyph
+bucket uses a guarded Babylon Lite 1.31 bridge to translate existing compact glyph
 instance slots and publish one combined dirty range without allocating
 replacement `GlyphRun` objects. A structural mismatch or visibility transition
 falls back to public `replaceRun` updates. The translation counters expose use

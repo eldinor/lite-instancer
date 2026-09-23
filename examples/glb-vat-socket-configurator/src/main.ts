@@ -8,11 +8,12 @@ import {
   createSphere,
   loadEnvironment,
   loadGltf,
-  mat4Compose,
-  mat4Decompose,
-  mat4Multiply,
+  composeMat4,
+  decomposeMat4,
+  multiplyMat4,
   invalidateRenderBundles,
   onBeforeRender,
+  setPbrEmissive,
   vec3,
   type ArcRotateCamera,
   type AssetContainer,
@@ -437,7 +438,7 @@ function updateBindings(): void {
   const current = runtime;
   if (!current) return;
   const userGrip = getGripMatrix();
-  const fullGrip = mat4Multiply(userGrip, current.attachmentRootMatrix);
+  const fullGrip = multiplyMat4(userGrip, current.attachmentRootMatrix);
   for (let index = 0; index < current.characterIds.length; index++) {
     const characterId = current.characterIds[index];
     const attachmentId = current.attachmentIds[index];
@@ -468,21 +469,26 @@ function updateMarkers(current: PreviewRuntime): void {
   const sample = current.characters.getPlaybackSample(characterId as never);
   const socket = sample && sampleVatSocket(current.socketAsset, sample, "attachment");
   if (!socket) return;
-  const socketLocal = mat4Compose(socket.translation[0]!, socket.translation[1]!, socket.translation[2]!, socket.rotation[0]!, socket.rotation[1]!, socket.rotation[2]!, socket.rotation[3]!, socket.scale[0]!, socket.scale[1]!, socket.scale[2]!);
-  const socketWorld = mat4Multiply(current.characters.getMatrix(characterId as never), mat4Multiply(current.socketAsset.basis as Mat4, socketLocal));
+  const socketLocal = composeMat4(socket.translation[0]!, socket.translation[1]!, socket.translation[2]!, socket.rotation[0]!, socket.rotation[1]!, socket.rotation[2]!, socket.rotation[3]!, socket.scale[0]!, socket.scale[1]!, socket.scale[2]!);
+  const socketWorld = multiplyMat4(current.characters.getMatrix(characterId as never), multiplyMat4(current.socketAsset.basis as Mat4, socketLocal));
   setMarkerMatrix(socketMarker, socketWorld);
   setMarkerMatrix(attachmentMarker, current.attachments.getMatrix(attachmentId as never));
 }
 
 function createMarker(color: readonly [number, number, number, number]): Mesh {
   const marker = createSphere(ctx.engine, { diameter: 0.1, segments: 12 });
-  marker.material = createPbrMaterial({ baseColorFactor: [...color] as [number, number, number, number], emissiveColor: [color[0], color[1], color[2]], roughnessFactor: 0.4 });
+  const material = createPbrMaterial({
+    baseColorFactor: [...color] as [number, number, number, number],
+    roughnessFactor: 0.4
+  });
+  setPbrEmissive(material, [color[0], color[1], color[2]]);
+  marker.material = material;
   addToScene(ctx.scene, marker);
   return marker;
 }
 
 function setMarkerMatrix(marker: Mesh, matrix: Mat4): void {
-  const { translation, rotation } = mat4Decompose(matrix);
+  const { translation, rotation } = decomposeMat4(matrix);
   marker.position.set(translation.x, translation.y, translation.z);
   marker.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 }
@@ -493,7 +499,7 @@ function getGrip(): VatAttachmentGrip {
 
 function getGripMatrix(): Mat4 {
   const [x, y, z, w] = quaternionFromEulerDegrees(grip.pitch, grip.yaw, grip.roll);
-  return mat4Compose(grip.x, grip.y, grip.z, x, y, z, w, grip.sx, grip.sy, grip.sz);
+  return composeMat4(grip.x, grip.y, grip.z, x, y, z, w, grip.sx, grip.sy, grip.sz);
 }
 
 function getPreset(): VatAttachmentPreset {
@@ -507,8 +513,8 @@ function createTypeScriptSnippet(preset: VatAttachmentPreset): string {
 }
 
 function createCharacterMatrices(count: number, scale: number): Mat4[] {
-  if (count === 1) return [mat4Compose(0, 0, 0, 0, 0, 0, 1, scale, scale, scale)];
-  return [-2.1, -1.05, 0, 1.05, 2.1].map((x) => mat4Compose(x, 0, 0, 0, 0, 0, 1, scale, scale, scale));
+  if (count === 1) return [composeMat4(0, 0, 0, 0, 0, 0, 1, scale, scale, scale)];
+  return [-2.1, -1.05, 0, 1.05, 2.1].map((x) => composeMat4(x, 0, 0, 0, 0, 0, 1, scale, scale, scale));
 }
 
 function cleanupRuntime(): void {

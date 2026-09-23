@@ -1,6 +1,6 @@
 {
   "name": "@litools/stager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Application-stage lifecycle, cancellation, transitions, and resource ownership.",
   "homepage": "https://github.com/eldinor/lite-instancer/tree/main/packages/stager#readme",
   "repository": {
@@ -43,10 +43,10 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run examples:build"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.14.0"
+    "@babylonjs/lite": "^1.31.0"
   },
   "devDependencies": {
-    "@babylonjs/lite": "1.14.0",
+    "@babylonjs/lite": "1.31.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typescript": "^6.0.3",

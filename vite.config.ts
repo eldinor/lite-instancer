@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 export default defineConfig(({ command }) => ({
@@ -5,6 +6,18 @@ export default defineConfig(({ command }) => ({
   // so example URLs such as `/fantasy_sword.glb` resolve to binary assets, but
   // exclude them from the published library build.
   publicDir: command === "serve" ? "public" : false,
+  resolve: command === "serve" ? {
+    alias: [
+      {
+        find: /^@litools\/instancer\/interacter$/,
+        replacement: resolve("src/interacter.ts")
+      },
+      {
+        find: /^@litools\/instancer$/,
+        replacement: resolve("src/index.ts")
+      }
+    ]
+  } : undefined,
   build: {
     lib: {
       entry: {

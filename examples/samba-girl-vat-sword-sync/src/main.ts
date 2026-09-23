@@ -5,7 +5,7 @@ import {
   createPbrMaterial,
   loadEnvironment,
   loadGltf,
-  mat4Compose,
+  composeMat4,
   onBeforeRender,
   type ArcRotateCamera,
   type Mesh,
@@ -66,11 +66,11 @@ const secondaryVatSets = vatMeshes.map((mesh) => {
 });
 
 const characterMatrices = [
-  mat4Compose(-2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
-  mat4Compose(0, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
-  mat4Compose(2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
-  mat4Compose(-1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
-  mat4Compose(1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE)
+  composeMat4(-2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  composeMat4(0, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  composeMat4(2.1, 0, -1.5, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  composeMat4(-1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE),
+  composeMat4(1.05, 0, 1.25, 0, 0, 0, 1, CHARACTER_SCALE, CHARACTER_SCALE, CHARACTER_SCALE)
 ];
 const characterIds = characterMatrices.map((matrix) => characters.create({ transform: matrix, offset: 0 }));
 for (const vatSet of secondaryVatSets) {
@@ -98,7 +98,7 @@ const swordSync = createVatAttachmentController({
 });
 // HVGirl carries a 0.01 animated-rig scale under a model subsequently scaled
 // by CHARACTER_SCALE. This grip preserves a meter-sized sword in that space.
-const gripOffset = mat4Compose(0, 350, 0, 0, 0, 0, 1, 1000, 1000, 1000);
+const gripOffset = composeMat4(0, 350, 0, 0, 0, 0, 1, 1000, 1000, 1000);
 for (let index = 0; index < characterIds.length; index++) {
   const characterId = characterIds[index];
   const swordId = swordIds[index];

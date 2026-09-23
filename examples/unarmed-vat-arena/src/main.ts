@@ -6,6 +6,7 @@ import {
   loadEnvironment,
   loadGltf,
   onBeforeRender,
+  setPbrEmissive,
   type ArcRotateCamera,
   type Mat4,
   type SceneNode
@@ -205,12 +206,13 @@ function createArena(): void {
     const ring = createTorus(ctx.engine, { diameter, thickness: 0.1, tessellation: 96 });
     ring.position.y = 0.025;
     ring.rotationQuaternion.set(Math.SQRT1_2, 0, 0, Math.SQRT1_2);
-    ring.material = createPbrMaterial({
+    const ringMaterial = createPbrMaterial({
       baseColorFactor: [color[0], color[1], color[2], 1],
-      emissiveColor: [color[0], color[1], color[2]],
       metallicFactor: 0.2,
       roughnessFactor: 0.35
     });
+    setPbrEmissive(ringMaterial, [color[0], color[1], color[2]]);
+    ring.material = ringMaterial;
     addToScene(ctx.scene, ring);
   }
 }

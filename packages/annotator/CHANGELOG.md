@@ -9,6 +9,17 @@ follows semantic versioning.
 
 No unreleased changes.
 
+## 0.3.0 - 2026-09-22
+
+### Breaking changes
+
+- Require Babylon Lite 1.31 or newer within the 1.x release line and drop compatibility with the former Lite 1.14 private text-storage contract.
+
+### Changed
+
+- Raise the Babylon Lite peer and development baseline to 1.31.
+- Update the guarded private text adapter for Lite 1.31's compact glyph-instance storage, style palette, underscored run records, and private layout result while retaining in-place text patch and translation fast paths.
+
 ## 0.2.0 - 2026-07-30
 
 ### Highlights

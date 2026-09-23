@@ -2,11 +2,26 @@
 
 ## Unreleased
 
+No unreleased changes.
+
+## 0.7.0 - 2026-09-22
+
+### Breaking changes
+
+- Require Babylon Lite 1.31 or newer within the 1.x release line. This drops compatibility with the former Lite 1.13/1.14 baseline and its pre-1.29 matrix API names.
+
 ### Added
 
+- Add a Babylon Lite 1.31 hierarchy-composition regression test for mirrored glTF-style template roots.
 - Add the optional `@litools/instancer/interacter` adapter entry for live stable-ID resolution across ordinary, VAT, and explicit multi-mesh instance sources, with atomic registration rollback and idempotent binding disposal.
 - Document the adapter ownership decision, lifecycle ordering, hierarchy contract, and the current multi-part VAT character limitation.
 - Add an Interacter demo that proves stable IDs survive Instancer removal and renderer-slot compaction.
+
+### Changed
+
+- Raise the Babylon Lite peer and development baseline to 1.31, migrate the renamed allocation-conscious matrix APIs and opt-in PBR emissive setter, and update all example catalogs.
+- Resolve local Instancer package imports when Interacter examples are opened through the repository-root Vite development server.
+- Release `@litools/instancer` 0.7.0, `@litools/interacter` 0.3.0, `@litools/annotator` 0.3.0, `@litools/animator` 0.2.0, and `@litools/stager` 0.2.0 for the new Lite baseline.
 
 ## 0.6.0 - 2026-07-22
 

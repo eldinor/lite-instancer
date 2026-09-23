@@ -27,7 +27,7 @@ Babylon Lite renders the scene. `@litools/annotator` explains the scene.
 
 [Annotator website](https://annotator.babylonpress.org)
 
-Current release: **0.2.0**.
+Current release: **0.3.0**.
 
 [Examples](https://github.com/eldinor/lite-instancer/tree/main/packages/annotator/examples)
 · [API reference](./API.md)
@@ -47,7 +47,7 @@ and is the better choice for dense or frequently changing 3D scenes.
 ## Install
 
 ```sh
-npm install @litools/annotator@^0.2.0 @babylonjs/lite@^1.14.0
+npm install @litools/annotator@^0.3.0 @babylonjs/lite@^1.31.0
 ```
 
 Install `@litools/instancer` as well when using stable instance anchors.
@@ -169,7 +169,7 @@ const layer = createAnnotationLayer({ scene, camera, canvas, backend });
 ```
 
 The default `"public"` mode shapes through Lite's supported text-data API.
-Opt-in `"guarded-private"` mode uses a bundled Lite 1.14 layout adapter for
+Opt-in `"guarded-private"` mode uses a bundled Lite 1.31 layout adapter for
 faster shaping. Runtime guards permanently disable that adapter for the
 backend instance after its first mismatch or error, then use the public path.
 `backend.getStats()` reports cache activity, shaping-path counts, private
@@ -517,3 +517,5 @@ operation, option, anchor, snapshot field, and backend contract.
 | Annotator | Babylon Lite | Instancer |
 | --- | --- | --- |
 | `0.1.x` | `^1.14.0` | `^0.6.0` (optional) |
+| `0.2.x` | `^1.14.0` | `^0.6.0` (optional) |
+| `0.3.x` | `^1.31.0` | `^0.6.0 || ^0.7.0` (optional) |

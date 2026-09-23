@@ -33,98 +33,89 @@ export interface PrivateRunPatch {
 export function guardedPrivatePatchRun(data: TextData, patch: PrivateRunPatch): number | false {
   const candidate = data as unknown as {
     _instances?: unknown;
+    _instancesU32?: unknown;
+    _styles?: unknown;
     _runRecords?: unknown;
     _groups?: unknown;
     _instanceCount?: unknown;
     _dirtyStart?: unknown;
     _dirtyEnd?: unknown;
     _version?: unknown;
+    _styleVersion?: unknown;
   };
   if (
     !(candidate._instances instanceof Float32Array) ||
+    !(candidate._instancesU32 instanceof Uint32Array) ||
+    candidate._instancesU32.buffer !== candidate._instances.buffer ||
+    !(candidate._styles instanceof Float32Array) ||
     !(candidate._runRecords instanceof Map) ||
     !Array.isArray(candidate._groups) ||
     typeof candidate._instanceCount !== "number" ||
     typeof candidate._dirtyStart !== "number" ||
     typeof candidate._dirtyEnd !== "number" ||
-    typeof candidate._version !== "number"
+    typeof candidate._version !== "number" ||
+    typeof candidate._styleVersion !== "number"
   ) return false;
 
   const record = candidate._runRecords.get(patch.run);
-  if (!isRecord(record) || !Array.isArray(record.slots) ||
-      typeof record.groupIdx !== "number") {
+  if (!isRecord(record) || !Array.isArray(record._slots) ||
+      !Array.isArray(record._styleSlots) || record._styleSlots.length !== 1 ||
+      typeof record._groupIdx !== "number") {
     return false;
   }
-  const group = candidate._groups[record.groupIdx];
-  if (!isRecord(group) || !isRecord(group.curveSet) ||
-      !(group.curveSet.curves instanceof Map) || !isRecord(group.curveSet.atlas) ||
-      !(group.curveSet.atlas.glyphSlots instanceof Map)) {
+  const group = candidate._groups[record._groupIdx];
+  if (!isRecord(group) || !isRecord(group._curveSet) ||
+      !isRecord(group._curveSet._atlas) ||
+      !(group._curveSet._atlas._glyphSlots instanceof Map)) {
     return false;
   }
-  const slots = record.slots as unknown[];
-  const resolved: Array<{
-    slot: number;
-    glyph: PlacedGlyph;
-    curves: { bounds: { xMin: number; yMin: number; xMax: number; yMax: number } };
-    atlas: {
-      glyphLocX: number;
-      glyphLocY: number;
-      bandMaxX: number;
-      bandMaxY: number;
-      vBandCount: number;
-      hBandCount: number;
-    };
-  }> = [];
+  const slots = record._slots as unknown[];
+  const defaultStyle = record._styleSlots[0];
+  if (!Number.isInteger(defaultStyle) || (defaultStyle as number) < 0 ||
+      (defaultStyle as number) > 0xffff) return false;
+  const styleBase = (defaultStyle as number) * 8;
+  if (styleBase + 5 >= candidate._styles.length) return false;
+  const resolved: Array<{ slot: number; glyph: PlacedGlyph; glyphIndex: number }> = [];
   let liveIndex = 0;
   for (const glyph of patch.glyphs) {
-    const curves = group.curveSet.curves.get(glyph.glyphId);
-    const atlas = group.curveSet.atlas.glyphSlots.get(glyph.glyphId);
+    const atlas = group._curveSet._atlas._glyphSlots.get(glyph.glyphId);
     // Lite omits non-drawing glyphs such as spaces from a run's live slots.
-    if (curves === undefined && atlas === undefined) continue;
+    if (atlas === undefined) continue;
     const slot = slots[liveIndex++];
     if (!Number.isInteger(slot) || (slot as number) < 0 ||
         (slot as number) >= candidate._instanceCount ||
-        !isGlyphCurves(curves) || !isAtlasSlot(atlas)) {
+        !isRecord(atlas) || !Number.isInteger(atlas._index) ||
+        (atlas._index as number) < 0 || (atlas._index as number) > 0xffff ||
+        ((candidate._instancesU32[(slot as number) * 3 + 2] ?? 0) >>> 16) !== defaultStyle) {
       return false;
     }
-    resolved.push({ slot: slot as number, glyph, curves, atlas });
+    resolved.push({ slot: slot as number, glyph, glyphIndex: atlas._index as number });
   }
   if (liveIndex !== slots.length) return false;
 
   const instances = candidate._instances;
+  const instancesU32 = candidate._instancesU32;
   const invScale = patch.pixelsPerFontUnit !== 0 ? 1 / patch.pixelsPerFontUnit : 0;
   let dirtyStart = Number.POSITIVE_INFINITY;
   let dirtyEnd = -1;
   for (const item of resolved) {
-    const { xMin, yMin, xMax, yMax } = item.curves.bounds;
-    const width = xMax - xMin;
-    const height = yMax - yMin;
-    const bandScaleX = width > 0 ? item.atlas.vBandCount / width : 0;
-    const bandScaleY = height > 0 ? item.atlas.hBandCount / height : 0;
-    const base = item.slot * 20;
-    instances[base] = xMin;
-    instances[base + 1] = yMin;
-    instances[base + 2] = xMax;
-    instances[base + 3] = yMax;
-    instances[base + 4] = item.glyph.x + patch.offsetX;
-    instances[base + 5] = item.glyph.y + patch.offsetY;
-    instances[base + 6] = invScale;
-    instances[base + 7] = 0;
-    instances[base + 8] = item.atlas.glyphLocX;
-    instances[base + 9] = item.atlas.glyphLocY;
-    instances[base + 10] = item.atlas.bandMaxX;
-    instances[base + 11] = item.atlas.bandMaxY;
-    instances[base + 12] = bandScaleX;
-    instances[base + 13] = bandScaleY;
-    instances[base + 14] = -xMin * bandScaleX;
-    instances[base + 15] = -yMin * bandScaleY;
-    instances[base + 16] = patch.color[0];
-    instances[base + 17] = patch.color[1];
-    instances[base + 18] = patch.color[2];
-    instances[base + 19] = patch.color[3];
+    const base = item.slot * 3;
+    instances[base] = item.glyph.x + patch.offsetX;
+    instances[base + 1] = item.glyph.y + patch.offsetY;
+    instancesU32[base + 2] = item.glyphIndex | ((defaultStyle as number) << 16);
     dirtyStart = Math.min(dirtyStart, item.slot);
     dirtyEnd = Math.max(dirtyEnd, item.slot + 1);
   }
+  const styleValues = [patch.color[0], patch.color[1], patch.color[2], patch.color[3], invScale] as const;
+  let styleChanged = false;
+  for (let index = 0; index < styleValues.length; index++) {
+    const value = Math.fround(styleValues[index]!);
+    if (candidate._styles[styleBase + index] !== value) {
+      candidate._styles[styleBase + index] = value;
+      styleChanged = true;
+    }
+  }
+  if (styleChanged) candidate._styleVersion++;
   if (dirtyEnd >= 0) {
     if (candidate._dirtyStart === candidate._dirtyEnd) {
       candidate._dirtyStart = dirtyStart;
@@ -139,7 +130,7 @@ export function guardedPrivatePatchRun(data: TextData, patch: PrivateRunPatch): 
 }
 
 /**
- * Guarded Babylon Lite 1.14 bridge. Translates existing glyph slots in place
+ * Guarded Babylon Lite 1.31 bridge. Translates compact glyph slots in place
  * and publishes one combined dirty range without allocating replacement runs.
  */
 export function guardedPrivateTranslateRuns(
@@ -169,8 +160,8 @@ export function guardedPrivateTranslateRuns(
   let dirtyEnd = -1;
   for (const translation of translations) {
     const record = records.get(translation.run);
-    if (!isRecord(record) || !Array.isArray(record.slots)) return false;
-    const slots = record.slots;
+    if (!isRecord(record) || !Array.isArray(record._slots)) return false;
+    const slots = record._slots;
     if (!slots.every((slot) =>
       Number.isInteger(slot) && slot >= 0 && slot < (candidate._instanceCount as number)
     )) return false;
@@ -185,9 +176,9 @@ export function guardedPrivateTranslateRuns(
   const instances = candidate._instances;
   for (const translation of resolved) {
     for (const slot of translation.slots) {
-      const base = slot * 20;
-      instances[base + 4] = (instances[base + 4] ?? 0) + translation.dx;
-      instances[base + 5] = (instances[base + 5] ?? 0) + translation.dy;
+      const base = slot * 3;
+      instances[base] = (instances[base] ?? 0) + translation.dx;
+      instances[base + 1] = (instances[base + 1] ?? 0) + translation.dy;
     }
   }
   if (candidate._dirtyStart === candidate._dirtyEnd) {
@@ -212,10 +203,16 @@ export function guardedPrivateLayoutText(
     throw new Error("Babylon Lite private Font structure is incompatible");
   }
   const result: unknown = litePrivateLayoutText(font, text, fontSizePx, options);
-  if (!isPrivateLayoutResult(result)) {
-    throw new Error("Babylon Lite private text layout result is incompatible");
+  if (isPrivateLayoutResult(result)) return result;
+  if (isLite131PrivateLayoutResult(result)) {
+    return {
+      glyphs: result._glyphs,
+      pixelsPerFontUnit: result._pixelsPerFontUnit,
+      width: result._width,
+      height: result._height
+    };
   }
-  return result;
+  throw new Error("Babylon Lite private text layout result is incompatible");
 }
 
 function isPrivateLayoutResult(value: unknown): value is PrivateTextLayoutResult {
@@ -230,32 +227,25 @@ function isPrivateLayoutResult(value: unknown): value is PrivateTextLayoutResult
   );
 }
 
+function isLite131PrivateLayoutResult(value: unknown): value is {
+  readonly _glyphs: readonly PlacedGlyph[];
+  readonly _pixelsPerFontUnit: number;
+  readonly _width: number;
+  readonly _height: number;
+} {
+  if (!isRecord(value) || !Array.isArray(value._glyphs)) return false;
+  if (!isFiniteNonNegative(value._width) || !isFiniteNonNegative(value._height)) return false;
+  if (typeof value._pixelsPerFontUnit !== "number" || !Number.isFinite(value._pixelsPerFontUnit)) return false;
+  return value._glyphs.every((glyph) =>
+    isRecord(glyph) &&
+    typeof glyph.glyphId === "number" && Number.isFinite(glyph.glyphId) &&
+    typeof glyph.x === "number" && Number.isFinite(glyph.x) &&
+    typeof glyph.y === "number" && Number.isFinite(glyph.y)
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function isGlyphCurves(value: unknown): value is {
-  bounds: { xMin: number; yMin: number; xMax: number; yMax: number };
-} {
-  if (!isRecord(value) || !isRecord(value.bounds)) return false;
-  const bounds = value.bounds;
-  return ["xMin", "yMin", "xMax", "yMax"].every((key) =>
-    typeof bounds[key] === "number" && Number.isFinite(bounds[key])
-  );
-}
-
-function isAtlasSlot(value: unknown): value is {
-  glyphLocX: number;
-  glyphLocY: number;
-  bandMaxX: number;
-  bandMaxY: number;
-  vBandCount: number;
-  hBandCount: number;
-} {
-  if (!isRecord(value)) return false;
-  return ["glyphLocX", "glyphLocY", "bandMaxX", "bandMaxY", "vBandCount", "hBandCount"].every((key) =>
-    typeof value[key] === "number" && Number.isFinite(value[key])
-  );
 }
 
 function isFiniteNonNegative(value: unknown): value is number {

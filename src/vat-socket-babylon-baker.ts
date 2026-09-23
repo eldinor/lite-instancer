@@ -1,7 +1,7 @@
 import {
   goToFrame,
-  mat4Decompose,
-  mat4Multiply,
+  decomposeMat4,
+  multiplyMat4,
   type AnimationGroup,
   type EngineContext,
   type Mat4,
@@ -73,7 +73,7 @@ export function bakeVatSocketAsset(
         // Lite's glTF controller prepends an RH-to-LH reflection. Strip that
         // reflection before TRS decomposition, then expose it as asset.basis so
         // the attachment controller can restore it after sampling.
-        const { translation, rotation, scale } = mat4Decompose(mat4Multiply(RH_TO_LH_BASIS, matrix));
+        const { translation, rotation, scale } = decomposeMat4(multiplyMat4(RH_TO_LH_BASIS, matrix));
         const t = frame * 3;
         const r = frame * 4;
         track.translations[t] = translation.x;

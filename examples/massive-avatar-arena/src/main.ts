@@ -9,6 +9,7 @@ import {
   loadGltf,
   onBeforeRender,
   playAnimation,
+  setPbrEmissive,
   setGpuTimingEnabled,
   stopAnimation,
   type AnimationGroup,
@@ -451,12 +452,13 @@ function createArena(): void {
 
   const platform = createCylinder(ctx.engine, { height: 0.8, diameter: 7, tessellation: 72 });
   platform.position.y = 0;
-  platform.material = createPbrMaterial({
+  const platformMaterial = createPbrMaterial({
     baseColorFactor: [0.08, 0.1, 0.16, 1],
-    emissiveColor: [0.08, 0.045, 0.012],
     metallicFactor: 0.75,
     roughnessFactor: 0.28
   });
+  setPbrEmissive(platformMaterial, [0.08, 0.045, 0.012]);
+  platform.material = platformMaterial;
   addToScene(ctx.scene, platform);
 
 }
@@ -465,12 +467,13 @@ function createSelectionMarker() {
   const marker = createCylinder(ctx.engine, { height: 0.035, diameter: 1.7, tessellation: 48 });
   marker.position.y = 0.04;
   marker.scaling.set(0, 0, 0);
-  marker.material = createPbrMaterial({
+  const markerMaterial = createPbrMaterial({
     baseColorFactor: [TEAL[0], TEAL[1], TEAL[2], 1],
-    emissiveColor: [TEAL[0], TEAL[1], TEAL[2]],
     metallicFactor: 0.1,
     roughnessFactor: 0.25
   });
+  setPbrEmissive(markerMaterial, [TEAL[0], TEAL[1], TEAL[2]]);
+  marker.material = markerMaterial;
   addToScene(ctx.scene, marker);
   return marker;
 }

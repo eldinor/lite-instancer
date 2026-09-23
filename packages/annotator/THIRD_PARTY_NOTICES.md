@@ -1,7 +1,7 @@
 # Third-party notices
 
 The optional `@litools/annotator/textrender` bundle includes Babylon Lite text
-layout implementation code from `@babylonjs/lite` 1.14.0.
+layout implementation code from `@babylonjs/lite` 1.31.0.
 
 Babylon Lite is Copyright (c) Microsoft Corporation and contributors and is
 licensed under the Apache License, Version 2.0:

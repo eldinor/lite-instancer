@@ -2,9 +2,9 @@ import {
   addToScene,
   loadGltf,
   loadEnvironment,
-  mat4Compose,
-  mat4Decompose,
-  mat4Multiply,
+  composeMat4,
+  decomposeMat4,
+  multiplyMat4,
   playAnimation,
   stopAnimation,
   type ArcRotateCamera,
@@ -70,8 +70,8 @@ sceneCallbacks._beforeRender.push(() => {
   if (!handWorld) {
     return;
   }
-  const attachedWorld = mat4Multiply(handWorld, mat4Multiply(gripOffset, swordRootMatrix));
-  const { translation, rotation, scale } = mat4Decompose(attachedWorld);
+  const attachedWorld = multiplyMat4(handWorld, multiplyMat4(gripOffset, swordRootMatrix));
+  const { translation, rotation, scale } = decomposeMat4(attachedWorld);
   swordRoot.position.set(translation.x, translation.y, translation.z);
   swordRoot.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
   swordRoot.scaling.set(scale.x, scale.y, scale.z);
@@ -178,7 +178,7 @@ function addGripSlider(
 
 function createGripOffset(): Mat4 {
   const [x, y, z, w] = quaternionFromEulerDegrees(grip.pitch, grip.yaw, grip.roll);
-  return mat4Compose(grip.x, grip.y, grip.z, x, y, z, w, grip.sx, grip.sy, grip.sz);
+  return composeMat4(grip.x, grip.y, grip.z, x, y, z, w, grip.sx, grip.sy, grip.sz);
 }
 
 function quaternionFromEulerDegrees(pitch: number, yaw: number, roll: number): [number, number, number, number] {

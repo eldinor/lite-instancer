@@ -1,6 +1,6 @@
 {
   "name": "@litools/annotator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Spatial HTML annotations and GPU text labels for Babylon Lite meshes and stable Instancer IDs.",
   "homepage": "https://annotator.babylonpress.org",
   "repository": {
@@ -88,8 +88,8 @@
     "prepublishOnly": "npm run release:check"
   },
   "peerDependencies": {
-    "@babylonjs/lite": "^1.14.0",
-    "@litools/instancer": "^0.6.0"
+    "@babylonjs/lite": "^1.31.0",
+    "@litools/instancer": "^0.6.0 || ^0.7.0"
   },
   "peerDependenciesMeta": {
     "@litools/instancer": {
@@ -97,7 +97,7 @@
     }
   },
   "devDependencies": {
-    "@babylonjs/lite": "1.14.0",
+    "@babylonjs/lite": "1.31.0",
     "@types/node": "^26.1.1",
     "@webgpu/types": "^0.1.71",
     "typedoc": "^0.28.20",

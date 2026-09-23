@@ -45,7 +45,7 @@ await playAnimation(animator, "walk", {
 - Looping playback remains pending until cancelled, stopped, interrupted, or disposed.
 - Disposal cancels active handles, detaches groups, removes the scene callback, and suppresses later events.
 
-The minimum supported Babylon Lite version is `1.14.0`. It includes the fix that prevents glTF animation groups owned by an `AnimationManager` from also being advanced by the scene’s legacy animation path.
+The minimum supported Babylon Lite version is `1.31.0`. It includes the animation ownership fix and the current allocation-conscious math, scene-node, and resource-lifetime contracts used by this workspace.
 
 ## Playback
 
